@@ -1,0 +1,17 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Uitvoer van de ontvanger en proefruns
+serve.log
+*.iconik.json
+
+# macOS
+.DS_Store

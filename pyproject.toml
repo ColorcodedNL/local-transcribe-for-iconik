@@ -1,0 +1,20 @@
+[project]
+name = "iconik-transcribe"
+version = "0.1.0"
+description = "Local transcription for Iconik on Apple Silicon (Whisper large-v3 via MLX, pyannote)"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "keyring>=25.7.0",
+    "mlx-whisper>=0.4.3",
+    "pyannote-audio>=4.0.7",
+    "pywebview>=6.2.1",
+    "requests>=2.34.2",
+]
+
+[project.scripts]
+iconik-transcribe = "iconik_transcribe:main"
+
+[build-system]
+requires = ["uv_build>=0.12.23,<0.13.0"]
+build-backend = "uv_build"
