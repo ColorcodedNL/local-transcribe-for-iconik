@@ -8,6 +8,7 @@ dependencies = [
     "keyring>=25.7.0",
     "mlx-whisper>=0.4.3",
     "pyannote-audio>=4.0.7",
+    "pynacl>=1.6.2",
     "pywebview>=6.2.1",
     "requests>=2.34.2",
 ]

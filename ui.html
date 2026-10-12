@@ -99,7 +99,7 @@ button.go { font: inherit; padding: 4px 10px; border-radius: 5px; border: 0; bac
 <main>
   <div class="note" id="note" hidden></div>
   <div class="note" id="button" hidden><span id="buttonText"></span> <button class="plain" id="install"></button></div>
-  <div class="note" id="update" hidden><span id="updateText"></span> <button class="plain" id="getUpdate"></button></div>
+  <div class="note" id="update" hidden><span id="updateText"></span> <button class="plain" id="getUpdate"></button> <button class="plain" id="openUpdate" hidden></button></div>
   <div id="jobs">
     <header><h2 data-t="jobs"></h2><button class="plain" id="clear" data-t="clear"></button></header>
     <div class="summary" id="summary"></div>
@@ -123,7 +123,7 @@ const TEXT = {
   nl: {
     jobs: "Opdrachten", settings: "Voorkeuren", clear: "Wis afgeronde", mountsTitle: "ISG Mount Points",
     change: "Kies andere map", remove: "Verwijder",
-    updateAvail: v => `Versie ${v} van Local Transcribe for Iconik is beschikbaar.`, updateGet: "Downloaden", version: "Versie",
+    updateAvail: v => `Versie ${v} van Local Transcribe for Iconik is beschikbaar.`, updateGet: "Downloaden", updateInstall: "Installeren", updateRetry: "Opnieuw proberen", updateFull: "Deze versie vraagt een nieuwe installatie.", updateBusy: v => `Versie ${v} wordt gedownload en gecontroleerd...`, updateReady: v => `Versie ${v} is geïnstalleerd. De app start opnieuw op...`, updateWaiting: v => `Versie ${v} staat klaar. De app start opnieuw op zodra de opdrachten klaar zijn.`, updateFail: e => `Updaten is mislukt: ${e}`, version: "Versie",
     btnMissing: "De knop Local Transcribe staat nog niet in deze Iconik-omgeving. Dat hoeft maar één keer, voor alle gebruikers tegelijk.",
     btnInstall: "Zet de knop in Iconik", btnPresent: "De knop Local Transcribe staat in Iconik.",
     btnDenied: "Je account mag geen Custom Actions aanmaken. Vraag een Iconik-beheerder om één keer in deze app in te loggen en de knop te plaatsen.",
@@ -150,7 +150,7 @@ const TEXT = {
   en: {
     jobs: "Jobs", settings: "Preferences", clear: "Clear finished", mountsTitle: "ISG Mount Points",
     change: "Choose another folder", remove: "Remove",
-    updateAvail: v => `Version ${v} of Local Transcribe for Iconik is available.`, updateGet: "Download", version: "Version",
+    updateAvail: v => `Version ${v} of Local Transcribe for Iconik is available.`, updateGet: "Download", updateInstall: "Install", updateRetry: "Try again", updateFull: "This version needs a full install.", updateBusy: v => `Downloading and checking version ${v}...`, updateReady: v => `Version ${v} is installed. The app is restarting...`, updateWaiting: v => `Version ${v} is ready. The app restarts when the jobs are done.`, updateFail: e => `Updating failed: ${e}`, version: "Version",
     btnMissing: "The Local Transcribe button is not in this Iconik environment yet. This is needed only once, for all users at the same time.",
     btnInstall: "Add the button to Iconik", btnPresent: "The Local Transcribe button is in Iconik.",
     btnDenied: "Your account is not allowed to create Custom Actions. Ask an Iconik admin to log in to this app once and add the button.",
@@ -206,7 +206,8 @@ $("clear").onclick = () => fetch("/clear").then(tick);
 $("list").onclick = e => { const b = e.target.closest("[data-toggle]"); if (b) { open[b.dataset.toggle] = b.dataset.open !== "1"; tick(); } };
 $("mounts").onclick = e => { const b = e.target.closest("[data-mount]"); if (b) { b.blur(); fetch(`/mount/${b.dataset.mount}?id=${encodeURIComponent(b.dataset.id)}`).then(tick); } };
 $("spoken").onchange = e => { e.target.blur(); fetch("/language?value=" + e.target.value).then(tick); };
-$("getUpdate").onclick = () => fetch("/update/open");
+$("getUpdate").onclick = () => fetch("/update/install", { headers: { "X-Local-Transcribe": "1" } });
+$("openUpdate").onclick = () => fetch("/update/open");
 $("install").onclick = e => { e.target.disabled = true; fetch("/actions/install").then(tick).finally(() => e.target.disabled = false); };
 $("lang").onchange = e => { e.target.blur(); fetch("/applang?value=" + e.target.value).then(tick); };
 
@@ -281,7 +282,18 @@ function settings(s) {
   $("buttonText").textContent = s.actions === "geweigerd" ? T.btnDenied : T.btnMissing;
   $("install").textContent = T.btnInstall; $("install").hidden = s.actions === "geweigerd";
   $("update").hidden = !s.update;
-  if (s.update) { $("updateText").textContent = T.updateAvail(s.update); $("getUpdate").textContent = T.updateGet; }
+  if (s.update) {
+    const u = s.update;
+    let text = T.updateAvail(u.version), install = false, download = false;
+    if (u.state === "installing") text = T.updateBusy(u.version);
+    else if (u.state === "ready") text = u.waiting ? T.updateWaiting(u.version) : T.updateReady(u.version);
+    else if (u.state === "error") { text = T.updateFail(u.error); install = true; download = true; }
+    else if (u.mode === "code") install = true;
+    else { text += " " + T.updateFull; download = true; }
+    $("updateText").textContent = text;
+    $("getUpdate").hidden = !install; $("getUpdate").textContent = u.state === "error" ? T.updateRetry : T.updateInstall;
+    $("openUpdate").hidden = !download; $("openUpdate").textContent = T.updateGet;
+  }
   const html = {
     account,
     mounts: mounts.length ? mounts.map(m => `<div class="mount"><div><strong>${esc(m.name || "ISG " + m.id)}</strong><br><code>${esc(m.path)}</code></div><button class="plain" data-mount="change" data-id="${esc(m.id)}">${T.change}</button><button class="plain" data-mount="remove" data-id="${esc(m.id)}">${T.remove}</button></div>`).join("") : `<p class="dim">${T.noMounts}</p>`,

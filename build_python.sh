@@ -14,4 +14,4 @@ echo "Python: $SRC"
 cp -R "$SRC" build/python
 uv export --frozen --no-hashes --no-emit-project -o build/requirements.txt
 uv pip install --python build/python/bin/python3.12 --break-system-packages -r build/requirements.txt
-build/python/bin/python3.12 -I -c "import mlx_whisper, pyannote.audio, webview, keyring, requests, torch; print('imports ok')"
+build/python/bin/python3.12 -I -c "import mlx_whisper, pyannote.audio, webview, keyring, requests, torch, nacl; print('imports ok')"

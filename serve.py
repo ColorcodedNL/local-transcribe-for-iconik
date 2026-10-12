@@ -29,7 +29,9 @@ from urllib.parse import parse_qs, urlparse
 
 import requests
 
+import app_shell
 import transcribe
+import updater
 from transcribe import Iconik, Problem
 
 PORT = 8765
@@ -41,6 +43,7 @@ pending_login = {}        # state -> verifier, voor een inlog die onderweg is
 pending_ids = []          # opdrachten die wachten tot er is ingelogd
 window_state = {"n": 0, "page": "/"}   # wat het venster van de app moet tonen
 show_hook = None  # de app zet hier een functie neer die het venster toont
+restart_hook = None  # idem, om opnieuw te starten na een code-update
 
 
 def client():
@@ -145,12 +148,22 @@ ACTION_TITLE = "Local Transcribe"
 ACTION_URL = "iconiktranscribe://transcribe"
 ACTION_CONTEXTS = ("ASSET", "COLLECTION", "BULK")
 actions = {}              # "state": aanwezig | ontbreekt | geweigerd | onbekend
-update = {}               # nieuwere versie op GitHub: "version" en "url"
+update = {}               # nieuwere versie op GitHub: version, url, mode (code of dmg), state, error
+update_lock = threading.Lock()
 
 
 def version_tuple(text):
     numbers = [int(n) for n in re.findall(r"\d+", text or "")[:3]]
     return tuple(numbers + [0] * (3 - len(numbers)))
+
+
+def update_view():
+    """Wat het venster van een beschikbare update mag zien."""
+    if not update:
+        return None
+    view = {key: update[key] for key in ("version", "mode", "state", "error") if key in update}
+    view["waiting"] = update.get("state") == "ready" and busy()
+    return view
 
 
 def check_update():
@@ -162,18 +175,54 @@ def check_update():
         try:
             response = requests.get(url, headers=headers, timeout=10)
             if response.status_code == 200:
-                release = response.json()
-                latest = (release.get("tag_name") or "").lstrip("vV")
-                page = release.get("html_url") or ""
-                if version_tuple(latest) > version_tuple(transcribe.APP_VERSION) and page.startswith("https://github.com/"):
-                    if update.get("version") != latest:
-                        print(f"Nieuwe versie beschikbaar: {latest} ({page})")
-                    update.update(version=latest, url=page)
-                else:
-                    update.clear()
+                found = updater.find_update(response.json(), transcribe.RELEASES_REPO, transcribe.APP_VERSION,
+                                            app_shell.SHELL_VERSION, updater.bad_versions())
+                with update_lock:
+                    if update.get("state") in ("installing", "ready"):
+                        pass  # er wordt al geïnstalleerd: de melding met rust laten
+                    elif found:
+                        if update.get("version") != found["version"]:
+                            print(f"Nieuwe versie beschikbaar: {found['version']} ({found['mode']}, {found['url']})")
+                        update.clear()
+                        update.update(found, state="available")
+                    else:
+                        update.clear()
         except Exception:
             pass  # geen netwerk of GitHub onbereikbaar: volgende keer opnieuw
         time.sleep(6 * 3600)
+
+
+def install_update():
+    """Klik op Installeren: downloaden, controleren, neerzetten en herstarten zodra er niets meer loopt."""
+    with update_lock:
+        if update.get("mode") != "code" or update.get("state") not in ("available", "error"):
+            return
+        info = dict(update)
+        update.update(state="installing", error="")
+
+    def work():
+        try:
+            version = updater.install(info, transcribe.APP_VERSION)
+        except updater.UpdateError as error:
+            print(f"Update {info['version']} mislukt: {error.nl}")
+            update.update(state="error", error=transcribe.L(error.nl, error.en))
+            return
+        except requests.RequestException as error:
+            print(f"Update {info['version']} mislukt: {type(error).__name__}: {error}")
+            update.update(state="error", error=transcribe.L("Geen verbinding met GitHub.", "No connection to GitHub."))
+            return
+        except Exception as error:
+            print(f"Update {info['version']} mislukt: {type(error).__name__}: {error}")
+            update.update(state="error", error=f"{type(error).__name__}: {error}")
+            return
+        update.update(state="ready")
+        print(f"Code-update {version} staat klaar; de app herstart zodra er geen opdracht loopt")
+        while busy():
+            time.sleep(2)
+        if restart_hook:
+            restart_hook()
+
+    threading.Thread(target=work, daemon=True, name="update-install").start()
 
 
 def missing_actions(connection):
@@ -293,7 +342,7 @@ def app_state():
     return {
         "jobs": out, "account": account, "user": who.get("name", ""), "actions": actions.get("state", "onbekend"),
         "lang": transcribe.app_language(), "app_language": config.get("app_language", "auto"),
-        "version": transcribe.APP_VERSION, "update": update.get("version"),
+        "version": transcribe.APP_VERSION, "update": update_view(),
         "spoken": settings.get("language") or config.get("language", "auto"),
         "spoken_fixed": bool(settings.get("language")), "has_client_id": bool(config.get("client_id")),
         "mounts": mount_list(config), "model": settings.get("model", ""),
@@ -413,6 +462,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply_json(app_state())
             if url.path in ("/mount/change", "/mount/remove"):
                 change_mount(first("id"), remove=url.path.endswith("remove"))
+                return self.reply_json({"ok": True})
+            if url.path == "/update/install":
+                if self.headers.get("X-Local-Transcribe") != "1":  # een webpagina kan dit niet meesturen
+                    return self.send_error(403)
+                install_update()
                 return self.reply_json({"ok": True})
             if url.path == "/update/open":
                 if update.get("url"):

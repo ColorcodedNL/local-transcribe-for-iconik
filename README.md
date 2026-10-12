@@ -16,6 +16,7 @@ You start it from Iconik itself: pick an asset, a collection or a selection, and
 - **Filters.** Removes Whisper hallucinations and repetition loops, and skips files without intelligible speech instead of writing nonsense.
 - **Safe replacement.** Running it again replaces only the transcript this app made earlier. Transcripts from other sources are never touched, and the old transcript is only removed once the new one succeeded.
 - **Efficient on collections.** While one asset is being transcribed, the audio of the next one is already read from the network storage.
+- **Updates from inside the app.** A banner offers new versions; most are a one-click install of a few dozen KB, signed and verified before anything is written.
 
 ![Local Transcribe in the Iconik asset menu](docs/images/iconik-menu.png)
 
@@ -43,13 +44,22 @@ The `.dmg` contains a step-by-step guide with screenshots, in English and Dutch.
 
 Colleagues skip steps 1 and 3: they install the app, enter the same Client ID and sign in with their own account.
 
+## Updates
+
+The app checks GitHub Releases every six hours. When a newer version exists, a banner appears at the top of the window.
+
+- **Code updates** (most releases) are a small signed zip with the app's Python code. Click **Install**; the app downloads it, verifies an Ed25519 signature and a checksum per file, waits until no job is running, and restarts itself.
+- **Full updates** (a new Python, new packages, a new ffmpeg or models) need the new `.dmg`. The banner then offers the download page instead.
+
+Code updates are stored next to the app (`~/Library/Application Support/Local Transcribe for Iconik/code/`), never inside it, so the app's own code signature stays valid. If an update fails to start, the app notes that version as bad and starts again with the code that came in the app bundle. Nothing is installed without a valid signature from the key whose public half is built into the app (`app_shell.py`).
+
 ## Privacy
 
 The app connects to:
 
 - **Iconik**, to read asset information and write transcripts, as the signed-in user
 - **Hugging Face**, once, to download the Whisper model
-- **GitHub**, to check whether a newer version is available
+- **GitHub**, to check whether a newer version is available and, when you click Install, to download it
 
 Audio, transcripts and file names never leave your Mac except as the transcript written to your own Iconik environment. Usage telemetry of the bundled libraries (pyannote, Hugging Face) is switched off.
 
@@ -78,26 +88,31 @@ bash build_python.sh    # relocatable Python 3.12 with all packages in build/pyt
 bash build_ffmpeg.sh    # LGPL build of ffmpeg and ffprobe in build/ffmpeg-out
 bash build_bundle.sh    # build/Local Transcribe for Iconik.app
 bash build_dmg.sh       # dist/Local Transcribe for Iconik.dmg with the guides
+bash build_update.sh    # dist/code-<version>-shell<N>.zip and .sig, signed with your update key
 ```
 
 `build_bundle.sh` expects the pyannote speaker model in `~/Library/Application Support/Local Transcribe for Iconik/models/speaker-diarization-community-1`. Download it from [Hugging Face](https://huggingface.co/pyannote/speaker-diarization-community-1) (you need to accept its terms there).
 
 | File | Purpose |
 | --- | --- |
-| `main.py` | The app: receiver, job queue, window, Iconik links, quitting |
+| `main.py` | Boot: picks the bundled code or the newest verified code update, falls back if it fails. Rarely changes |
+| `app_shell.py` | Fixed layer: shell version and the public update key. Rarely changes |
+| `app_main.py` | The app: receiver, job queue, window, Iconik links, quitting, restart after an update |
+| `updater.py` | Finds, downloads, verifies and installs code updates |
 | `serve.py` | Local receiver, job queue, sign-in, Custom Action check |
 | `transcribe.py` | The engine: audio tracks, Whisper, speakers, filters, writing to Iconik. Also usable from the command line |
 | `ui.html` | The window (jobs and preferences), in English and Dutch |
 | `launcher.c` | Native launcher that loads the bundled Python in the app process |
 | `setup_actions.py` | Create the Custom Actions from the command line |
-| `tools/` | Measuring tools for audio tracks and assets |
+| `tools/` | Measuring tools for audio tracks and assets, update signing (`sign_update.py`), `make_manifest.py`, `local_update_test.py` |
+| `tests/` | Tests for the boot layer, the updater and the update state in `serve.py` |
 
 Logs: `~/Library/Logs/Local Transcribe for Iconik/serve.log`. Each job logs time and memory per stage.
 
 ## Roadmap
 
 - Spread jobs over several Macs, so a whole archive can be transcribed in parallel
-- Sign and notarize the app, then automatic updates (Sparkle)
+- Sign and notarize the app, which would allow fully automatic updates (Sparkle)
 - Native Mac interface in Swift
 - Configurable Iconik host for environments other than `app.iconik.io`
 

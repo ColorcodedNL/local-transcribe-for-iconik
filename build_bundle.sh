@@ -46,9 +46,13 @@ cat > "$PLIST" <<INFO
 INFO
 
 # Eigen code
-for f in main.py transcribe.py serve.py ui.html setup_actions.py; do
+# De bestanden en het manifest komen uit tools/make_manifest.py, zodat de bundel en een
+# code-update (build_update.sh) uit dezelfde lijst bouwen.
+TOOLPY="$HERE/build/python/bin/python3.12"
+for f in $("$TOOLPY" "$HERE/tools/make_manifest.py" --shell-list) $("$TOOLPY" "$HERE/tools/make_manifest.py" --list); do
   cp "$HERE/$f" "$RES/app/$f"
 done
+"$TOOLPY" "$HERE/tools/make_manifest.py" "$RES/app"   # vóór het ondertekenen, anders klopt de handtekening niet
 
 # Python met packages (cp -c maakt clones op APFS, dus snel en zonder extra ruimte)
 cp -Rc "$HERE/build/python" "$RES/python"

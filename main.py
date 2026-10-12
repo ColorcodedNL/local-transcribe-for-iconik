@@ -1,214 +1,146 @@
 #!/usr/bin/env python3
-"""Local Transcribe for Iconik: de app. Eén proces met ontvanger, werkrij en venster.
+"""Opstartlaag van Local Transcribe for Iconik. De launcher draait dit bestand.
 
-Gestart door de launcher in Contents/MacOS. Links van het type iconiktranscribe://
-komen binnen via de app-delegate (ook als de app er zelf door gestart wordt).
-Venster sluiten verbergt het alleen; Cmd+Q stopt de app, met een waarschuwing
-als er nog een opdracht loopt.
+Kiest welke code de app draait: de code in de bundel, of een nieuwere code-update uit
+~/Library/Application Support/Local Transcribe for Iconik/code/<versie>/ die eerder is
+gedownload en gecontroleerd (zie updater.py). De bundel zelf wordt nooit aangepast, dus de
+codehandtekening van de app blijft geldig.
+
+Start een update niet goed, dan komt de versie op de lijst met mislukte versies (bad.json)
+en start de app opnieuw met de code uit de bundel.
+
+Dit bestand verandert zo zelden mogelijk. Wijzigingen hier vragen een nieuwe dmg en een
+hogere SHELL_VERSION in app_shell.py.
 """
-
-import http.client
+import json
 import os
+import re
 import sys
-import threading
+import traceback
 from datetime import datetime
 from pathlib import Path
 
-APP_NAME = "Local Transcribe for Iconik"
-RES = Path(__file__).resolve().parent.parent          # Contents/Resources
-SUPPORT = Path.home() / "Library" / "Application Support" / APP_NAME
-LOGDIR = Path.home() / "Library" / "Logs" / APP_NAME
-PORT = 8765
-BASE = f"http://localhost:{PORT}"
+HERE = Path(__file__).resolve().parent     # Contents/Resources/app
+RES = HERE.parent                          # Contents/Resources
+VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
 
 
-def prepare():
-    """Mappen, zoekpad en log, voordat er iets anders geladen wordt."""
+def read_json(path):
     try:
-        old = SUPPORT.with_name("Iconik Transcribe")  # naam tot oktober 2026
-        if old.is_dir() and not SUPPORT.exists():
-            old.rename(SUPPORT)
+        return json.loads(Path(path).read_text())
+    except (OSError, ValueError):
+        return None
+
+
+def log(text):
+    """Regel in het logbestand, ook als de app zelf nog niet gestart is."""
+    try:
+        logdir = Path.home() / "Library" / "Logs" / "Local Transcribe for Iconik"
+        logdir.mkdir(parents=True, exist_ok=True)
+        with open(logdir / "serve.log", "a") as f:
+            f.write(f"[{datetime.now():%H:%M:%S}] opstart: {text}\n")
     except OSError:
         pass
-    SUPPORT.mkdir(parents=True, exist_ok=True)
-    LOGDIR.mkdir(parents=True, exist_ok=True)
-    os.environ["PATH"] = f"{RES / 'bin'}:/usr/bin:/bin:/usr/sbin:/sbin"
-    os.chdir(SUPPORT)
-    # Alles wat het proces schrijft, ook uit ffmpeg en C-bibliotheken, naar het log.
-    log = open(LOGDIR / "serve.log", "a", buffering=1)
-    os.dup2(log.fileno(), 1)
-    os.dup2(log.fileno(), 2)
-    print(f"\n===== app gestart {datetime.now():%Y-%m-%d %H:%M:%S} vanaf {RES.parent.parent} =====")
 
 
-prepare()
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import transcribe  # noqa: E402  (na prepare, zodat het zoekpad en de telemetrie-instelling kloppen)
-import serve  # noqa: E402
-
-window = None
-
-
-def show(page=None):
-    """Venster tonen en naar voren halen, eventueel met een andere pagina."""
-    if window is None:
-        return
-    if page:
-        window.load_url(BASE + page)
-    window.show()
-
-
-def local_get(path, timeout=60):
-    """GET op de eigen ontvanger, zonder doorverwijzingen te volgen. Geeft (status, Location)."""
-    connection = http.client.HTTPConnection("127.0.0.1", PORT, timeout=timeout)
+def mark_bad(code_dir, version):
+    bad = read_json(code_dir / "bad.json")
+    bad = bad if isinstance(bad, list) else []
+    if version not in bad:
+        bad.append(version)
     try:
-        connection.request("GET", path)
-        response = connection.getresponse()
-        location = response.getheader("Location") or ""
-        response.read()
-        return response.status, location
-    finally:
-        connection.close()
+        (code_dir / "bad.json").write_text(json.dumps(bad))
+    except OSError:
+        pass
 
 
-def send_link(url):
-    """Geeft een link uit Iconik aan de ontvanger. Geeft de pagina terug die het venster moet tonen."""
-    query = url.split("?", 1)[1] if "?" in url else ""
-    if not query:
-        return None
+def pid_alive(pid):
     try:
-        _, location = local_get(f"/transcribe/{serve.listener_key()}?{query}")
-        print(f"[{datetime.now():%H:%M:%S}] link uit Iconik, doorverwezen naar: {location or 'niets'}")
-        return "/login" if location.endswith("/login") else "/"
-    except Exception as error:
-        print(f"Link uit Iconik verwerken mislukte: {type(error).__name__}: {error}")
-        return None
-
-
-def on_link(url):
-    """Een klik op Local Transcribe in Iconik. Draait in een eigen draad."""
-    show(send_link(url))
-
-
-def our_receiver_running():
-    """Draait er al een exemplaar van deze app op de poort?"""
-    try:
-        status, _ = local_get("/window/state", timeout=2)
-        return status == 200
-    except Exception:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
         return False
+    except OSError:
+        return True  # bestaat, maar is niet van ons
 
 
-def run_as_messenger():
-    """Er draait al een exemplaar (bijvoorbeeld vanaf een andere kopie van de app).
+def choose_code(here, code_dir, shell_version, version_tuple):
+    """(map, versie) van de code-update die gebruikt moet worden, of None voor de code in de bundel."""
+    bundled = read_json(here / "manifest.json")
+    if not bundled:
+        return None  # geen bundel (draait uit de projectmap): altijd de eigen code
+    current = read_json(code_dir / "current.json")
+    version = str(current.get("version", "")) if isinstance(current, dict) else ""
+    if not VERSION_RE.match(version):
+        return None
 
-    Dan geven we een eventuele link door, laten het venster daar naar voren komen
-    en stoppen we zelf, zonder Dock-icoon en zonder melding.
-    """
-    import objc
-    import AppKit
-    from PyObjCTools import AppHelper
-
-    print("Er draait al een exemplaar; link en venster gaan daarheen.")
-    handled = {"link": False}
-
-    def forward(urls):
-        page = None
-        for url in urls:
-            page = send_link(url) or page
+    # Een vorige start met deze versie is nooit klaargekomen: dan is hij stuk.
+    marker = code_dir / "starting"
+    if marker.is_file():
         try:
-            local_get(f"/window/show?page={page or '/'}", timeout=5)
-        except Exception:
-            pass
-        AppHelper.callAfter(AppKit.NSApp.terminate_, None)
+            parts = marker.read_text().split()
+        except OSError:
+            parts = []
+        running = len(parts) > 1 and parts[1].isdigit() and pid_alive(int(parts[1]))
+        if not running:  # draait er nog een start, dan laten we hem met rust
+            try:
+                marker.unlink()
+            except OSError:
+                pass
+            if parts and parts[0] == version:
+                mark_bad(code_dir, version)
+                log(f"code {version} kwam de vorige keer niet op; terug naar de code in de bundel")
 
-    class LocalTranscribeMessenger(AppKit.NSObject):
-        @objc.typedSelector(b"v@:@@")
-        def application_openURLs_(self, app, urls):
-            handled["link"] = True
-            threading.Thread(target=forward, args=([str(u.absoluteString()) for u in urls],), daemon=True).start()
-
-        def applicationDidFinishLaunching_(self, notification):
-            # Komt er binnen een seconde geen link, dan was het een gewone start: venster tonen.
-            def later():
-                if not handled["link"]:
-                    threading.Thread(target=forward, args=([],), daemon=True).start()
-            AppHelper.callLater(1.0, later)
-
-    app = AppKit.NSApplication.sharedApplication()
-    app.setActivationPolicy_(AppKit.NSApplicationActivationPolicyProhibited)
-    delegate = LocalTranscribeMessenger.alloc().init()
-    app.setDelegate_(delegate)
-    AppHelper.runEventLoop()
-
-
-def on_closing():
-    """Rode knop of Cmd+W: alleen verbergen, de app en het werk lopen door."""
-    if window is not None:
-        window.hide()
-    return False
-
-
-def main():
-    global window
-    if our_receiver_running():
-        run_as_messenger()
-        return
+    bad = read_json(code_dir / "bad.json")
+    if isinstance(bad, list) and version in bad:
+        return None
+    folder = code_dir / version
+    manifest = read_json(folder / "manifest.json")
+    if not isinstance(manifest, dict) or manifest.get("version") != version:
+        return None
     try:
-        serve.start(idle_exit=False)
-    except OSError as error:
-        print(f"Poort {PORT} is bezet ({error}) door iets anders dan deze app.")
-        import subprocess
-        subprocess.run(["osascript", "-e",
-                        f'display alert "{APP_NAME}" message "' + transcribe.L(
-                            "Er draait nog een andere ontvanger op poort 8765. Sluit die af of herstart de Mac.",
-                            "Another receiver is already running on port 8765. Quit it or restart the Mac.") + '"'])
-        sys.exit(1)
+        if int(manifest.get("requires_shell", 1)) > shell_version:
+            return None
+    except (TypeError, ValueError):
+        return None
+    if version_tuple(version) <= version_tuple(str(bundled.get("version", "0"))):
+        return None  # de bundel is even nieuw of nieuwer (bijvoorbeeld na een nieuwe dmg)
+    if not (folder / "app_main.py").is_file():
+        return None
+    return folder, version
 
-    import objc
-    import AppKit
-    import webview
-    from webview.platforms.cocoa import BrowserView
 
-    class LocalTranscribeDelegate(BrowserView.AppDelegate):
-        """Delegate van pywebview, uitgebreid met links, het Dock-icoon en afsluiten."""
+def fall_back(code_dir, version):
+    """De update start niet: op de lijst zetten en opnieuw starten met de code uit de bundel."""
+    log(f"code {version} start niet:\n{traceback.format_exc()}terug naar de code in de bundel")
+    mark_bad(code_dir, version)
+    launcher = RES.parent / "MacOS" / "LocalTranscribe"
+    if launcher.is_file():
+        os.execv(str(launcher), [str(launcher)])
 
-        def applicationShouldTerminate_(self, app):
-            if not serve.busy():
-                return AppKit.NSTerminateNow
-            alert = AppKit.NSAlert.alloc().init()
-            alert.setMessageText_(transcribe.L("Er loopt nog een opdracht", "A job is still running"))
-            alert.setInformativeText_(transcribe.L(
-                "Afsluiten breekt de opdracht af. Je kunt hem later opnieuw starten vanuit Iconik.",
-                "Quitting stops the job. You can start it again from Iconik later."))
-            alert.addButtonWithTitle_(transcribe.L("Annuleren", "Cancel"))
-            alert.addButtonWithTitle_(transcribe.L("Toch afsluiten", "Quit anyway"))
-            alert.setAlertStyle_(AppKit.NSAlertStyleWarning)
-            if alert.runModal() == AppKit.NSAlertSecondButtonReturn:
-                print(f"[{datetime.now():%H:%M:%S}] afgesloten tijdens een opdracht")
-                return AppKit.NSTerminateNow
-            return AppKit.NSTerminateCancel
 
-        @objc.typedSelector(b"Z@:@Z")
-        def applicationShouldHandleReopen_hasVisibleWindows_(self, app, visible):
-            show()  # klik op het Dock-icoon of de app opnieuw geopend
-            return True
-
-        @objc.typedSelector(b"v@:@@")
-        def application_openURLs_(self, app, urls):
-            for url in urls:
-                threading.Thread(target=on_link, args=(str(url.absoluteString()),), daemon=True).start()
-
-    BrowserView.AppDelegate = LocalTranscribeDelegate
-    serve.show_hook = show  # een tweede exemplaar kan zo het venster naar voren halen
-
-    storage = SUPPORT / "webview"
-    storage.mkdir(parents=True, exist_ok=True)
-    window = webview.create_window(APP_NAME, BASE + "/", width=980, height=620, min_size=(640, 360))
-    window.events.closing += on_closing
-    # Niet in privemodus: zo blijft de inlog bij Iconik in dit venster bewaard.
-    webview.start(private_mode=False, storage_path=str(storage))
+def run():
+    os.environ["LOCALTRANSCRIBE_RES"] = str(RES)   # waar de bundel staat, ook als de code elders draait
+    sys.path.insert(0, str(HERE))
+    import app_shell
+    chosen = None
+    try:
+        chosen = choose_code(HERE, app_shell.CODE_DIR, app_shell.SHELL_VERSION, app_shell.version_tuple)
+    except Exception as error:
+        log(f"code kiezen mislukte ({type(error).__name__}: {error}); code uit de bundel")
+    os.environ.pop("LOCALTRANSCRIBE_CODE", None)
+    if chosen:
+        folder, version = chosen
+        sys.path.insert(0, str(folder))
+        os.environ["LOCALTRANSCRIBE_CODE"] = version
+    try:
+        import app_main
+        app_main.main()
+    except Exception:
+        if chosen:
+            fall_back(app_shell.CODE_DIR, chosen[1])
+        raise
 
 
 if __name__ == "__main__":
-    main()
+    run()

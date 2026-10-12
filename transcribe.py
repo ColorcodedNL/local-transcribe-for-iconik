@@ -41,7 +41,7 @@ DEFAULT_HOST = "https://app.iconik.io"
 REDIRECT_URI = "http://localhost:8765/oauth/callback"
 OAUTH_SCOPE = "assets:read assets:write collections:read user_impersonation"
 APP_NAME = "Local Transcribe for Iconik"
-APP_VERSION = "0.2.0"  # ook het versienummer van de app-bundel (build_bundle.sh leest het hier)
+APP_VERSION = "0.3.0"  # ook het versienummer van de app-bundel (build_bundle.sh leest het hier)
 RELEASES_REPO = "ColorcodedNL/local-transcribe-for-iconik"  # hier kijkt de app of er een nieuwere versie is
 OLD_APP_NAME = "Iconik Transcribe"  # de naam tot oktober 2026; voorkeuren en inlog verhuizen mee
 SUPPORT_DIR = Path.home() / "Library" / "Application Support" / APP_NAME
@@ -70,7 +70,8 @@ MIC_MIN_MARGIN_DB = 3.0         # kleiner verschil in een zin: de vorige spreker
 DIARIZATION_MODEL = "pyannote/speaker-diarization-community-1"
 # Lokale kopie van het sprekermodel (CC-BY-4.0, pyannote). Staat die er, dan is
 # er geen Hugging Face-account of token nodig.
-_BUNDLED_SPEAKER_MODEL = Path(__file__).resolve().parent.parent / "models" / "speaker-diarization-community-1"
+_BUNDLE_RES = Path(os.environ.get("LOCALTRANSCRIBE_RES") or Path(__file__).resolve().parent.parent)  # ook als de code uit een update komt
+_BUNDLED_SPEAKER_MODEL = _BUNDLE_RES / "models" / "speaker-diarization-community-1"
 LOCAL_SPEAKER_MODEL = (_BUNDLED_SPEAKER_MODEL if (_BUNDLED_SPEAKER_MODEL / "config.yaml").is_file()
                        else SUPPORT_DIR / "models" / "speaker-diarization-community-1")
 
