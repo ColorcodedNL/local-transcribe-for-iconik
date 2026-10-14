@@ -232,10 +232,13 @@ class Problem(Exception):
     """Een fout die we de gebruiker in gewone woorden kunnen melden."""
 
 
-def fail(message, skip=False):
-    """`skip`: het asset is overgeslagen om een gewone reden, er is niets misgegaan."""
+def fail(message, skip=False, local=False):
+    """`skip`: het asset is overgeslagen om een gewone reden, er is niets misgegaan.
+    `local`: het ligt aan deze Mac (opslag niet gemount, geen inlog, geen internet) en niet aan
+    het asset. Een werker zet zo'n asset dan terug in de rij voor een andere Mac."""
     problem = Problem(message)
     problem.skip = skip
+    problem.local = local
     raise problem
 
 
@@ -368,13 +371,13 @@ class Iconik:
         with LOGIN_LOCK:
             login = load_login()
             if not login:
-                fail(L("Niet ingelogd bij Iconik.", "Not logged in to Iconik."))
+                fail(L("Niet ingelogd bij Iconik.", "Not logged in to Iconik."), local=True)
             # Is het geweigerde token intussen al door een ander vervangen, dan niet opnieuw verversen.
             stale = rejected is not None and login["access_token"] == rejected
             if stale or login["expires_at"] - time.time() < 120:
                 if not login.get("refresh_token"):
                     clear_login()
-                    fail(L("De inlog bij Iconik is verlopen. Log opnieuw in.", "The Iconik login has expired. Log in again."))
+                    fail(L("De inlog bij Iconik is verlopen. Log opnieuw in.", "The Iconik login has expired. Log in again."), local=True)
                 try:
                     login = token_request({
                         "grant_type": "refresh_token",
@@ -383,7 +386,7 @@ class Iconik:
                     })
                 except Problem:
                     clear_login()
-                    fail(L("De inlog bij Iconik is verlopen. Log opnieuw in.", "The Iconik login has expired. Log in again."))
+                    fail(L("De inlog bij Iconik is verlopen. Log opnieuw in.", "The Iconik login has expired. Log in again."), local=True)
             self.session.headers["Authorization"] = f"Bearer {login['access_token']}"
 
     def _call(self, method, path, **kwargs):
@@ -485,8 +488,8 @@ def ask_folder(prompt, start=None):
 def find_moved_mount(known, relative, volumes=Path("/Volumes")):
     """Zoekt dezelfde map op een opnieuw gekoppeld volume.
 
-    Na een verbroken netwerkkoppeling blijft er soms een lege /Volumes/Archief
-    achter en koppelt macOS het archief opnieuw als /Volumes/Archief-1. Hier
+    Na een verbroken netwerkkoppeling blijft er soms een lege /Volumes/Opslag
+    achter en koppelt macOS de opslag opnieuw als /Volumes/Opslag-1. Hier
     zoeken we in beide richtingen, met of zonder zo'n achtervoegsel.
     """
     try:
@@ -553,8 +556,8 @@ def find_media_file(iconik, asset_id, mount_override=None, ask_mount=False, inte
             print(f"Opslag staat nu op {moved} (was {known}), dat is onthouden.")
             return moved / relative
         if not Path(known).is_dir():
-            fail(L(f"De map {known} is niet bereikbaar. Is het archief gemount?",
-                   f"The folder {known} cannot be reached. Is the storage mounted?"))
+            fail(L(f"De map {known} is niet bereikbaar. Is de opslag (ISG) gemount?",
+                   f"The folder {known} cannot be reached. Is the storage (ISG) mounted?"), local=True)
         fail(L(f"Bestand niet gevonden: {path}", f"File not found: {path}"))
 
     try:
@@ -592,7 +595,7 @@ def find_media_file(iconik, asset_id, mount_override=None, ask_mount=False, inte
     for _ in range(3):
         folder = ask_folder(prompt, remote)
         if folder is None:
-            fail(L(f"Geen mount point gekozen voor ISG {name}.", f"No mount point chosen for ISG {name}."))
+            fail(L(f"Geen mount point gekozen voor ISG {name}.", f"No mount point chosen for ISG {name}."), local=True)
         # Ook goed: een map erboven of eronder gekozen.
         chosen_folder = Path(folder)
         candidates = [chosen_folder, chosen_folder.parent, chosen_folder.parent.parent]
@@ -1106,7 +1109,7 @@ def ensure_model(repo):
         fail(L(f"Het Whisper-model kon niet worden gedownload ({type(error).__name__}). Dat is eenmalig nodig, "
                "controleer de internetverbinding en probeer het opnieuw.",
                f"The Whisper model could not be downloaded ({type(error).__name__}). This is needed once, "
-               "check the internet connection and try again."))
+               "check the internet connection and try again."), local=True)
     finally:
         finished.set()
 

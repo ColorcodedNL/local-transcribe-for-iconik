@@ -110,6 +110,7 @@ button.go { font: inherit; padding: 4px 10px; border-radius: 5px; border: 0; bac
     <section class="set"><h3>Iconik</h3><div id="account"></div></section>
     <section class="set"><h3 data-t="mountsTitle"></h3><div id="mounts"></div></section>
     <section class="set"><h3 data-t="modelsTitle"></h3><div id="models"></div></section>
+    <section class="set"><h3 data-t="workerTitle"></h3><div id="worker"></div></section>
     <section class="set"><h3 data-t="spoken"></h3><p>
       <select id="spoken"><option value="auto" data-t="spokenAuto"></option><option value="nl">Nederlands</option><option value="en">English</option><option value="de">Deutsch</option><option value="fr">Français</option><option value="es">Español</option><option value="it">Italiano</option><option value="sv">Svenska</option></select></p>
       <p class="dim" data-t="spokenHelp"></p></section>
@@ -127,6 +128,10 @@ const TEXT = {
     btnMissing: "De knop Local Transcribe staat nog niet in deze Iconik-omgeving. Dat hoeft maar één keer, voor alle gebruikers tegelijk.",
     btnInstall: "Zet de knop in Iconik", btnPresent: "De knop Local Transcribe staat in Iconik.",
     btnDenied: "Je account mag geen Custom Actions aanmaken. Vraag een Iconik-beheerder om één keer in deze app in te loggen en de knop te plaatsen.",
+    workerTitle: "Op afstand", workerOn: "Opdrachten op afstand toestaan",
+    workerHelp: "Staat opdrachten uit Iconik toe vanaf elke locatie. Dit draait op de achtergrond. De opslag (ISG) moet op deze Mac gemount zijn.",
+    loginOn: "Opstarten bij inloggen", loginHelp: "Opent de app bij het inloggen. Staat opdrachten op afstand aan, dan blijft hij in de menubalk.",
+    workerLast: "Laatst gecontroleerd", workerPaused: "Gepauzeerd tot", workerAsset: "Laatst opgepakt", workerProblem: "Probleem", workerAs: "Naam",
     modelsTitle: "Modellen", language: "Taal van de app", spoken: "Gesproken taal", spokenAuto: "Herken per asset",
     spokenHelp: "Herkennen kijkt naar de luidste stukken van de opname. Zet de taal alleen vast als al je materiaal in één taal is.", langAuto: "Volg macOS",
     stages: ["Audio lezen", "Transcriberen", "Sprekers", "Naar Iconik"],
@@ -154,6 +159,10 @@ const TEXT = {
     btnMissing: "The Local Transcribe button is not in this Iconik environment yet. This is needed only once, for all users at the same time.",
     btnInstall: "Add the button to Iconik", btnPresent: "The Local Transcribe button is in Iconik.",
     btnDenied: "Your account is not allowed to create Custom Actions. Ask an Iconik admin to log in to this app once and add the button.",
+    workerTitle: "Remote", workerOn: "Allow remote jobs",
+    workerHelp: "Allows jobs from Iconik from any location. This runs in the background. The storage (ISG) must be mounted on this Mac.",
+    loginOn: "Open at login", loginHelp: "Opens the app when you log in. With remote jobs allowed it stays in the menu bar.",
+    workerLast: "Last checked", workerPaused: "Paused until", workerAsset: "Last picked up", workerProblem: "Problem", workerAs: "Name",
     modelsTitle: "Models", language: "App language", spoken: "Spoken language", spokenAuto: "Detect per asset",
     spokenHelp: "Detection looks at the loudest parts of the recording. Only fix the language if all your footage is in one language.", langAuto: "Follow macOS",
     stages: ["Read audio", "Transcribe", "Speakers", "Send to Iconik"],
@@ -209,6 +218,7 @@ $("spoken").onchange = e => { e.target.blur(); fetch("/language?value=" + e.targ
 $("getUpdate").onclick = () => fetch("/update/install", { headers: { "X-Local-Transcribe": "1" } });
 $("openUpdate").onclick = () => fetch("/update/open");
 $("install").onclick = e => { e.target.disabled = true; fetch("/actions/install").then(tick).finally(() => e.target.disabled = false); };
+$("worker").onchange = e => { if (e.target.id === "loginOn") { e.target.blur(); fetch("/login?value=" + (e.target.checked ? "on" : "off"), { headers: { "X-Local-Transcribe": "1" } }).then(tick); return; } if (e.target.id === "workerOn") { e.target.blur(); fetch("/worker?value=" + (e.target.checked ? "on" : "off"), { headers: { "X-Local-Transcribe": "1" } }).then(tick); } };
 $("lang").onchange = e => { e.target.blur(); fetch("/applang?value=" + e.target.value).then(tick); };
 
 function wave(track) {
@@ -297,6 +307,7 @@ function settings(s) {
   const html = {
     account,
     mounts: mounts.length ? mounts.map(m => `<div class="mount"><div><strong>${esc(m.name || "ISG " + m.id)}</strong><br><code>${esc(m.path)}</code></div><button class="plain" data-mount="change" data-id="${esc(m.id)}">${T.change}</button><button class="plain" data-mount="remove" data-id="${esc(m.id)}">${T.remove}</button></div>`).join("") : `<p class="dim">${T.noMounts}</p>`,
+    worker: (w => `<p><label><input type="checkbox" id="workerOn" style="width:auto;margin:0 .5em 0 0;vertical-align:middle"${w.enabled ? " checked" : ""}> ${T.workerOn}</label></p><p class="dim">${T.workerHelp}</p>${w.login_available ? `<p><label><input type="checkbox" id="loginOn" style="width:auto;margin:0 .5em 0 0;vertical-align:middle"${w.login ? " checked" : ""}> ${T.loginOn}</label></p><p class="dim">${T.loginHelp}</p>` : ""}` + (w.enabled ? `<p class="dim">${T.workerAs}: ${esc(w.machine || "")}${w.last_poll ? `. ${T.workerLast}: ${esc(w.last_poll)}` : ""}${w.last_asset ? `. ${T.workerAsset}: <code>${esc(w.last_asset)}</code>` : ""}${w.paused_until ? `. ${T.workerPaused} ${esc(w.paused_until)}` : ""}</p>` + (w.error ? `<p>${T.workerProblem}: ${esc(w.error)}</p>` : "") : ""))(s.worker || {}),
     models: `<p>${T.speech}: <code>${esc(s.model)}</code></p><p>${T.speakers}: ${{lokaal: T.spLocal, huggingface: T.spHub, uit: T.spOff}[s.speakers]}</p><p class="dim">${T.credit}</p><p class="dim">${T.version} ${esc(s.version)}</p>`,
   };
   for (const id in html) if (drawn["set-" + id] !== html[id] && !$(id).contains(document.activeElement)) { $(id).innerHTML = html[id]; drawn["set-" + id] = html[id]; }

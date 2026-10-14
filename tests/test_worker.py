@@ -120,38 +120,38 @@ check("find geeft alleen assets met die status", sorted(queue.find("aangevraagd"
 # --- claimen
 fake, queue = ready()
 fake.values["a"] = {worker.FIELD: "aangevraagd"}
-check("claim lukt als niemand anders ingrijpt", queue.claim("a", "rocinante", sleep=lambda s: None))
+check("claim lukt als niemand anders ingrijpt (poging 1)", queue.claim("a", "testmac", sleep=lambda s: None) == 1)
 status, info, _ = queue.read("a")
-check("na claim: status bezig met onze naam", status == "bezig" and info.startswith("Bezig op rocinante sinds "))
-check("tweede werker kan een bezig asset niet claimen", not queue.claim("a", "babylon5", sleep=lambda s: None))
+check("na claim: status bezig met onze naam", status == "bezig" and info.startswith("Bezig op testmac sinds "))
+check("tweede werker kan een bezig asset niet claimen", not queue.claim("a", "othermac", sleep=lambda s: None))
 
 fake, queue = ready()
 fake.values["a"] = {worker.FIELD: "aangevraagd"}
 
 
 def other_wins(seconds):
-    fake.values["a"] = {worker.FIELD: "bezig", worker.INFO: "Bezig op babylon5 sinds 10:00 (ffffff)"}
+    fake.values["a"] = {worker.FIELD: "bezig", worker.INFO: "Bezig op othermac sinds 10:00 (ffffff)"}
 
 
-check("andere werker schrijft in de wachttijd: wij geven op", not queue.claim("a", "rocinante", sleep=other_wins))
+check("andere werker schrijft in de wachttijd: wij geven op", not queue.claim("a", "testmac", sleep=other_wins))
 check("claim van een asset dat al klaar is: nee", not (
-    fake.values.update(b={worker.FIELD: "klaar"}) or queue.claim("b", "rocinante", sleep=lambda s: None)))
+    fake.values.update(b={worker.FIELD: "klaar"}) or queue.claim("b", "testmac", sleep=lambda s: None)))
 
 # --- verlopen "bezig"
 fake, queue = ready()
 fake.values = {
-    "old": {worker.FIELD: "bezig", worker.INFO: "Bezig op babylon5 sinds 10:00 (abc)"},
-    "new": {worker.FIELD: "bezig", worker.INFO: "Bezig op babylon5 sinds 12:00 (abc)"},
-    "nodate": {worker.FIELD: "bezig", worker.INFO: "Bezig op babylon5 sinds 08:00 (abc)"},
+    "old": {worker.FIELD: "bezig", worker.INFO: "Bezig op othermac sinds 10:00 (abc)"},
+    "new": {worker.FIELD: "bezig", worker.INFO: "Bezig op othermac sinds 12:00 (abc)"},
+    "nodate": {worker.FIELD: "bezig", worker.INFO: "Bezig op othermac sinds 08:00 (abc)"},
 }
 fake.dates = {"old": (datetime.now(timezone.utc) - timedelta(hours=4)).isoformat(),
               "new": (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()}
-released = queue.release_stale("rocinante")
+released = queue.release_stale("testmac")
 check("alleen een te oude bezig-regel gaat terug", released == ["old"])
 check("zonder tijd van Iconik blijft de regel staan", fake.values["nodate"][worker.FIELD] == "bezig")
 check("verse bezig-regel blijft staan", fake.values["new"][worker.FIELD] == "bezig")
 check("teruggezet asset heeft een uitleg",
-      fake.values["old"][worker.FIELD] == "aangevraagd" and "babylon5 reageerde niet meer" in fake.values["old"][worker.INFO])
+      fake.values["old"][worker.FIELD] == "aangevraagd" and "othermac reageerde niet meer" in fake.values["old"][worker.INFO])
 check("uitleg bevat geen opmaakcode", "|" not in fake.values["old"][worker.INFO] and "T" not in fake.values["old"][worker.INFO].split(": ")[0])
 
 # --- resultaat terugzetten
@@ -162,18 +162,18 @@ for status, message, expect, text in [
     ("fout", "x" * 500, "fout", "xxx"),
 ]:
     fake.values["a"] = {worker.FIELD: "bezig"}
-    worker.report(queue, {"asset_id": "a", "status": status, "message": message}, who="rocinante")
+    worker.report(queue, {"asset_id": "a", "status": status, "message": message}, who="testmac")
     got = fake.values["a"]
     check(f"report {status}: status {expect}", got[worker.FIELD] == expect and text in got[worker.INFO])
     check(f"report {status}: begint met naam en lokale tijd",
-          re.match(r"^rocinante, \d\d-\d\d \d\d:\d\d: ", got[worker.INFO]) is not None, got[worker.INFO][:40])
+          re.match(r"^testmac, \d\d-\d\d \d\d:\d\d: ", got[worker.INFO]) is not None, got[worker.INFO][:40])
 check("lange foutmelding wordt afgekapt", len(fake.values["a"][worker.INFO].split(": ", 1)[1]) == 300)
 
 # --- een rondje
 fake, queue = ready()
 fake.values = {"a": {worker.FIELD: "aangevraagd"}, "b": {worker.FIELD: "aangevraagd"}}
 added = []
-check("bezig: niets doen", worker.poll_once(queue, "rocinante", lambda: True, lambda *a, **k: added.append(a)) is None
+check("bezig: niets doen", worker.poll_once(queue, "testmac", lambda: True, lambda *a, **k: added.append(a)) is None
       and not added and not fake.puts)
 
 real_claim = queue.claim
@@ -186,10 +186,58 @@ def claim_skipping_first(asset_id, who, **kw):
 
 
 queue.claim = claim_skipping_first
-taken = worker.poll_once(queue, "rocinante", lambda: False, lambda asset_id, remote=False: added.append((asset_id, remote)),
+taken = worker.poll_once(queue, "testmac", lambda: False, lambda asset_id, remote=False: added.append((asset_id, remote)),
                          sleep=lambda s: None)
 check("rondje: eerste claim mislukt, tweede lukt", len(calls) == 2 and taken == calls[1])
-check("opdracht wordt als remote toegevoegd", added == [(taken, True)])
+check("opdracht wordt als remote toegevoegd, met het nummer van de poging", added == [(taken, 1)])
+
+# --- fout van de Mac: terug de rij in, tot drie pogingen
+fake, queue = ready()
+fake.values["a"] = {worker.FIELD: "aangevraagd"}
+nap = lambda s: None
+check("claim 1 is poging 1", queue.claim("a", "testmac", sleep=nap) == 1)
+check("give_back na poging 1: terug in de rij", queue.give_back("a", "testmac", "Opslag niet gemount.", 1) is True
+      and fake.values["a"][worker.FIELD] == "aangevraagd" and "Mislukte poging 1 van 3" in fake.values["a"][worker.INFO])
+check("uitleg bevat de reden zonder dubbele punten", ".." not in fake.values["a"][worker.INFO]
+      and "Opslag niet gemount. Mislukte" in fake.values["a"][worker.INFO])
+check("tweede claim is poging 2 en zegt dat", queue.claim("a", "othermac", sleep=nap) == 2
+      and fake.values["a"][worker.INFO].endswith(", poging 2 van 3"))
+check("give_back na poging 2: terug in de rij", queue.give_back("a", "othermac", "Geen internet", 2) is True)
+check("derde claim is poging 3", queue.claim("a", "testmac", sleep=nap) == 3)
+check("give_back na poging 3: definitief fout met uitleg", queue.give_back("a", "testmac", "Geen internet", 3) is False
+      and fake.values["a"][worker.FIELD] == "fout" and "na 3 pogingen opgegeven" in fake.values["a"][worker.INFO])
+
+# report: fout van de Mac tegenover fout van het asset
+fake, queue = ready()
+worker._pause[0] = 0.0
+fake.values["a"] = {worker.FIELD: "bezig", worker.INFO: "Bezig op testmac sinds 13:00 (abc)"}
+worker.report(queue, {"asset_id": "a", "status": "fout", "local": True, "remote": 1,
+                      "message": "De map /Volumes/Opslag/Iconik is niet bereikbaar. Is de opslag (ISG) gemount?"}, who="testmac")
+check("report: fout van de Mac zet het asset terug in de rij", fake.values["a"][worker.FIELD] == "aangevraagd")
+check("  en pauzeert de werker", worker.paused() is True and re.match(r"^\d\d:\d\d$", worker.state["paused_until"]) is not None, worker.state)
+fake.values["b"] = {worker.FIELD: "aangevraagd"}
+before = len(fake.puts)
+check("  tijdens de pauze pakt poll_once niets op", worker.poll_once(queue, "testmac", lambda: False, lambda *a, **k: None, sleep=nap) is None
+      and len(fake.puts) == before)
+worker._pause[0] = 0.0
+check("  na de pauze weer wel", worker.paused() is False and worker.state["paused_until"] is None)
+fake.values["c"] = {worker.FIELD: "bezig", worker.INFO: "Bezig op testmac sinds 13:00 (abc)"}
+worker.report(queue, {"asset_id": "c", "status": "fout", "local": False, "remote": 1, "message": "Kapot bestand"}, who="testmac")
+check("report: fout van het asset blijft fout en pauzeert niet", fake.values["c"][worker.FIELD] == "fout" and worker.paused() is False)
+fake.values["d"] = {worker.FIELD: "bezig", worker.INFO: "Bezig op testmac sinds 13:00 (abc)"}
+worker.report(queue, {"asset_id": "d", "status": "fout", "local": True, "remote": 3, "message": "Geen internet"}, who="testmac")
+check("report: derde mislukte poging wordt fout", fake.values["d"][worker.FIELD] == "fout")
+worker._pause[0] = 0.0
+
+# verlopen bezig bij poging 3 is definitief
+fake, queue = ready()
+fake.values = {"x": {worker.FIELD: "bezig", worker.INFO: "Bezig op othermac sinds 10:00 (abc), poging 3 van 3"},
+               "y": {worker.FIELD: "bezig", worker.INFO: "Bezig op othermac sinds 10:00 (abc)"}}
+fake.dates = {k: (datetime.now(timezone.utc) - timedelta(hours=5)).isoformat() for k in "xy"}
+queue.release_stale("testmac")
+check("verlopen bezig bij poging 3: fout", fake.values["x"][worker.FIELD] == "fout")
+check("verlopen bezig bij poging 1: terug in de rij als mislukte poging 1",
+      fake.values["y"][worker.FIELD] == "aangevraagd" and "Mislukte poging 1 van 3" in fake.values["y"][worker.INFO])
 
 # --- de lus
 log = []
@@ -241,6 +289,10 @@ check("busy_owner leest de naam", worker.busy_owner("Bezig op Mac Studio sinds 1
 check("stamp is lokale tijd, dag-maand uur:minuut", worker.stamp(datetime(2026, 10, 14, 12, 59)) == "14-10 12:59")
 name = worker.machine_name()
 check("machine_name is een leesbare naam", bool(name) and name.isprintable())
+
+fake.values["q"] = {worker.FIELD: "bezig", worker.INFO: "Bezig op testmac sinds 13:00 (abc)"}
+queue.give_back("q", "testmac", "Is de opslag (ISG) gemount?", 1)
+check("geen punt na een vraagteken", "gemount? Mislukte poging 1 van 3" in fake.values["q"][worker.INFO], fake.values["q"][worker.INFO])
 
 print()
 print(f"{sum(results)} van {len(results)} goed")

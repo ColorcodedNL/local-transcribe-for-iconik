@@ -49,15 +49,19 @@ import transcribe  # noqa: E402  (na prepare, zodat het zoekpad en de telemetrie
 import serve  # noqa: E402
 
 window = None
+hidden = False  # het venster is verborgen (rode knop of Cmd+W)
 
 
 def show(page=None):
     """Venster tonen en naar voren halen, eventueel met een andere pagina."""
+    global hidden
     if window is None:
         return
     if page:
         window.load_url(BASE + page)
+    hidden = False
     window.show()
+    reconcile()
 
 
 def local_get(path, timeout=60):
@@ -165,9 +169,124 @@ def restart():
 
 def on_closing():
     """Rode knop of Cmd+W: alleen verbergen, de app en het werk lopen door."""
+    global hidden
     if window is not None:
         window.hide()
+        hidden = True
+        reconcile()
     return False
+
+
+menubar = None  # (statusitem, doel), alleen zolang opdrachten op afstand aan staan
+
+
+def status_text():
+    import worker as remote
+    if serve.busy():
+        return transcribe.L("Bezig met een opdracht", "Working on a job")
+    if remote.paused():
+        return transcribe.L(f"Gepauzeerd tot {remote.state['paused_until']}", f"Paused until {remote.state['paused_until']}")
+    return transcribe.L("Wacht op opdrachten", "Waiting for jobs")
+
+
+def reconcile():
+    """Menubalkicoon en Dock-icoon in lijn brengen met de instellingen. Mag vanaf elke draad."""
+    from PyObjCTools import AppHelper
+    AppHelper.callAfter(apply_menubar)
+
+
+# Het app-icoon (icon.svg) zonder achtergrond: geluidsbalkjes links, tekstregels rechts (x, y, breedte, hoogte).
+GLYPH = [(222, 437, 44, 150), (290, 347, 44, 330), (358, 397, 44, 230), (426, 457, 44, 110),
+         (522, 409, 104, 42), (642, 409, 160, 42), (522, 491, 150, 42), (688, 491, 58, 42), (762, 491, 40, 42),
+         (522, 573, 84, 42), (622, 573, 112, 42)]
+
+
+def glyph(height=16):
+    """Menubalkicoon als sjabloonafbeelding: macOS kleurt het zelf voor licht en donker."""
+    import AppKit
+    import Foundation
+    x0, y0, width, tall = 222, 347, 580, 330
+    scale = height / tall
+
+    def draw(rect):
+        AppKit.NSColor.blackColor().set()
+        for x, y, w, h in GLYPH:
+            AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+                Foundation.NSMakeRect((x - x0) * scale, (y - y0) * scale, w * scale, h * scale),
+                min(w, h) * scale / 2, min(w, h) * scale / 2).fill()
+        return True
+
+    image = AppKit.NSImage.imageWithSize_flipped_drawingHandler_(Foundation.NSMakeSize(width * scale, height), True, draw)
+    image.setTemplate_(True)
+    return image
+
+
+_Target = None
+
+
+def menu_target():
+    """De klasse voor de menu-acties. Een Objective-C klasse kan maar één keer bestaan, dus één keer aanmaken."""
+    global _Target
+    if _Target is None:
+        import AppKit
+
+        class MenuTarget(AppKit.NSObject):
+            def openWindow_(self, sender):
+                show()
+
+            def quitApp_(self, sender):
+                AppKit.NSApp.terminate_(None)
+
+            def menuNeedsUpdate_(self, menu):
+                menu.itemAtIndex_(0).setTitle_(status_text())
+
+        _Target = MenuTarget
+    return _Target
+
+
+def apply_menubar():
+    """Op de hoofddraad: icoon in de menubalk zolang opdrachten op afstand aan staan, Dock-icoon weg als het venster verborgen is."""
+    global menubar
+    import AppKit
+    import objc
+    want = serve.worker_enabled()
+    if want and menubar is None:
+        target = menu_target().alloc().init()
+        menu = AppKit.NSMenu.alloc().init()
+        menu.setAutoenablesItems_(False)
+        menu.addItemWithTitle_action_keyEquivalent_(status_text(), None, "").setEnabled_(False)
+        menu.addItem_(AppKit.NSMenuItem.separatorItem())
+        for title, action in ((transcribe.L("Venster openen", "Open window"), b"openWindow:"),
+                              (transcribe.L("Stop", "Quit"), b"quitApp:")):
+            item = menu.addItemWithTitle_action_keyEquivalent_(title, action, "")
+            item.setTarget_(target)
+        menu.setDelegate_(target)
+        item = AppKit.NSStatusBar.systemStatusBar().statusItemWithLength_(AppKit.NSVariableStatusItemLength)
+        item.button().setImage_(glyph())
+        item.setMenu_(menu)
+        menubar = (item, target, menu)
+        print(f"[{datetime.now():%H:%M:%S}] menubalk: icoon geplaatst")
+    elif not want and menubar is not None:
+        AppKit.NSStatusBar.systemStatusBar().removeStatusItem_(menubar[0])
+        menubar = None
+        print(f"[{datetime.now():%H:%M:%S}] menubalk: icoon weggehaald")
+    policy = AppKit.NSApplicationActivationPolicyAccessory if (want and hidden) else AppKit.NSApplicationActivationPolicyRegular
+    app = AppKit.NSApp
+    if app.activationPolicy() != policy:
+        app.setActivationPolicy_(policy)
+        if policy == AppKit.NSApplicationActivationPolicyRegular and not hidden:
+            app.activateIgnoringOtherApps_(True)
+
+
+def watch_settings():
+    """Het vinkje in Voorkeuren kan elk moment veranderen: elke paar seconden bijwerken."""
+    import time
+    while True:
+        time.sleep(3)
+        try:
+            reconcile()
+        except Exception as error:
+            print(f"menubalk: {error}")
 
 
 STARTING = SUPPORT / "code" / "starting"
@@ -181,10 +300,17 @@ def begin_start():
 
 
 def mark_started():
+    global hidden
     try:
         STARTING.unlink()
     except FileNotFoundError:
         pass
+    if serve.LOGIN_MARKER.exists():  # gestart door inloggen: met opdrachten op afstand aan meteen naar de menubalk
+        serve.LOGIN_MARKER.unlink(missing_ok=True)
+        if serve.worker_enabled() and window is not None:
+            hidden = True
+            window.hide()
+            reconcile()
 
 
 def main():
@@ -248,6 +374,7 @@ def main():
     window = webview.create_window(APP_NAME, BASE + "/", width=980, height=620, min_size=(640, 360))
     window.events.closing += on_closing
     # Niet in privemodus: zo blijft de inlog bij Iconik in dit venster bewaard.
+    threading.Thread(target=watch_settings, daemon=True).start()
     webview.start(mark_started, private_mode=False, storage_path=str(storage))  # de functie draait zodra het venster er is
 
 

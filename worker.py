@@ -9,6 +9,7 @@ Voorkeuren). Er komt niets binnen op deze Mac: de werker vraagt zelf elke minuut
 Deze module praat alleen met Iconik, niet met de rest van de app: `run` krijgt de functies
 die het nodig heeft mee.
 """
+import functools
 import re
 import secrets
 import socket
@@ -25,16 +26,21 @@ REQUESTED, BUSY, DONE, FAILED = "aangevraagd", "bezig", "klaar", "fout"
 STATUSES = (REQUESTED, BUSY, DONE, FAILED)
 
 POLL_SECONDS = 60
+MAX_ATTEMPTS = 3          # pogingen (ook op verschillende Macs) voor een asset definitief "fout" wordt
+COOLDOWN = 10 * 60        # na een fout van deze Mac even niets oppakken
 CLAIM_WAIT = 3            # seconden tussen claimen en terugkijken of een andere werker sneller was
 STALE_AFTER = 3 * 3600    # "bezig" zonder levensteken: de werker is weg, terug de rij in
 
-state = {"enabled": False, "last_poll": None, "last_asset": None, "error": ""}
+state = {"enabled": False, "last_poll": None, "last_asset": None, "error": "", "paused_until": None}
+_pause = [0.0]            # tijdstip (time.time) tot wanneer niets wordt opgepakt
+wake = threading.Event()   # de schakelaar in Voorkeuren zet hem, zodat de werker meteen kijkt
 
 
 class WorkerError(Exception):
     """Iets in de opzet klopt niet (veld of view ontbreekt, geen rechten)."""
 
 
+@functools.lru_cache(maxsize=1)
 def machine_name():
     """De computernaam uit Systeeminstellingen. De hostnaam van het netwerk kan er vreemd uitzien."""
     for args in (["scutil", "--get", "ComputerName"], ["scutil", "--get", "LocalHostName"]):
@@ -62,6 +68,37 @@ def age_seconds(iso, now=None):
     if then.tzinfo is None:
         then = then.replace(tzinfo=timezone.utc)
     return ((now or datetime.now(timezone.utc)) - then).total_seconds()
+
+
+def failed_attempts(info):
+    """Hoeveel pogingen zijn er al mislukt, uit "... Mislukte poging 2 van 3, terug in de rij"."""
+    match = re.search(r"[Mm]islukte poging (\d+)", info or "")
+    return int(match.group(1)) if match else 0
+
+
+def current_attempt(info):
+    """Welke poging loopt er, uit "Bezig op <Mac> sinds ... , poging 2 van 3". Zonder: de eerste."""
+    match = re.search(r"poging (\d+) van", info or "")
+    return int(match.group(1)) if match else 1
+
+
+def pause(seconds=COOLDOWN):
+    """Deze Mac heeft een probleem (opslag weg, geen inlog): even niets oppakken."""
+    _pause[0] = time.time() + seconds
+    state["paused_until"] = stamp(datetime.fromtimestamp(_pause[0]))[-5:]
+
+
+def resume():
+    """De gebruiker zet de schakelaar om: de pauze vervalt."""
+    _pause[0] = 0.0
+    state["paused_until"] = None
+
+
+def paused():
+    if time.time() < _pause[0]:
+        return True
+    state["paused_until"] = None
+    return False
 
 
 def busy_owner(info):
@@ -137,14 +174,17 @@ class Queue:
     def claim(self, asset_id, who, wait=CLAIM_WAIT, sleep=time.sleep):
         """Probeert het asset te claimen. Iconik heeft geen atomaire handeling, dus:
         schrijf, wacht even, lees terug. Staat er dan nog onze eigen regel, dan is het van ons."""
-        status = self.read(asset_id)[0]
+        status, previous, _ = self.read(asset_id)
         if status != REQUESTED:
-            return False
+            return 0
+        attempt = failed_attempts(previous) + 1
         mine = f"Bezig op {who} sinds {stamp()[-5:]} ({secrets.token_hex(3)})"
+        if attempt > 1:
+            mine += f", poging {attempt} van {MAX_ATTEMPTS}"
         self.write(asset_id, BUSY, mine)
         sleep(wait)
         status, info, _ = self.read(asset_id)
-        return status == BUSY and info == mine
+        return attempt if status == BUSY and info == mine else 0
 
     def release_stale(self, who, now=None):
         """Assets die te lang op "bezig" staan (de werker is weg) gaan terug in de rij."""
@@ -155,10 +195,21 @@ class Queue:
                 continue
             age = age_seconds(since, now)
             if age is not None and age > STALE_AFTER:
-                self.write(asset_id, REQUESTED,
-                           f"{who}, {stamp()}: teruggezet, {busy_owner(info) or 'de werker'} reageerde niet meer")
+                self.give_back(asset_id, who, f"{busy_owner(info) or 'De werker'} reageerde niet meer",
+                               current_attempt(info))
                 released.append(asset_id)
         return released
+
+    def give_back(self, asset_id, who, reason, attempt):
+        """Het ligt niet aan het asset maar aan de Mac: terug in de rij voor een andere werker,
+        tot MAX_ATTEMPTS. Geeft True als het asset terug in de rij staat."""
+        reason = (reason or "").rstrip(". ")[:250]
+        if attempt >= MAX_ATTEMPTS:
+            self.write(asset_id, FAILED, f"{who}, {stamp()}: {reason} (na {MAX_ATTEMPTS} pogingen opgegeven)")
+            return False
+        self.write(asset_id, REQUESTED,
+                   f"{who}, {stamp()}: {reason}{'' if reason[-1:] in '?!' else '.'} Mislukte poging {attempt} van {MAX_ATTEMPTS}, terug in de rij")
+        return True
 
     def finish(self, asset_id, who, ok, message):
         self.write(asset_id, DONE if ok else FAILED, f"{who}, {stamp()}: {(message or '')[:300]}")
@@ -167,6 +218,10 @@ class Queue:
 def report(queue, job, who=None):
     """Zet het resultaat van een afgeronde opdracht uit de rij terug in Iconik."""
     who = who or machine_name()
+    if job["status"] == "fout" and job.get("local"):
+        if queue.give_back(job["asset_id"], who, job.get("message", ""), int(job.get("remote") or 1)):
+            pause()
+        return
     if job["status"] == "klaar":
         queue.finish(job["asset_id"], who, True, job.get("message", ""))
     elif job["status"] == "overgeslagen":
@@ -177,12 +232,13 @@ def report(queue, job, who=None):
 
 def poll_once(queue, who, busy, add_job, sleep=time.sleep):
     """Een rondje. Geeft het aangenomen asset-ID terug, of None."""
-    if busy():
+    if busy() or paused():
         return None
     queue.release_stale(who)
     for asset_id in queue.find(REQUESTED, 5):
-        if queue.claim(asset_id, who, sleep=sleep):
-            add_job(asset_id, remote=True)
+        attempt = queue.claim(asset_id, who, sleep=sleep)
+        if attempt:
+            add_job(asset_id, remote=attempt)   # het nummer van de poging, voor het terugmelden
             return asset_id
     return None
 
@@ -211,7 +267,8 @@ def run(get_client, enabled, busy, add_job, stop, log=print, interval=POLL_SECON
             except Exception as error:
                 state["error"] = str(error)[:300]
                 log(f"Werker: {state['error']}")
-        stop.wait(interval)
+        if wake.wait(interval):
+            wake.clear()
 
 
 def start(get_client, enabled, busy, add_job, log=print):

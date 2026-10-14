@@ -98,7 +98,7 @@ def make_options(job):
 def start_prefetch():
     """Leest de audio van de volgende opdracht alvast in, terwijl de GPU met deze bezig is.
 
-    Bij een netwerkarchief kost het lezen van een groot bestand tientallen seconden.
+    Bij een netwerkvolume kost het lezen van een groot bestand tientallen seconden.
     Lukt het vooruit lezen niet (of is er een mapkeuze nodig), dan doet de opdracht het later zelf.
     """
     with work.mutex:
@@ -348,7 +348,8 @@ def app_state():
         "spoken_fixed": bool(settings.get("language")), "has_client_id": bool(config.get("client_id")),
         "mounts": mount_list(config), "model": settings.get("model", ""),
         "speakers": "lokaal" if local else "huggingface" if settings.get("hf_token") else "uit",
-        "worker": dict(remote.state),
+        "worker": dict(remote.state, enabled=worker_enabled(), machine=remote.machine_name(),
+                       login=login_item_on(), login_available=bundle_path() is not None),
     }
 
 
@@ -359,8 +360,9 @@ def clear_finished():
         jobs[:] = keep
 
 
-def add_job(asset_id, remote=False):
-    """`remote`: de opdracht komt uit de rij in Iconik (werker-modus), het resultaat gaat daar terug."""
+def add_job(asset_id, remote=0):
+    """`remote`: de opdracht komt uit de rij in Iconik (werker-modus), het resultaat gaat daar terug.
+    Het is het nummer van de poging (1, 2 of 3); 0 betekent een gewone opdracht."""
     with jobs_lock:
         for job in jobs:
             if job["asset_id"] == asset_id and job["status"] in ("wachtend", "bezig"):
@@ -470,6 +472,22 @@ class Handler(BaseHTTPRequestHandler):
                 if self.headers.get("X-Local-Transcribe") != "1":  # een webpagina kan dit niet meesturen
                     return self.send_error(403)
                 install_update()
+                return self.reply_json({"ok": True})
+            if url.path == "/worker":
+                if self.headers.get("X-Local-Transcribe") != "1":  # een webpagina mag dit niet omzetten
+                    return self.send_error(403)
+                if first("value") in ("on", "off"):
+                    config = transcribe.load_config()
+                    config["worker_enabled"] = first("value") == "on"
+                    transcribe.save_config(config)
+                    remote.resume()
+                    remote.wake.set()
+                return self.reply_json({"ok": True})
+            if url.path == "/login":
+                if self.headers.get("X-Local-Transcribe") != "1":
+                    return self.send_error(403)
+                if first("value") in ("on", "off"):
+                    set_login_item(first("value") == "on")
                 return self.reply_json({"ok": True})
             if url.path == "/update/open":
                 if update.get("url"):
@@ -604,6 +622,39 @@ def worker_enabled():
     return bool(transcribe.load_config().get("worker_enabled"))
 
 
+LOGIN_PLIST = Path.home() / "Library" / "LaunchAgents" / "nl.colorcoded.local-transcribe.plist"
+LOGIN_MARKER = transcribe.SUPPORT_DIR / "login-start"  # de LaunchAgent legt dit neer, de app ruimt het op
+
+
+def bundle_path():
+    """De app zelf, alleen als dit de echte app is (niet bij `uv run serve.py`)."""
+    res = os.environ.get("LOCALTRANSCRIBE_RES")
+    return Path(res).parent.parent if res else None
+
+
+def login_item_on():
+    return LOGIN_PLIST.exists()
+
+
+def set_login_item(on):
+    """Opstarten bij inloggen: een LaunchAgent die de app opent. Gaat in bij de volgende login."""
+    import plistlib
+    import shlex
+    bundle = bundle_path()
+    if not on:
+        LOGIN_PLIST.unlink(missing_ok=True)
+        return
+    if bundle is None:
+        return
+    command = f"touch {shlex.quote(str(LOGIN_MARKER))}; exec /usr/bin/open -a {shlex.quote(str(bundle))}"
+    LOGIN_PLIST.parent.mkdir(parents=True, exist_ok=True)
+    LOGIN_PLIST.write_bytes(plistlib.dumps({
+        "Label": LOGIN_PLIST.stem,
+        "ProgramArguments": ["/bin/sh", "-c", command],
+        "RunAtLoad": True,
+    }))
+
+
 def worker():
     """Een asset tegelijk. Draait in een eigen draad, naast het venster."""
     while True:
@@ -643,8 +694,15 @@ def worker():
             job["status"] = "klaar"
             job["message"] = f"{result['segments']} regels, {result['speakers']} spreker(s)"
             job["result"] = {"segments": result["segments"], "speakers": result["speakers"]}
+        except transcribe.NeedsFolder as folder:
+            job["status"] = "fout"
+            job["local"] = True
+            job["message"] = transcribe.L(f"Het mount point van ISG {folder} is op deze Mac nog niet ingesteld.",
+                                          f"The mount point of ISG {folder} is not set on this Mac yet.")
+            print(f"FOUT: {job['message']}")
         except Problem as problem:
             skipped = getattr(problem, "skip", False)
+            job["local"] = getattr(problem, "local", False)
             job["status"] = "overgeslagen" if skipped else "fout"
             job["message"] = str(problem)
             print(f"{job['status'].upper()}: {problem}")
