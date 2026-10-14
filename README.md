@@ -16,6 +16,7 @@ You start it from Iconik itself: pick an asset, a collection or a selection, and
 - **Filters.** Removes Whisper hallucinations and repetition loops, and skips files without intelligible speech instead of writing nonsense.
 - **Safe replacement.** Running it again replaces only the transcript this app made earlier. Transcripts from other sources are never touched, and the old transcript is only removed once the new one succeeded.
 - **Efficient on collections.** While one asset is being transcribed, the audio of the next one is already read from the network storage.
+- **Remote jobs (optional).** Request a transcript from the Iconik browser and let a Mac that is on in the background do it, without an extra Iconik login. Off by default. See [Remote jobs](#remote-jobs).
 - **Updates from inside the app.** A banner offers new versions; most are a one-click install of a few dozen KB, signed and verified before anything is written.
 
 ![Local Transcribe in the Iconik asset menu](docs/images/iconik-menu.png)
@@ -52,6 +53,18 @@ The app checks GitHub Releases every six hours. When a newer version exists, a b
 - **Full updates** (a new Python, new packages, a new ffmpeg or models) need the new `.dmg`. The banner then offers the download page instead.
 
 Code updates are stored next to the app (`~/Library/Application Support/Local Transcribe for Iconik/code/`), never inside it, so the app's own code signature stays valid. If an update fails to start, the app notes that version as bad and starts again with the code that came in the app bundle. Nothing is installed without a valid signature from the key whose public half is built into the app (`app_shell.py`).
+
+## Remote jobs
+
+Not everyone has a Mac with enough memory for fast transcripts. With **Allow remote jobs** (Preferences) a Mac picks up requests made in the Iconik browser, from any location, and processes them in the background. The normal workflow, started from the Custom Action, does not change.
+
+How it works: Iconik is the queue. The app creates two metadata fields, `local_transcribe_status` (`aangevraagd`, `bezig`, `klaar`, `fout`) and `local_transcribe_info`, and a metadata view called "Local Transcribe". Add the two fields to a metadata view your team uses. To request a transcript, set the status to `aangevraagd` on an asset. The Mac checks once a minute, claims the asset, runs the usual engine and writes the outcome back.
+
+- It uses the Iconik account that is signed in on that Mac, so no extra licence is needed. It only sees assets that account can see, and transcripts appear under that account.
+- Problems with the Mac (storage not mounted, not signed in, no internet) put the asset back in the queue, up to three attempts, then `fout` with the reason. The Mac then pauses for ten minutes. Problems with the asset itself are `fout` straight away.
+- Claiming is a write, a short wait and a read back, because Iconik has no atomic operation. Fine for one worker; test it with several Macs before relying on it.
+- With remote jobs on, the app lives in the menu bar and closing the window hides it. **Open at login** (separate, off by default) starts it hidden at login.
+- The storage (ISG) must be mounted on that Mac.
 
 ## Privacy
 
@@ -97,21 +110,23 @@ bash build_update.sh    # dist/code-<version>-shell<N>.zip and .sig, signed with
 | --- | --- |
 | `main.py` | Boot: picks the bundled code or the newest verified code update, falls back if it fails. Rarely changes |
 | `app_shell.py` | Fixed layer: shell version and the public update key. Rarely changes |
-| `app_main.py` | The app: receiver, job queue, window, Iconik links, quitting, restart after an update |
+| `app_main.py` | The app: receiver, job queue, window, menu bar, Iconik links, quitting, restart after an update |
 | `updater.py` | Finds, downloads, verifies and installs code updates |
-| `serve.py` | Local receiver, job queue, sign-in, Custom Action check |
+| `serve.py` | Local receiver, job queue, sign-in, Custom Action check, remote-jobs switch, open at login |
+| `worker.py` | Remote jobs: the Iconik queue (fields, claim, retries, pause) |
 | `transcribe.py` | The engine: audio tracks, Whisper, speakers, filters, writing to Iconik. Also usable from the command line |
 | `ui.html` | The window (jobs and preferences), in English and Dutch |
 | `launcher.c` | Native launcher that loads the bundled Python in the app process |
 | `setup_actions.py` | Create the Custom Actions from the command line |
 | `tools/` | Measuring tools for audio tracks and assets, update signing (`sign_update.py`), `make_manifest.py`, `local_update_test.py` |
-| `tests/` | Tests for the boot layer, the updater and the update state in `serve.py` |
+| `tests/` | Tests for the boot layer, the updater, the update state in `serve.py`, the remote-jobs queue and its switch |
 
 Logs: `~/Library/Logs/Local Transcribe for Iconik/serve.log`. Each job logs time and memory per stage.
 
 ## Roadmap
 
-- Spread jobs over several Macs, so a whole archive can be transcribed in parallel
+- Test the shared queue with several Macs, so a whole archive can be transcribed in parallel
+- A one-click button in Iconik for remote jobs (needs an endpoint Iconik can reach)
 - Sign and notarize the app, which would allow fully automatic updates (Sparkle)
 - Native Mac interface in Swift
 - Configurable Iconik host for environments other than `app.iconik.io`
