@@ -4,7 +4,7 @@ Two kinds of release, depending on what changed.
 
 ## Code release (most of them)
 
-Changes in `app_main.py`, `serve.py`, `transcribe.py`, `updater.py`, `ui.html` or `setup_actions.py`.
+Changes in `app_main.py`, `serve.py`, `transcribe.py`, `updater.py`, `worker.py`, `ui.html` or `setup_actions.py`.
 
 1. Raise `APP_VERSION` in `transcribe.py`.
 2. Run the tests (see below).
@@ -35,6 +35,8 @@ Apps with a lower shell version only see a link to the release page, not an Inst
 python3 tests/test_boot.py
 uv run --with pynacl --with requests python tests/test_updater.py
 uv run --with pynacl --with requests python tests/test_serve_update.py
+uv run --with pynacl --with requests python tests/test_worker.py
+uv run --with pynacl --with requests python tests/test_serve_worker.py
 ```
 
 On a Mac, `uv run tools/local_update_test.py good|syntax|crash` installs a locally signed test update, so you can watch the app pick it, or fall back. `reset` removes installed updates.
