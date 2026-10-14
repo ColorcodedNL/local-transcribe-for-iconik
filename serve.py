@@ -32,6 +32,7 @@ import requests
 import app_shell
 import transcribe
 import updater
+import worker as remote
 from transcribe import Iconik, Problem
 
 PORT = 8765
@@ -347,6 +348,7 @@ def app_state():
         "spoken_fixed": bool(settings.get("language")), "has_client_id": bool(config.get("client_id")),
         "mounts": mount_list(config), "model": settings.get("model", ""),
         "speakers": "lokaal" if local else "huggingface" if settings.get("hf_token") else "uit",
+        "worker": dict(remote.state),
     }
 
 
@@ -357,13 +359,14 @@ def clear_finished():
         jobs[:] = keep
 
 
-def add_job(asset_id):
+def add_job(asset_id, remote=False):
+    """`remote`: de opdracht komt uit de rij in Iconik (werker-modus), het resultaat gaat daar terug."""
     with jobs_lock:
         for job in jobs:
             if job["asset_id"] == asset_id and job["status"] in ("wachtend", "bezig"):
                 return False
         job = {"n": len(jobs) + 1 + cleared[0], "asset_id": asset_id, "title": "",
-               "status": "wachtend", "message": "", "added": datetime.now(),
+               "status": "wachtend", "message": "", "added": datetime.now(), "remote": remote,
                "started": None, "finished": None, "stage": "", "fraction": None,
                "tracks": []}
         jobs.append(job)
@@ -580,13 +583,34 @@ def busy():
     return current[0] is not None or not work.empty()
 
 
+def report_remote(job):
+    """Zet het resultaat van een opdracht uit de rij terug in Iconik. Drie pogingen,
+    want blijft de status op "bezig" staan, dan gaat het asset na een paar uur opnieuw de rij in."""
+    for attempt in range(3):
+        try:
+            connection = client()
+            if connection is None:
+                raise Problem("Niet ingelogd bij Iconik.")
+            queue_in_iconik = remote.Queue(connection)
+            queue_in_iconik.setup()
+            remote.report(queue_in_iconik, job)
+            return
+        except Exception as error:
+            print(f"Resultaat terugmelden mislukte ({attempt + 1}/3): {error}")
+            time.sleep(5)
+
+
+def worker_enabled():
+    return bool(transcribe.load_config().get("worker_enabled"))
+
+
 def worker():
     """Een asset tegelijk. Draait in een eigen draad, naast het venster."""
     while True:
         try:
             job = work.get(timeout=30)
         except queue.Empty:
-            if settings.get("idle_exit") and time.time() - max(activity["poll"], activity["done"]) > IDLE_EXIT:
+            if settings.get("idle_exit") and not remote.state["enabled"] and time.time() - max(activity["poll"], activity["done"]) > IDLE_EXIT:
                 print(f"Geen opdrachten en geen venster sinds {IDLE_EXIT} s, de ontvanger stopt.", flush=True)
                 os._exit(0)
             continue
@@ -630,6 +654,8 @@ def worker():
             print(f"FOUT: {job['message']}")
         finally:
             job["finished"] = datetime.now()
+            if job.get("remote"):
+                report_remote(job)
             current[0] = None
             activity["done"] = time.time()
             if work.empty():
@@ -660,6 +686,7 @@ def start(model="mlx-community/whisper-large-v3-mlx", language=None, mount=None,
     if not transcribe.speaker_model_available(settings["hf_token"]):
         print("Let op: geen sprekermodel gevonden, sprekerherkenning staat uit.")
     threading.Thread(target=worker, daemon=True, name="werkrij").start()
+    remote.start(client, worker_enabled, busy, add_job)
     threading.Thread(target=check_update, daemon=True, name="update").start()
     return server
 

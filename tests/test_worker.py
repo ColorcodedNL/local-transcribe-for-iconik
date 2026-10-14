@@ -1,0 +1,247 @@
+"""Tests voor worker.py met een nagemaakte Iconik. Geen netwerk.
+
+Draaien: python3 -B tests/test_worker.py
+"""
+import re
+import sys
+import threading
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import worker  # noqa: E402
+
+results = []
+
+
+def check(label, ok, detail=""):
+    results.append(ok)
+    print(("OK    " if ok else "FOUT  ") + label + (f"  ({detail})" if detail and not ok else ""))
+
+
+class Fake:
+    """Doet alsof het Iconik is, voor de calls die worker.py gebruikt."""
+
+    def __init__(self):
+        self.fields = {}
+        self.views = []
+        self.values = {}      # asset -> {veld: waarde}
+        self.dates = {}       # asset -> tijdstip waarop Iconik de status zette
+        self.posts = []
+        self.puts = []
+
+    def get(self, path):
+        if path == "metadata/v1/views/":
+            return {"objects": self.views}
+        if path == "metadata/v1/fields/":
+            return {"objects": [{"name": n} for n in self.fields]}
+        m = re.match(r"metadata/v1/assets/(.+?)/assets/.+?/views/(.+?)/$", path)
+        if m:
+            vals = self.values.get(m.group(1), {})
+            out = {k: {"field_values": [{"value": v}]} for k, v in vals.items()}
+            if worker.FIELD in out and m.group(1) in self.dates:
+                out[worker.FIELD]["date_created"] = self.dates[m.group(1)]
+            return {"metadata_values": out}
+        raise AssertionError("onbekende GET " + path)
+
+    def post(self, path, body):
+        self.posts.append((path, body))
+        if path == "metadata/v1/fields/":
+            self.fields[body["name"]] = body
+            return body
+        if path == "metadata/v1/views/":
+            view = dict(body, id="view-1")
+            self.views.append(view)
+            return view
+        if path.startswith("search/v1/search/"):
+            term = body["filter"]["terms"][0]
+            assert term["name"] == "metadata." + worker.FIELD
+            ids = [a for a, v in self.values.items() if v.get(worker.FIELD) == term["value"]]
+            return {"objects": [{"id": i} for i in ids]}
+        raise AssertionError("onbekende POST " + path)
+
+    def _call(self, method, path, json=None):
+        self.puts.append((method, path, json))
+        if path.startswith("metadata/v1/views/"):
+            for v in self.views:
+                if path.endswith(v["id"] + "/"):
+                    v.update(json)
+            return {}
+        m = re.match(r"metadata/v1/assets/(.+?)/assets/.+?/views/", path)
+        assert method == "PUT" and m, path
+        asset = self.values.setdefault(m.group(1), {})
+        for name, item in json["metadata_values"].items():
+            assert item["mode"] == "overwrite"
+            asset[name] = item["field_values"][0]["value"]
+        self.dates[m.group(1)] = datetime.now(timezone.utc).isoformat()
+        return {}
+
+
+def ready():
+    fake = Fake()
+    queue = worker.Queue(fake)
+    queue.setup(create=True)
+    return fake, queue
+
+
+# --- opzet
+fake = Fake()
+queue = worker.Queue(fake)
+try:
+    queue.setup(create=False)
+    check("zonder view en zonder create: fout", False)
+except worker.WorkerError:
+    check("zonder view en zonder create: WorkerError", True)
+
+view_id = queue.setup(create=True)
+check("create maakt beide velden", set(fake.fields) == {worker.FIELD, worker.INFO})
+check("statusveld is een dropdown met vier opties",
+      fake.fields[worker.FIELD]["field_type"] == "drop_down"
+      and [o["value"] for o in fake.fields[worker.FIELD]["options"]] == list(worker.STATUSES))
+check("create maakt de view met beide velden",
+      view_id == "view-1" and [f["name"] for f in fake.views[0]["view_fields"]] == [worker.FIELD, worker.INFO])
+before = len(fake.posts)
+worker.Queue(fake).setup(create=True)
+check("tweede keer create maakt niets opnieuw", len(fake.posts) == before)
+
+fake2 = Fake()
+fake2.fields[worker.FIELD] = {"name": worker.FIELD}
+fake2.views.append({"id": "v9", "name": worker.VIEW, "view_fields": [{"name": worker.FIELD}]})
+worker.Queue(fake2).setup(create=True)
+check("bestaande view met een veld krijgt het tweede erbij",
+      [f["name"] for f in fake2.views[0]["view_fields"]] == [worker.FIELD, worker.INFO]
+      and worker.INFO in fake2.fields)
+
+# --- zoeken
+fake, queue = ready()
+fake.values = {"a": {worker.FIELD: "aangevraagd"}, "b": {worker.FIELD: "klaar"}, "c": {worker.FIELD: "aangevraagd"}}
+check("find geeft alleen assets met die status", sorted(queue.find("aangevraagd")) == ["a", "c"])
+
+# --- claimen
+fake, queue = ready()
+fake.values["a"] = {worker.FIELD: "aangevraagd"}
+check("claim lukt als niemand anders ingrijpt", queue.claim("a", "rocinante", sleep=lambda s: None))
+status, info, _ = queue.read("a")
+check("na claim: status bezig met onze naam", status == "bezig" and info.startswith("Bezig op rocinante sinds "))
+check("tweede werker kan een bezig asset niet claimen", not queue.claim("a", "babylon5", sleep=lambda s: None))
+
+fake, queue = ready()
+fake.values["a"] = {worker.FIELD: "aangevraagd"}
+
+
+def other_wins(seconds):
+    fake.values["a"] = {worker.FIELD: "bezig", worker.INFO: "Bezig op babylon5 sinds 10:00 (ffffff)"}
+
+
+check("andere werker schrijft in de wachttijd: wij geven op", not queue.claim("a", "rocinante", sleep=other_wins))
+check("claim van een asset dat al klaar is: nee", not (
+    fake.values.update(b={worker.FIELD: "klaar"}) or queue.claim("b", "rocinante", sleep=lambda s: None)))
+
+# --- verlopen "bezig"
+fake, queue = ready()
+fake.values = {
+    "old": {worker.FIELD: "bezig", worker.INFO: "Bezig op babylon5 sinds 10:00 (abc)"},
+    "new": {worker.FIELD: "bezig", worker.INFO: "Bezig op babylon5 sinds 12:00 (abc)"},
+    "nodate": {worker.FIELD: "bezig", worker.INFO: "Bezig op babylon5 sinds 08:00 (abc)"},
+}
+fake.dates = {"old": (datetime.now(timezone.utc) - timedelta(hours=4)).isoformat(),
+              "new": (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()}
+released = queue.release_stale("rocinante")
+check("alleen een te oude bezig-regel gaat terug", released == ["old"])
+check("zonder tijd van Iconik blijft de regel staan", fake.values["nodate"][worker.FIELD] == "bezig")
+check("verse bezig-regel blijft staan", fake.values["new"][worker.FIELD] == "bezig")
+check("teruggezet asset heeft een uitleg",
+      fake.values["old"][worker.FIELD] == "aangevraagd" and "babylon5 reageerde niet meer" in fake.values["old"][worker.INFO])
+check("uitleg bevat geen opmaakcode", "|" not in fake.values["old"][worker.INFO] and "T" not in fake.values["old"][worker.INFO].split(": ")[0])
+
+# --- resultaat terugzetten
+fake, queue = ready()
+for status, message, expect, text in [
+    ("klaar", "12 regels, 2 spreker(s)", "klaar", "12 regels"),
+    ("overgeslagen", "Geen verstaanbare spraak", "klaar", "Overgeslagen: Geen verstaanbare spraak"),
+    ("fout", "x" * 500, "fout", "xxx"),
+]:
+    fake.values["a"] = {worker.FIELD: "bezig"}
+    worker.report(queue, {"asset_id": "a", "status": status, "message": message}, who="rocinante")
+    got = fake.values["a"]
+    check(f"report {status}: status {expect}", got[worker.FIELD] == expect and text in got[worker.INFO])
+    check(f"report {status}: begint met naam en lokale tijd",
+          re.match(r"^rocinante, \d\d-\d\d \d\d:\d\d: ", got[worker.INFO]) is not None, got[worker.INFO][:40])
+check("lange foutmelding wordt afgekapt", len(fake.values["a"][worker.INFO].split(": ", 1)[1]) == 300)
+
+# --- een rondje
+fake, queue = ready()
+fake.values = {"a": {worker.FIELD: "aangevraagd"}, "b": {worker.FIELD: "aangevraagd"}}
+added = []
+check("bezig: niets doen", worker.poll_once(queue, "rocinante", lambda: True, lambda *a, **k: added.append(a)) is None
+      and not added and not fake.puts)
+
+real_claim = queue.claim
+calls = []
+
+
+def claim_skipping_first(asset_id, who, **kw):
+    calls.append(asset_id)
+    return False if len(calls) == 1 else real_claim(asset_id, who, **kw)
+
+
+queue.claim = claim_skipping_first
+taken = worker.poll_once(queue, "rocinante", lambda: False, lambda asset_id, remote=False: added.append((asset_id, remote)),
+                         sleep=lambda s: None)
+check("rondje: eerste claim mislukt, tweede lukt", len(calls) == 2 and taken == calls[1])
+check("opdracht wordt als remote toegevoegd", added == [(taken, True)])
+
+# --- de lus
+log = []
+stop = threading.Event()
+count = [0]
+asked = []
+
+
+def enabled_off():
+    count[0] += 1
+    if count[0] >= 2:
+        stop.set()
+    return False
+
+
+worker.run(lambda: asked.append(1), enabled_off, lambda: False, lambda *a, **k: None, stop, log.append, interval=0)
+check("lus uit: get_client nooit aangeroepen", not asked and worker.state["enabled"] is False)
+
+stop = threading.Event()
+count = [0]
+
+
+def enabled_on():
+    count[0] += 1
+    if count[0] >= 2:
+        stop.set()
+    return True
+
+
+worker.run(lambda: None, enabled_on, lambda: False, lambda *a, **k: None, stop, log.append, interval=0)
+check("lus aan maar niet ingelogd: fout in de status", "Niet ingelogd" in worker.state["error"])
+
+stop = threading.Event()
+count = [0]
+
+
+def boom():
+    raise RuntimeError("netwerk weg")
+
+
+worker.run(boom, enabled_on, lambda: False, lambda *a, **k: None, stop, log.append, interval=0)
+check("fout in een rondje stopt de lus niet", count[0] >= 2 and "netwerk weg" in worker.state["error"] and any("netwerk weg" in l for l in log))
+
+# --- hulpfuncties
+check("age_seconds onleesbaar is None", worker.age_seconds("niet") is None and worker.age_seconds(None) is None)
+check("age_seconds leest een tijd van Iconik", abs(worker.age_seconds("2026-10-14T10:37:36.882000+00:00",
+      datetime(2026, 10, 14, 10, 47, 36, 882000, tzinfo=timezone.utc)) - 600) < 0.01)
+check("busy_owner leest de naam", worker.busy_owner("Bezig op Mac Studio sinds 12:59 (a1b2c3)") == "Mac Studio" and worker.busy_owner("x") == "")
+check("stamp is lokale tijd, dag-maand uur:minuut", worker.stamp(datetime(2026, 10, 14, 12, 59)) == "14-10 12:59")
+name = worker.machine_name()
+check("machine_name is een leesbare naam", bool(name) and name.isprintable())
+
+print()
+print(f"{sum(results)} van {len(results)} goed")
+sys.exit(0 if all(results) else 1)
