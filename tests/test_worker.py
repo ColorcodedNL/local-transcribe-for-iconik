@@ -201,9 +201,9 @@ check("give_back na poging 1: terug in de rij", queue.give_back("a", "testmac", 
 check("uitleg bevat de reden zonder dubbele punten", ".." not in fake.values["a"][worker.INFO]
       and "Opslag niet gemount. Mislukte" in fake.values["a"][worker.INFO])
 check("tweede claim is poging 2 en zegt dat", queue.claim("a", "othermac", sleep=nap) == 2
-      and fake.values["a"][worker.INFO].endswith(", poging 2 van 3"))
+      and ", poging 2 van 3, laatste teken " in fake.values["a"][worker.INFO])
 check("give_back na poging 2: terug in de rij", queue.give_back("a", "othermac", "Geen internet", 2) is True)
-check("derde claim is poging 3", queue.claim("a", "testmac", sleep=nap) == 3)
+check("derde claim is poging 3", queue.claim("a", "thirdmac", sleep=nap) == 3)
 check("give_back na poging 3: definitief fout met uitleg", queue.give_back("a", "testmac", "Geen internet", 3) is False
       and fake.values["a"][worker.FIELD] == "fout" and "na 3 pogingen opgegeven" in fake.values["a"][worker.INFO])
 
@@ -238,6 +238,82 @@ queue.release_stale("testmac")
 check("verlopen bezig bij poging 3: fout", fake.values["x"][worker.FIELD] == "fout")
 check("verlopen bezig bij poging 1: terug in de rij als mislukte poging 1",
       fake.values["y"][worker.FIELD] == "aangevraagd" and "Mislukte poging 1 van 3" in fake.values["y"][worker.INFO])
+
+# --- laatste teken en sneller overnemen
+now = datetime.now(timezone.utc)
+check("busy_info zet een laatste teken in UTC, 24 uur",
+      re.search(r", laatste teken \d{4}-\d\d-\d\d \d\d:\d\dZ$", worker.busy_info("m", "abc123", 1)) is not None)
+check("last_sign leest het terug", worker.last_sign("x, laatste teken 2026-10-14 14:17Z [mislukt op: a]")
+      == datetime(2026, 10, 14, 14, 17, tzinfo=timezone.utc) and worker.last_sign("Bezig op m sinds 10:00 (abc123)") is None)
+check("utc_stamp rekent een lokale tijd om naar UTC",
+      worker.utc_stamp(datetime(2026, 10, 14, 16, 17, tzinfo=timezone(timedelta(hours=2)))) == "2026-10-14 14:17Z")
+check("failed_on en clean_name", worker.failed_on("... [mislukt op: Mac A; Mac B]") == ["Mac A", "Mac B"]
+      and worker.failed_on("niets") == [] and worker.clean_name("Mac; [x]") == "Mac x")
+
+fake, queue = ready()
+fake.values = {
+    "fresh": {worker.FIELD: "bezig", worker.INFO: worker.busy_info("othermac", "aaaaaa", 1, now=now - timedelta(minutes=10))
+              .replace(worker.utc_stamp(now - timedelta(minutes=10)), worker.utc_stamp(now - timedelta(minutes=2)))},
+    "dead": {worker.FIELD: "bezig", worker.INFO: worker.busy_info("othermac", "bbbbbb", 1, now=now - timedelta(minutes=30))},
+    "legacy": {worker.FIELD: "bezig", worker.INFO: "Bezig op oldmac sinds 10:00 (cccccc)"},
+}
+fake.dates = {"fresh": (now - timedelta(hours=1)).isoformat(), "dead": now.isoformat(),
+              "legacy": (now - timedelta(hours=1)).isoformat()}
+released = queue.release_stale("testmac")
+check("laatste teken van 30 minuten geleden: terug in de rij, ook al is de status net gezet", released == ["dead"])
+check("laatste teken van 2 minuten geleden blijft staan", fake.values["fresh"][worker.FIELD] == "bezig")
+check("oudere versie zonder laatste teken: pas na 3 uur", fake.values["legacy"][worker.FIELD] == "bezig")
+check("teruggezet asset noemt de Mac die wegviel", "[mislukt op: othermac]" in fake.values["dead"][worker.INFO]
+      and "othermac reageerde niet meer" in fake.values["dead"][worker.INFO])
+
+# het hartslagschrijven
+fake, queue = ready()
+worker.current.clear()
+fake.values["a"] = {worker.FIELD: "aangevraagd"}
+added = []
+taken = worker.poll_once(queue, "testmac", lambda: False, lambda asset_id, remote=False: added.append(asset_id), sleep=nap)
+check("poll_once onthoudt het asset voor de heartbeat", taken == "a" and worker.current.get("asset") == "a"
+      and worker.current.get("code") == worker.claim_code(fake.values["a"][worker.INFO]))
+puts = len(fake.puts)
+check("heartbeat meteen na de claim: nog niets schrijven", worker.beat(queue) is False and len(fake.puts) == puts)
+worker.current["beat"] -= worker.HEARTBEAT + 1
+later = now + timedelta(hours=1)
+check("heartbeat na een minuut: schrijft een nieuw laatste teken", worker.beat(queue, now=later) is True
+      and worker.utc_stamp(later) in fake.values["a"][worker.INFO] and fake.values["a"][worker.FIELD] == "bezig")
+check("  de claimcode blijft gelijk", worker.claim_code(fake.values["a"][worker.INFO]) == worker.current["code"])
+check("  het schrijven raakt de status niet", fake.puts[-1][2]["metadata_values"].keys() == {worker.INFO})
+
+fake.values["a"][worker.INFO] = "Bezig op othermac sinds 10:00 (ffffff)"
+worker.current["beat"] -= worker.HEARTBEAT + 1
+puts = len(fake.puts)
+check("asset is van een ander geworden: stoppen met schrijven", worker.beat(queue) is False and not worker.current
+      and len(fake.puts) == puts)
+
+fake.values["a"] = {worker.FIELD: "aangevraagd"}
+worker.poll_once(queue, "testmac", lambda: False, lambda *a, **k: None, sleep=nap)
+worker.current["beat"] -= worker.HEARTBEAT + 1
+worker.report(queue, {"asset_id": "a", "status": "klaar", "message": "3 regels"}, who="testmac")
+check("report ruimt het asset op", not worker.current)
+check("heartbeat na het resultaat overschrijft het niet", worker.beat(queue) is False
+      and fake.values["a"][worker.FIELD] == "klaar" and "3 regels" in fake.values["a"][worker.INFO])
+
+# de eigen Mac probeert het niet meteen opnieuw
+fake, queue = ready()
+worker.current.clear()
+fake.values["a"] = {worker.FIELD: "aangevraagd"}
+check("claim door testmac", queue.claim("a", "testmac", sleep=nap) == 1)
+queue.give_back("a", "testmac", "Opslag niet gemount.", 1)
+check("na de fout staat de Mac in de lijst", "[mislukt op: testmac]" in fake.values["a"][worker.INFO])
+check("dezelfde Mac slaat het asset over", queue.claim("a", "testmac", sleep=nap) == 0
+      and fake.values["a"][worker.FIELD] == "aangevraagd")
+check("een andere Mac pakt het wel, de lijst blijft", queue.claim("a", "othermac", sleep=nap) == 2
+      and "[mislukt op: testmac]" in fake.values["a"][worker.INFO])
+queue.give_back("a", "othermac", "Geen internet", 2)
+check("lijst groeit met de tweede Mac", "[mislukt op: testmac; othermac]" in fake.values["a"][worker.INFO])
+fake.dates["a"] = (datetime.now(timezone.utc) - timedelta(minutes=worker.RETRY_ELSEWHERE // 60 + 1)).isoformat()
+check("na tien minuten mag de eerste Mac het weer proberen (ook als er maar een Mac is)",
+      queue.claim("a", "testmac", sleep=nap) == 3)
+worker.current.clear()
 
 # --- de lus
 log = []
