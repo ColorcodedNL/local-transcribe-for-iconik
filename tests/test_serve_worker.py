@@ -65,9 +65,41 @@ except transcribe.Problem as problem:
 
 state = serve.app_state()
 check("het venster krijgt de status mee", state["worker"]["enabled"] is True and state["worker"]["machine"], state.get("worker"))
-check("de status bevat geen geheimen", set(state["worker"]) <= {"enabled", "last_poll", "last_asset", "error", "machine", "paused_until", "login", "login_available"}, state["worker"])
+check("de status bevat geen geheimen", set(state["worker"]) <= {"enabled", "last_poll", "last_asset", "error", "machine", "paused_until", "login", "login_available", "iconik_language"}, state["worker"])
 get("/worker?value=off", header)
 check("uit staat ook zo in de status", serve.app_state()["worker"]["enabled"] is False)
+
+# taal van de velden in Iconik
+calls = []
+
+
+class StubQueue:
+    def __init__(self, connection):
+        pass
+
+    def setup(self, create=False, language="nl"):
+        calls.append(("setup", create, language))
+
+    def apply_language(self, language):
+        calls.append(("apply", language))
+
+
+real_queue, real_client = serve.remote.Queue, serve.client
+serve.remote.Queue, serve.client = StubQueue, lambda: object()
+check("taal van de velden: zonder header 403", get("/iconik-language?value=en") == 403 and not calls)
+check("taal van de velden: onbekende taal doet niets", get("/iconik-language?value=fr", header) == 200 and not calls
+      and "iconik_language" not in transcribe.load_config())
+check("taal van de velden: Engels kiezen maakt eerst de velden af en zet dan de labels",
+      get("/iconik-language?value=en", header) == 200 and calls == [("setup", True, "en"), ("apply", "en")])
+check("  en onthoudt de keuze", transcribe.load_config().get("iconik_language") == "en"
+      and serve.worker_languages()[1] == "en")
+serve.client = lambda: None
+calls.clear()
+before = transcribe.load_config().get("iconik_language")
+get("/iconik-language?value=nl", header)
+check("  niet ingelogd: niets gewijzigd, keuze blijft", not calls and transcribe.load_config().get("iconik_language") == before)
+serve.remote.Queue, serve.client = real_queue, real_client
+check("  en het venster krijgt de gekozen taal mee", serve.app_state()["worker"]["iconik_language"] == "en")
 
 print("\nALLES OK" if not fails else f"\n{fails} FOUT")
 sys.exit(1 if fails else 0)

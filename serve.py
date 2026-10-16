@@ -349,7 +349,8 @@ def app_state():
         "mounts": mount_list(config), "model": settings.get("model", ""),
         "speakers": "lokaal" if local else "huggingface" if settings.get("hf_token") else "uit",
         "worker": dict(remote.state, enabled=worker_enabled(), machine=remote.machine_name(),
-                       login=login_item_on(), login_available=bundle_path() is not None),
+                       login=login_item_on(), login_available=bundle_path() is not None,
+                       iconik_language=worker_languages()[1]),
     }
 
 
@@ -482,6 +483,25 @@ class Handler(BaseHTTPRequestHandler):
                     transcribe.save_config(config)
                     remote.resume()
                     remote.wake.set()
+                return self.reply_json({"ok": True})
+            if url.path == "/iconik-language":
+                if self.headers.get("X-Local-Transcribe") != "1":
+                    return self.send_error(403)
+                code = first("value")
+                if code not in ("nl", "en"):
+                    return self.reply_json({"ok": False, "error": "language"})
+                try:
+                    connection = client()
+                    if connection is None:
+                        raise Problem(transcribe.L("Niet ingelogd bij Iconik.", "Not logged in to Iconik."))
+                    queue_in_iconik = remote.Queue(connection)
+                    queue_in_iconik.setup(create=True, language=code)
+                    queue_in_iconik.apply_language(code)
+                except Exception as error:
+                    return self.reply_json({"ok": False, "error": str(error)[:300]})
+                config = transcribe.load_config()
+                config["iconik_language"] = code
+                transcribe.save_config(config)
                 return self.reply_json({"ok": True})
             if url.path == "/login":
                 if self.headers.get("X-Local-Transcribe") != "1":
@@ -622,6 +642,13 @@ def worker_enabled():
     return bool(transcribe.load_config().get("worker_enabled"))
 
 
+def worker_languages():
+    """(taal van het detailveld, taal van de labels in Iconik). De labels volgen de app tot iemand
+    een taal kiest: ze gelden voor iedereen in deze Iconik-omgeving, dus ze wisselen niet vanzelf mee."""
+    chosen = transcribe.load_config().get("iconik_language")
+    return transcribe.app_language(), chosen if chosen in ("nl", "en") else transcribe.app_language()
+
+
 LOGIN_PLIST = Path.home() / "Library" / "LaunchAgents" / "nl.colorcoded.local-transcribe.plist"
 LOGIN_MARKER = transcribe.SUPPORT_DIR / "login-start"  # de LaunchAgent legt dit neer, de app ruimt het op
 
@@ -744,7 +771,7 @@ def start(model="mlx-community/whisper-large-v3-mlx", language=None, mount=None,
     if not transcribe.speaker_model_available(settings["hf_token"]):
         print("Let op: geen sprekermodel gevonden, sprekerherkenning staat uit.")
     threading.Thread(target=worker, daemon=True, name="werkrij").start()
-    remote.start(client, worker_enabled, busy, add_job)
+    remote.start(client, worker_enabled, busy, add_job, languages=worker_languages)
     threading.Thread(target=check_update, daemon=True, name="update").start()
     return server
 

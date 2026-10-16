@@ -1,4 +1,4 @@
-"""Zet assets in de rij voor een werker-Mac (status "aangevraagd"), zonder de Iconik-weergave.
+"""Zet assets in de rij voor een werker-Mac (status "requested"), zonder de Iconik-weergave.
 
 Gebruik: cd ~/iconik-transcribe && uv run tools/request_transcript.py <asset_id> [<asset_id> ...]
 """
@@ -22,8 +22,8 @@ def main():
     queue = worker.Queue(iconik)
     queue.setup()
     for asset_id in ids:
-        queue.write(asset_id, worker.REQUESTED, f"{worker.stamp()}: aangevraagd met request_transcript.py")
-        print("aangevraagd:", asset_id)
+        queue.write(asset_id, worker.REQUESTED, f"{worker.stamp()}: requested with request_transcript.py")
+        print("requested:", asset_id)
 
 
 if __name__ == "__main__":

@@ -112,7 +112,7 @@ button.go { font: inherit; padding: 4px 10px; border-radius: 5px; border: 0; bac
     <section class="set"><h3 data-t="modelsTitle"></h3><div id="models"></div></section>
     <section class="set"><h3 data-t="workerTitle"></h3><div id="worker"></div></section>
     <section class="set"><h3 data-t="spoken"></h3><p>
-      <select id="spoken"><option value="auto" data-t="spokenAuto"></option><option value="nl">Nederlands</option><option value="en">English</option><option value="de">Deutsch</option><option value="fr">Français</option><option value="es">Español</option><option value="it">Italiano</option><option value="sv">Svenska</option></select></p>
+      <select id="spoken"><option value="auto" data-t="spokenAuto"></option><option value="nl">Nederlands</option><option value="en">English</option><option value="de" data-name="Deutsch" data-untested>Deutsch</option><option value="fr" data-name="Français" data-untested>Français</option><option value="es" data-name="Español" data-untested>Español</option><option value="it" data-name="Italiano" data-untested>Italiano</option><option value="sv" data-name="Svenska" data-untested>Svenska</option></select></p>
       <p class="dim" data-t="spokenHelp"></p></section>
     <section class="set"><h3 data-t="language"></h3><p>
       <select id="lang"><option value="auto" data-t="langAuto"></option><option value="nl">Nederlands</option><option value="en">English</option></select></p></section>
@@ -131,8 +131,11 @@ const TEXT = {
     workerTitle: "Op afstand", workerOn: "Opdrachten op afstand toestaan",
     workerHelp: "Staat opdrachten uit Iconik toe vanaf elke locatie. Dit draait op de achtergrond. De opslag (ISG) moet op deze Mac gemount zijn.",
     loginOn: "Opstarten bij inloggen", loginHelp: "Opent de app bij het inloggen. Staat opdrachten op afstand aan, dan blijft hij in de menubalk.",
+    fieldsLang: "Taal van de velden in Iconik",
+    fieldsHelp: "Wat mensen in Iconik zien bij Transcriptie en de keuzes Aangevraagd, Bezig, Klaar en Fout. Geldt voor iedereen in deze Iconik-omgeving en vraagt beheerrechten. Een view die het veld al bevat, houdt zijn eigen kopie: voeg het veld daar opnieuw toe.",
+    fieldsDone: "Bijgewerkt in Iconik.", fieldsFail: "Niet gelukt",
     workerLast: "Laatst gecontroleerd", workerPaused: "Gepauzeerd tot", workerAsset: "Laatst opgepakt", workerProblem: "Probleem", workerAs: "Naam",
-    modelsTitle: "Modellen", language: "Taal van de app", spoken: "Gesproken taal", spokenAuto: "Herken per asset",
+    modelsTitle: "Modellen", language: "Taal van de app", spoken: "Gesproken taal", spokenAuto: "Herken per asset", untested: "niet getest",
     spokenHelp: "Herkennen kijkt naar de luidste stukken van de opname. Zet de taal alleen vast als al je materiaal in één taal is.", langAuto: "Volg macOS",
     stages: ["Audio lezen", "Transcriberen", "Sprekers", "Naar Iconik"],
     download: "Whisper-model downloaden (eenmalig, ca. 3 GB)",
@@ -162,8 +165,11 @@ const TEXT = {
     workerTitle: "Remote", workerOn: "Allow remote jobs",
     workerHelp: "Allows jobs from Iconik from any location. This runs in the background. The storage (ISG) must be mounted on this Mac.",
     loginOn: "Open at login", loginHelp: "Opens the app when you log in. With remote jobs allowed it stays in the menu bar.",
+    fieldsLang: "Language of the fields in Iconik",
+    fieldsHelp: "What people see in Iconik for Transcription and the choices Requested, In progress, Done and Failed. Applies to everyone in this Iconik environment and needs admin rights. A view that already contains the field keeps its own copy: add the field to it again.",
+    fieldsDone: "Updated in Iconik.", fieldsFail: "Did not work",
     workerLast: "Last checked", workerPaused: "Paused until", workerAsset: "Last picked up", workerProblem: "Problem", workerAs: "Name",
-    modelsTitle: "Models", language: "App language", spoken: "Spoken language", spokenAuto: "Detect per asset",
+    modelsTitle: "Models", language: "App language", spoken: "Spoken language", spokenAuto: "Detect per asset", untested: "untested",
     spokenHelp: "Detection looks at the loudest parts of the recording. Only fix the language if all your footage is in one language.", langAuto: "Follow macOS",
     stages: ["Read audio", "Transcribe", "Speakers", "Send to Iconik"],
     download: "Downloading Whisper model (once, about 3 GB)",
@@ -198,6 +204,7 @@ function setLanguage(choice) {
   T = TEXT[lang]; drawn = {}; $("list").innerHTML = "";
   document.documentElement.lang = lang;
   document.querySelectorAll("[data-t]").forEach(el => el.textContent = T[el.dataset.t]);
+  document.querySelectorAll("option[data-untested]").forEach(el => el.textContent = el.dataset.name + " (" + T.untested + ")");
 }
 function note(text) {
   if (lang === "nl") return text;
@@ -218,7 +225,20 @@ $("spoken").onchange = e => { e.target.blur(); fetch("/language?value=" + e.targ
 $("getUpdate").onclick = () => fetch("/update/install", { headers: { "X-Local-Transcribe": "1" } });
 $("openUpdate").onclick = () => fetch("/update/open");
 $("install").onclick = e => { e.target.disabled = true; fetch("/actions/install").then(tick).finally(() => e.target.disabled = false); };
-$("worker").onchange = e => { if (e.target.id === "loginOn") { e.target.blur(); fetch("/login?value=" + (e.target.checked ? "on" : "off"), { headers: { "X-Local-Transcribe": "1" } }).then(tick); return; } if (e.target.id === "workerOn") { e.target.blur(); fetch("/worker?value=" + (e.target.checked ? "on" : "off"), { headers: { "X-Local-Transcribe": "1" } }).then(tick); } };
+let fieldsMsg = "";
+function fieldsHtml(w) {
+  const cur = w.iconik_language || "nl";
+  return `<p>${T.fieldsLang} <select id="fieldsLang" style="width:auto"><option value="nl"${cur === "nl" ? " selected" : ""}>Nederlands</option><option value="en"${cur === "en" ? " selected" : ""}>English</option></select></p><p class="dim">${T.fieldsHelp}</p>` + (fieldsMsg ? `<p>${esc(fieldsMsg)}</p>` : "");
+}
+$("worker").onchange = e => {
+  const h = { headers: { "X-Local-Transcribe": "1" } };
+  if (e.target.id === "loginOn") { e.target.blur(); fetch("/login?value=" + (e.target.checked ? "on" : "off"), h).then(tick); return; }
+  if (e.target.id === "workerOn") { e.target.blur(); fetch("/worker?value=" + (e.target.checked ? "on" : "off"), h).then(tick); return; }
+  if (e.target.id === "fieldsLang") {
+    const value = e.target.value; e.target.blur(); fieldsMsg = "";
+    fetch("/iconik-language?value=" + value, h).then(r => r.json()).then(r => { fieldsMsg = r.ok ? T.fieldsDone : T.fieldsFail + ": " + (r.error || ""); tick(); }).catch(() => { fieldsMsg = T.fieldsFail; tick(); });
+  }
+};
 $("lang").onchange = e => { e.target.blur(); fetch("/applang?value=" + e.target.value).then(tick); };
 
 function wave(track) {
@@ -307,7 +327,7 @@ function settings(s) {
   const html = {
     account,
     mounts: mounts.length ? mounts.map(m => `<div class="mount"><div><strong>${esc(m.name || "ISG " + m.id)}</strong><br><code>${esc(m.path)}</code></div><button class="plain" data-mount="change" data-id="${esc(m.id)}">${T.change}</button><button class="plain" data-mount="remove" data-id="${esc(m.id)}">${T.remove}</button></div>`).join("") : `<p class="dim">${T.noMounts}</p>`,
-    worker: (w => `<p><label><input type="checkbox" id="workerOn" style="width:auto;margin:0 .5em 0 0;vertical-align:middle"${w.enabled ? " checked" : ""}> ${T.workerOn}</label></p><p class="dim">${T.workerHelp}</p>${w.login_available ? `<p><label><input type="checkbox" id="loginOn" style="width:auto;margin:0 .5em 0 0;vertical-align:middle"${w.login ? " checked" : ""}> ${T.loginOn}</label></p><p class="dim">${T.loginHelp}</p>` : ""}` + (w.enabled ? `<p class="dim">${T.workerAs}: ${esc(w.machine || "")}${w.last_poll ? `. ${T.workerLast}: ${esc(w.last_poll)}` : ""}${w.last_asset ? `. ${T.workerAsset}: <code>${esc(w.last_asset)}</code>` : ""}${w.paused_until ? `. ${T.workerPaused} ${esc(w.paused_until)}` : ""}</p>` + (w.error ? `<p>${T.workerProblem}: ${esc(w.error)}</p>` : "") : ""))(s.worker || {}),
+    worker: (w => `<p><label><input type="checkbox" id="workerOn" style="width:auto;margin:0 .5em 0 0;vertical-align:middle"${w.enabled ? " checked" : ""}> ${T.workerOn}</label></p><p class="dim">${T.workerHelp}</p>${w.login_available ? `<p><label><input type="checkbox" id="loginOn" style="width:auto;margin:0 .5em 0 0;vertical-align:middle"${w.login ? " checked" : ""}> ${T.loginOn}</label></p><p class="dim">${T.loginHelp}</p>` : ""}` + fieldsHtml(w) + (w.enabled ? `<p class="dim">${T.workerAs}: ${esc(w.machine || "")}${w.last_poll ? `. ${T.workerLast}: ${esc(w.last_poll)}` : ""}${w.last_asset ? `. ${T.workerAsset}: <code>${esc(w.last_asset)}</code>` : ""}${w.paused_until ? `. ${T.workerPaused} ${esc(w.paused_until)}` : ""}</p>` + (w.error ? `<p>${T.workerProblem}: ${esc(w.error)}</p>` : "") : ""))(s.worker || {}),
     models: `<p>${T.speech}: <code>${esc(s.model)}</code></p><p>${T.speakers}: ${{lokaal: T.spLocal, huggingface: T.spHub, uit: T.spOff}[s.speakers]}</p><p class="dim">${T.credit}</p><p class="dim">${T.version} ${esc(s.version)}</p>`,
   };
   for (const id in html) if (drawn["set-" + id] !== html[id] && !$(id).contains(document.activeElement)) { $(id).innerHTML = html[id]; drawn["set-" + id] = html[id]; }

@@ -21,9 +21,22 @@ from datetime import datetime, timezone
 FIELD = "local_transcribe_status"
 INFO = "local_transcribe_info"
 VIEW = "Local Transcribe"
-LABELS = {FIELD: "Transcriptie", INFO: "Transcriptie, details"}
-REQUESTED, BUSY, DONE, FAILED = "aangevraagd", "bezig", "klaar", "fout"
+# Wat in Iconik wordt opgeslagen is Engels, zodat ook Iconik-support het begrijpt. Wat mensen zien
+# zijn de labels, in de taal die is gekozen (Voorkeuren, of door een beheerder in Iconik zelf).
+REQUESTED, BUSY, DONE, FAILED = "requested", "in_progress", "done", "failed"
 STATUSES = (REQUESTED, BUSY, DONE, FAILED)
+LEGACY = {"aangevraagd": REQUESTED, "bezig": BUSY, "klaar": DONE, "fout": FAILED}   # waarden tot 0.3.1
+LEGACY_VALUE = {new: old for old, new in LEGACY.items()}
+LABELS = {
+    "nl": {FIELD: "Transcriptie", INFO: "Transcriptie, details",
+           REQUESTED: "Aangevraagd", BUSY: "Bezig", DONE: "Klaar", FAILED: "Fout"},
+    "en": {FIELD: "Transcription", INFO: "Transcription details",
+           REQUESTED: "Requested", BUSY: "In progress", DONE: "Done", FAILED: "Failed"},
+}
+DESCRIPTIONS = {
+    FIELD: "Queue status of Local Transcribe for Iconik. Set to requested and a Mac will transcribe this asset.",
+    INFO: "Details of the Local Transcribe for Iconik queue: which Mac is working on it, the result or the error.",
+}
 
 POLL_SECONDS = 60
 MAX_ATTEMPTS = 3          # pogingen (ook op verschillende Macs) voor een asset definitief "fout" wordt
@@ -39,6 +52,22 @@ _pause = [0.0]            # tijdstip (time.time) tot wanneer niets wordt opgepak
 wake = threading.Event()   # de schakelaar in Voorkeuren zet hem, zodat de werker meteen kijkt
 current = {}              # het asset uit de rij waar deze Mac nu aan werkt: asset, code, beat
 _beat_lock = threading.Lock()
+language = ["nl"]         # de taal van de tekst die deze Mac in het detailveld schrijft
+iconik_language = ["nl"]  # de taal van de labels als deze Mac de velden in Iconik aanmaakt
+
+
+def set_language(code):
+    language[0] = code if code in LABELS else "nl"
+
+
+def tr(dutch, english):
+    """Tekst voor het detailveld, in de taal van de app. Het terugleren herkent beide talen."""
+    return dutch if language[0] == "nl" else english
+
+
+def norm(status):
+    """Statuswaarde van een oudere versie (aangevraagd, bezig, ...) naar de huidige."""
+    return LEGACY.get(status, status)
 
 
 class WorkerError(Exception):
@@ -77,13 +106,13 @@ def age_seconds(iso, now=None):
 
 def failed_attempts(info):
     """Hoeveel pogingen zijn er al mislukt, uit "... Mislukte poging 2 van 3, terug in de rij"."""
-    match = re.search(r"[Mm]islukte poging (\d+)", info or "")
+    match = re.search(r"(?:[Mm]islukte poging|[Ff]ailed attempt) (\d+)", info or "")
     return int(match.group(1)) if match else 0
 
 
 def current_attempt(info):
     """Welke poging loopt er, uit "Bezig op <Mac> sinds ... , poging 2 van 3". Zonder: de eerste."""
-    match = re.search(r"poging (\d+) van", info or "")
+    match = re.search(r"(?:poging|attempt) (\d+) (?:van|of)", info or "")
     return int(match.group(1)) if match else 1
 
 
@@ -108,7 +137,7 @@ def paused():
 
 def busy_owner(info):
     """Wie heeft het asset geclaimd, uit "Bezig op <Mac> sinds ..."."""
-    match = re.match(r"Bezig op (.+?) sinds ", info or "")
+    match = re.match(r"(?:Bezig op|Working on) (.+?) (?:sinds|since) ", info or "")
     return match.group(1) if match else ""
 
 
@@ -120,7 +149,7 @@ def utc_stamp(now=None):
 def last_sign(info):
     """Het laatste teken van leven uit "..., laatste teken 2026-10-14 14:17Z". None als het ontbreekt
     (een oudere versie van de app schrijft het niet)."""
-    match = re.search(r"laatste teken (\d{4}-\d\d-\d\d \d\d:\d\d)Z", info or "")
+    match = re.search(r"(?:laatste teken|last sign) (\d{4}-\d\d-\d\d \d\d:\d\d)Z", info or "")
     if not match:
         return None
     return datetime.strptime(match.group(1), "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
@@ -139,22 +168,23 @@ def clean_name(name):
 
 def failed_on(info):
     """De Macs waarop dit asset al mislukte, uit "... [mislukt op: Mac A; Mac B]"."""
-    match = re.search(r"\[mislukt op: ([^\]]*)\]", info or "")
+    match = re.search(r"\[(?:mislukt op|failed on): ([^\]]*)\]", info or "")
     return [n.strip() for n in match.group(1).split(";") if n.strip()] if match else []
 
 
 def busy_info(who, code, attempt, failed=(), now=None):
-    text = f"Bezig op {who} sinds {stamp(now)[-5:]} ({code})"
+    text = tr(f"Bezig op {who} sinds {stamp(now)[-5:]} ({code})", f"Working on {who} since {stamp(now)[-5:]} ({code})")
     if attempt > 1:
-        text += f", poging {attempt} van {MAX_ATTEMPTS}"
-    text += f", laatste teken {utc_stamp(now)}"
+        text += tr(f", poging {attempt} van {MAX_ATTEMPTS}", f", attempt {attempt} of {MAX_ATTEMPTS}")
+    text += tr(", laatste teken ", ", last sign ") + utc_stamp(now)
     if failed:
-        text += f" [mislukt op: {'; '.join(failed)}]"
+        text += tr(" [mislukt op: ", " [failed on: ") + "; ".join(failed) + "]"
     return text
 
 
 def refresh_sign(info, now=None):
-    return re.sub(r"laatste teken \d{4}-\d\d-\d\d \d\d:\d\dZ", f"laatste teken {utc_stamp(now)}", info)
+    return re.sub(r"(laatste teken|last sign) \d{4}-\d\d-\d\d \d\d:\d\dZ",
+                  lambda m: f"{m.group(1)} {utc_stamp(now)}", info)
 
 
 class Queue:
@@ -168,41 +198,84 @@ class Queue:
         views = self.iconik.get("metadata/v1/views/").get("objects", [])
         return next((v for v in views if v.get("name") == VIEW), None)
 
-    def setup(self, create=False):
-        """Zoekt de view. Met `create` worden ontbrekende velden en de view aangemaakt
-        (dat vraagt beheerrechten in Iconik)."""
+    def _field(self, name):
+        return self.iconik.get(f"metadata/v1/fields/{name}/")
+
+    def update_field(self, name, **changes):
+        """Wijzigt een bestaand veld. Iconik wil de hele definitie terug, zonder lege waarden en datums."""
+        field = self._field(name)
+        body = {k: v for k, v in field.items() if k not in ("date_created", "date_modified") and v is not None}
+        body.update(changes)
+        self.iconik._call("PUT", f"metadata/v1/fields/{name}/", json=body)
+
+    @staticmethod
+    def _options(labels):
+        return [{"label": labels[s], "value": s} for s in STATUSES]
+
+    def _put_view(self, view_id, labels):
+        self.iconik._call("PUT", f"metadata/v1/views/{view_id}/", json={
+            "name": VIEW, "write_access_for_everyone": True,
+            "view_fields": [{"name": n, "label": labels[n]} for n in (FIELD, INFO)]})
+
+    def setup(self, create=False, language="nl"):
+        """Zoekt de view. Met `create` worden ontbrekende velden en de view aangemaakt (dat vraagt
+        beheerrechten in Iconik). Een veld met de Nederlandse waarden van 0.3.1 wordt omgezet."""
+        labels = LABELS.get(language, LABELS["nl"])
         view = self._view()
         if create:
-            have_fields = {f.get("name") for f in self.iconik.get("metadata/v1/fields/").get("objects", [])}
-            if FIELD not in have_fields:
+            have = {f.get("name") for f in self.iconik.get("metadata/v1/fields/").get("objects", [])}
+            if FIELD not in have:
                 self.iconik.post("metadata/v1/fields/", {
-                    "name": FIELD, "label": LABELS[FIELD], "field_type": "drop_down",
-                    "options": [{"label": s, "value": s} for s in STATUSES]})
-            if INFO not in have_fields:
+                    "name": FIELD, "label": labels[FIELD], "field_type": "drop_down",
+                    "description": DESCRIPTIONS[FIELD], "options": self._options(labels)})
+            elif not set(STATUSES) <= {o.get("value") for o in self._field(FIELD).get("options") or []}:
+                current = self._field(FIELD).get("options") or []
+                try:
+                    self.update_field(FIELD, options=self._options(labels))
+                except Exception:
+                    # Iconik weigert opties weg te halen die in gebruik zijn: de nieuwe erbij, de oude blijven staan
+                    kept = [o for o in current if o.get("value") not in STATUSES]
+                    self.update_field(FIELD, options=self._options(labels) + kept)
+            if INFO not in have:
                 self.iconik.post("metadata/v1/fields/", {
-                    "name": INFO, "label": LABELS[INFO], "field_type": "string"})
-            wanted = [{"name": n, "label": LABELS[n]} for n in (FIELD, INFO)]
+                    "name": INFO, "label": labels[INFO], "field_type": "string",
+                    "description": DESCRIPTIONS[INFO]})
+            wanted = [{"name": n, "label": labels[n]} for n in (FIELD, INFO)]
             if view is None:
                 view = self.iconik.post("metadata/v1/views/", {
                     "name": VIEW, "write_access_for_everyone": True, "view_fields": wanted})
             else:
                 have_in_view = {f.get("name") for f in view.get("view_fields", [])}
                 if not {FIELD, INFO} <= have_in_view:
-                    self.iconik._call("PUT", f"metadata/v1/views/{view['id']}/", json={
-                        "name": VIEW, "write_access_for_everyone": True, "view_fields": wanted})
+                    self._put_view(view["id"], labels)
         if view is None:
             raise WorkerError(f"De view '{VIEW}' ontbreekt in Iconik. Laat een beheerder hem aanmaken.")
         self.view_id = view["id"]
         return self.view_id
 
+    def apply_language(self, language):
+        """Zet de labels van de velden, de opties en de view op een taal. De waarden veranderen niet.
+        Dit geldt voor alle gebruikers van deze Iconik-omgeving en vraagt beheerrechten. Andere views
+        die de velden bevatten houden hun eigen kopie: daar moet een beheerder het veld opnieuw toevoegen."""
+        labels = LABELS[language]
+        self.update_field(FIELD, label=labels[FIELD], options=self._options(labels))
+        self.update_field(INFO, label=labels[INFO])
+        view = self._view()
+        if view is not None:
+            self._put_view(view["id"], labels)
+
     def _path(self, asset_id):
         return f"metadata/v1/assets/{asset_id}/assets/{asset_id}/views/{self.view_id}/"
 
     def find(self, status, limit=5):
-        body = {"doc_types": ["assets"], "query": "",
-                "filter": {"operator": "AND", "terms": [{"name": f"metadata.{FIELD}", "value": status}]}}
-        result = self.iconik.post(f"search/v1/search/?per_page={limit}", body)
-        return [o["id"] for o in result.get("objects", []) if o.get("id")]
+        """Assets met deze status, ook met de Nederlandse waarde van 0.3.1."""
+        ids = []
+        for value in (status, LEGACY_VALUE[status]):
+            body = {"doc_types": ["assets"], "query": "",
+                    "filter": {"operator": "AND", "terms": [{"name": f"metadata.{FIELD}", "value": value}]}}
+            result = self.iconik.post(f"search/v1/search/?per_page={limit}", body)
+            ids += [o["id"] for o in result.get("objects", []) if o.get("id") and o["id"] not in ids]
+        return ids[:limit]
 
     def read(self, asset_id):
         values = self.iconik.get(self._path(asset_id)).get("metadata_values", {})
@@ -211,7 +284,7 @@ class Queue:
             items = (values.get(name) or {}).get("field_values") or []
             return items[0].get("value") if items else None
         since = (values.get(FIELD) or {}).get("date_created")  # wanneer Iconik de status zette
-        return first(FIELD), first(INFO) or "", since
+        return norm(first(FIELD)), first(INFO) or "", since
 
     def write(self, asset_id, status=None, info=None):
         values = {}
@@ -257,7 +330,8 @@ class Queue:
                 age, limit = age_seconds(since, now), STALE_LEGACY
             if age is not None and age > limit:
                 owner = busy_owner(info)
-                self.give_back(asset_id, who, f"{owner or 'De werker'} reageerde niet meer",
+                self.give_back(asset_id, who, tr(f"{owner or 'De werker'} reageerde niet meer",
+                                                 f"{owner or 'The worker'} stopped responding"),
                                current_attempt(info), culprit=owner)
                 released.append(asset_id)
         return released
@@ -272,13 +346,14 @@ class Queue:
         name = clean_name(culprit or who)
         if name and name not in failed:
             failed.append(name)
-        tag = f" [mislukt op: {'; '.join(failed)}]" if failed else ""
+        tag = (tr(" [mislukt op: ", " [failed on: ") + "; ".join(failed) + "]") if failed else ""
         if attempt >= MAX_ATTEMPTS:
-            self.write(asset_id, FAILED, f"{who}, {stamp()}: {reason} (na {MAX_ATTEMPTS} pogingen opgegeven){tag}")
+            self.write(asset_id, FAILED, f"{who}, {stamp()}: {reason} "
+                       + tr(f"(na {MAX_ATTEMPTS} pogingen opgegeven)", f"(gave up after {MAX_ATTEMPTS} attempts)") + tag)
             return False
-        self.write(asset_id, REQUESTED,
-                   f"{who}, {stamp()}: {reason}{'' if reason[-1:] in '?!' else '.'} "
-                   f"Mislukte poging {attempt} van {MAX_ATTEMPTS}, terug in de rij{tag}")
+        self.write(asset_id, REQUESTED, f"{who}, {stamp()}: {reason}{'' if reason[-1:] in '?!' else '.'} "
+                   + tr(f"Mislukte poging {attempt} van {MAX_ATTEMPTS}, terug in de rij",
+                        f"Failed attempt {attempt} of {MAX_ATTEMPTS}, back in the queue") + tag)
         return True
 
     def finish(self, asset_id, who, ok, message):
@@ -298,7 +373,7 @@ def report(queue, job, who=None):
     if job["status"] == "klaar":
         queue.finish(job["asset_id"], who, True, job.get("message", ""))
     elif job["status"] == "overgeslagen":
-        queue.finish(job["asset_id"], who, True, "Overgeslagen: " + job.get("message", ""))
+        queue.finish(job["asset_id"], who, True, tr("Overgeslagen: ", "Skipped: ") + job.get("message", ""))
     else:
         queue.finish(job["asset_id"], who, False, job.get("message", ""))
 
@@ -335,11 +410,15 @@ def poll_once(queue, who, busy, add_job, sleep=time.sleep):
     return None
 
 
-def run(get_client, enabled, busy, add_job, stop, log=print, interval=POLL_SECONDS):
+def run(get_client, enabled, busy, add_job, stop, log=print, interval=POLL_SECONDS, languages=None):
     """De lus van de werker. `enabled()` wordt elk rondje opnieuw gevraagd, zodat de schakelaar
     zonder herstart werkt. Fouten worden gelogd en het volgende rondje probeert het opnieuw."""
     view_id = None
     while not stop.is_set():
+        if languages:                 # (taal van het detailveld, taal van de labels in Iconik)
+            text, fields = languages()
+            set_language(text)
+            iconik_language[0] = fields if fields in LABELS else "nl"
         state["enabled"] = bool(enabled())
         if current and view_id:       # ook als de schakelaar uit gaat: de lopende job blijft van ons
             try:
@@ -356,7 +435,7 @@ def run(get_client, enabled, busy, add_job, stop, log=print, interval=POLL_SECON
                 else:
                     queue = Queue(connection, view_id)
                     if view_id is None:
-                        view_id = queue.setup(create=True)
+                        view_id = queue.setup(create=True, language=iconik_language[0])
                     state["last_poll"] = stamp()
                     taken = poll_once(queue, machine_name(), busy, add_job)
                     state["error"] = ""
@@ -370,8 +449,8 @@ def run(get_client, enabled, busy, add_job, stop, log=print, interval=POLL_SECON
             wake.clear()
 
 
-def start(get_client, enabled, busy, add_job, log=print):
+def start(get_client, enabled, busy, add_job, log=print, languages=None):
     stop = threading.Event()
-    threading.Thread(target=run, args=(get_client, enabled, busy, add_job, stop, log),
+    threading.Thread(target=run, args=(get_client, enabled, busy, add_job, stop, log, POLL_SECONDS, languages),
                      daemon=True, name="werker").start()
     return stop
