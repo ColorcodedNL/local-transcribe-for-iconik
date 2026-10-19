@@ -368,7 +368,17 @@ class Queue:
         return True
 
     def finish(self, asset_id, who, ok, message):
-        self.write(asset_id, DONE if ok else FAILED, f"{who}, {stamp()}: {scrub(message)[:300]}")
+        """Schrijft het resultaat. Waren er eerdere pogingen die mislukten, dan blijft dat in één korte
+        regel achter het resultaat staan, zodat je later nog ziet waarom het zo lang duurde."""
+        text = f"{who}, {stamp()}: {scrub(message)[:300]}"
+        try:
+            _, previous, _ = self.read(asset_id)
+            failed = failed_on(previous)
+            if failed:
+                text += tr(f" Eerder: mislukt op {', '.join(failed)}.", f" Earlier: failed on {', '.join(failed)}.")
+        except Exception:     # de geschiedenis is bijzaak: het resultaat gaat voor
+            pass
+        self.write(asset_id, DONE if ok else FAILED, text)
 
 
 def report(queue, job, who=None, log=print):

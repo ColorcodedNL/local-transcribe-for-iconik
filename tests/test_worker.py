@@ -322,6 +322,17 @@ check("finish schrijft geen pad", "/Volumes" not in fake.values["p"][worker.INFO
 queue.give_back("p", "testmac", "De map /Volumes/Archief/Iconik is niet bereikbaar. Is de opslag (ISG) gemount?", 1)
 check("give_back schrijft geen pad", "/Volumes" not in fake.values["p"][worker.INFO] and "Archief" not in fake.values["p"][worker.INFO])
 
+# eerdere mislukte pogingen blijven achter het resultaat staan
+fake.values["h"] = {worker.FIELD: worker.BUSY, worker.INFO: worker.busy_info("testmac", "abc123", 2, ["othermac", "derde"])}
+queue.finish("h", "testmac", True, "63 regels")
+check("klaar noemt de Macs waarop het eerder mislukte", fake.values["h"][worker.FIELD] == worker.DONE
+      and "63 regels" in fake.values["h"][worker.INFO] and "othermac, derde" in fake.values["h"][worker.INFO]
+      and fake.values["h"][worker.INFO].startswith("testmac, "))
+fake.values["i"] = {worker.FIELD: worker.BUSY, worker.INFO: worker.busy_info("testmac", "abc123", 1)}
+queue.finish("i", "testmac", True, "10 regels")
+check("zonder eerdere fouten blijft de regel zoals hij was", "Eerder" not in fake.values["i"][worker.INFO]
+      and "Earlier" not in fake.values["i"][worker.INFO])
+
 # een Mac die zijn asset kwijt is schrijft er niet meer overheen
 def claim_a():
     fake.values["a"] = {worker.FIELD: worker.REQUESTED}
