@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Test het updatemechanisme op deze Mac, zonder GitHub.
 
-    uv run tools/local_update_test.py good      versie 0.3.1: een gewone update
-    uv run tools/local_update_test.py syntax    versie 0.3.2: serve.py met een syntaxfout
-    uv run tools/local_update_test.py crash     versie 0.3.3: de app stopt direct na de start
+    uv run tools/local_update_test.py good      de huidige versie plus 1: een gewone update
+    uv run tools/local_update_test.py syntax    plus 2: serve.py met een syntaxfout
+    uv run tools/local_update_test.py crash     plus 3: de app stopt direct na de start
     uv run tools/local_update_test.py reset     alle gedownloade code-updates weghalen
     uv run tools/local_update_test.py status    wat er nu staat
 
@@ -30,7 +30,13 @@ sys.path.insert(0, str(ROOT))
 import app_shell  # noqa: E402
 import updater  # noqa: E402
 
-MODES = {"good": "0.3.1", "syntax": "0.3.2", "crash": "0.3.3"}
+def _newer(steps):
+    """De huidige versie uit transcribe.py met het laatste getal `steps` hoger, zodat de updater het als nieuwer ziet."""
+    major, minor, patch_ = re.search(r'^APP_VERSION = "(\d+)\.(\d+)\.(\d+)"', (ROOT / "transcribe.py").read_text(), re.M).groups()
+    return f"{major}.{minor}.{int(patch_) + steps}"
+
+
+MODES = {"good": _newer(1), "syntax": _newer(2), "crash": _newer(3)}
 CODE_FILES = subprocess.run([sys.executable, str(ROOT / "tools" / "make_manifest.py"), "--list"],
                             capture_output=True, text=True, check=True).stdout.split()
 
