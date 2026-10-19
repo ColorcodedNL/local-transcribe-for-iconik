@@ -309,6 +309,19 @@ check("report ruimt het asset op", not worker.current)
 check("heartbeat na het resultaat overschrijft het niet", worker.beat(queue) is False
       and fake.values["a"][worker.FIELD] == worker.DONE and "3 regels" in fake.values["a"][worker.INFO])
 
+# paden komen niet in het detailveld
+check("scrub: bestand niet gevonden", "/Volumes" not in worker.scrub("Bestand niet gevonden: /Volumes/Archief/Iconik/Map met spatie/clip.mp4")
+      and worker.scrub("Bestand niet gevonden: /Volumes/A/b c.mp4").startswith("Bestand niet gevonden: "))
+check("scrub: map niet bereikbaar", worker.scrub("De map /Volumes/Archief/Iconik is niet bereikbaar. Is de opslag (ISG) gemount?")
+      .endswith("is niet bereikbaar. Is de opslag (ISG) gemount?") and "Archief" not in worker.scrub("The folder /Volumes/Archief/Iconik cannot be reached. Is it mounted?"))
+check("scrub: pad tussen aanhalingstekens en los pad", "/Users" not in worker.scrub("[Errno 2] No such file or directory: '/Users/x y/z.wav'")
+      and "/private" not in worker.scrub("Fout in /private/var/folders/ab/cd.tmp daarna") and worker.scrub("Geen internet.") == "Geen internet.")
+fake.values["p"] = {worker.FIELD: worker.BUSY, worker.INFO: "x"}
+queue.finish("p", "testmac", False, "Bestand niet gevonden: /Volumes/Archief/Iconik/geheim/clip.mp4")
+check("finish schrijft geen pad", "/Volumes" not in fake.values["p"][worker.INFO] and "testmac" in fake.values["p"][worker.INFO])
+queue.give_back("p", "testmac", "De map /Volumes/Archief/Iconik is niet bereikbaar. Is de opslag (ISG) gemount?", 1)
+check("give_back schrijft geen pad", "/Volumes" not in fake.values["p"][worker.INFO] and "Archief" not in fake.values["p"][worker.INFO])
+
 # een Mac die zijn asset kwijt is schrijft er niet meer overheen
 def claim_a():
     fake.values["a"] = {worker.FIELD: worker.REQUESTED}

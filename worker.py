@@ -162,6 +162,17 @@ def claim_code(info):
     return match.group(1) if match else ""
 
 
+def scrub(text):
+    """Haalt paden uit een tekst voor het detailveld. Iedereen die de asset ziet, ziet dat veld, en
+    een pad verraadt hoe de opslag heet en waar hij staat. In de app zelf blijft de volledige tekst staan."""
+    hidden = tr("(pad verborgen)", "(path hidden)")
+    text = re.sub(r"((?:Bestand niet gevonden|File not found): ).*", lambda m: m.group(1) + hidden, text or "")
+    text = re.sub(r"((?:De map|The folder) ).+?( is niet bereikbaar| cannot be reached)",
+                  lambda m: m.group(1) + hidden + m.group(2), text)
+    text = re.sub(r"""(['"])/[^'"]*\1""", hidden, text)
+    return re.sub(r"(?<![\w.])/(?:Volumes|Users|private|mnt|Library|System|tmp|var)/\S+", hidden, text)
+
+
 def clean_name(name):
     """Een Mac-naam zonder tekens die de lijst "mislukt op" kapot maken."""
     return (name or "").replace(";", "").replace("[", "").replace("]", "").strip()
@@ -341,7 +352,7 @@ class Queue:
         """Het ligt niet aan het asset maar aan de Mac: terug in de rij voor een andere werker,
         tot MAX_ATTEMPTS. De Mac waarop het misging komt in "[mislukt op: ...]". Geeft True als het
         asset terug in de rij staat."""
-        reason = (reason or "").rstrip(". ")[:250]
+        reason = scrub(reason).rstrip(". ")[:250]
         _, previous, _ = self.read(asset_id)
         failed = failed_on(previous)
         name = clean_name(culprit or who)
@@ -358,7 +369,7 @@ class Queue:
         return True
 
     def finish(self, asset_id, who, ok, message):
-        self.write(asset_id, DONE if ok else FAILED, f"{who}, {stamp()}: {(message or '')[:300]}")
+        self.write(asset_id, DONE if ok else FAILED, f"{who}, {stamp()}: {scrub(message)[:300]}")
 
 
 def report(queue, job, who=None, log=print):
