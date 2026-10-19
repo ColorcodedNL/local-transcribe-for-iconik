@@ -378,12 +378,16 @@ def report(queue, job, who=None):
         queue.finish(job["asset_id"], who, False, job.get("message", ""))
 
 
-def beat(queue, now=None):
+def beat(queue, now=None, healthy=None):
     """Ververst het laatste teken van het asset waar deze Mac aan werkt, zodat een andere Mac
     niet denkt dat het blijft hangen. Geeft True als het is geschreven. Stopt zodra het asset
-    niet meer van ons is (door een andere werker overgenomen of door een mens gewijzigd)."""
+    niet meer van ons is (door een andere werker overgenomen of door een mens gewijzigd).
+    `healthy` (optioneel) zegt of de job nog vordert. Zo niet, dan schrijft hij niets, ook al leeft de
+    app: het laatste teken blijft staan en na vier minuten neemt een andere Mac het asset over."""
     with _beat_lock:
         if not current or time.time() - current["beat"] < HEARTBEAT:
+            return False
+        if healthy is not None and not healthy():
             return False
         status, info, _ = queue.read(current["asset"])
         if status != BUSY or claim_code(info) != current["code"]:
@@ -410,7 +414,7 @@ def poll_once(queue, who, busy, add_job, sleep=time.sleep):
     return None
 
 
-def run(get_client, enabled, busy, add_job, stop, log=print, interval=POLL_SECONDS, languages=None):
+def run(get_client, enabled, busy, add_job, stop, log=print, interval=POLL_SECONDS, languages=None, healthy=None):
     """De lus van de werker. `enabled()` wordt elk rondje opnieuw gevraagd, zodat de schakelaar
     zonder herstart werkt. Fouten worden gelogd en het volgende rondje probeert het opnieuw."""
     view_id = None
@@ -424,7 +428,7 @@ def run(get_client, enabled, busy, add_job, stop, log=print, interval=POLL_SECON
             try:
                 connection = get_client()
                 if connection is not None:
-                    beat(Queue(connection, view_id))
+                    beat(Queue(connection, view_id), healthy=healthy)
             except Exception as error:
                 log(f"Werker: laatste teken schrijven mislukte: {str(error)[:200]}")
         if state["enabled"]:
@@ -449,8 +453,8 @@ def run(get_client, enabled, busy, add_job, stop, log=print, interval=POLL_SECON
             wake.clear()
 
 
-def start(get_client, enabled, busy, add_job, log=print, languages=None):
+def start(get_client, enabled, busy, add_job, log=print, languages=None, healthy=None):
     stop = threading.Event()
-    threading.Thread(target=run, args=(get_client, enabled, busy, add_job, stop, log, POLL_SECONDS, languages),
+    threading.Thread(target=run, args=(get_client, enabled, busy, add_job, stop, log, POLL_SECONDS, languages, healthy),
                      daemon=True, name="werker").start()
     return stop

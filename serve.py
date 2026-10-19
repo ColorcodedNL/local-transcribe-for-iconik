@@ -85,6 +85,11 @@ current = [None]          # de opdracht die nu verwerkt wordt
 # De volgende klik in Iconik start hem opnieuw. Het venster haalt elke paar seconden /state op.
 IDLE_EXIT = int(os.environ.get("LOCALTRANSCRIBE_IDLE_EXIT", "120"))
 activity = {"poll": time.time(), "done": time.time()}
+# Een opdracht die zo lang niets meldt is vastgelopen, bijvoorbeeld na de slaapstand met een weggevallen
+# opslag of verbinding. Monotone klok: de tijd dat de Mac sliep telt niet mee.
+STALL_SECONDS = int(os.environ.get("LOCALTRANSCRIBE_STALL", "900"))
+STALL_GRACE = 20          # seconden die de app krijgt om zelf af te sluiten voor we het afdwingen
+last_progress = [time.monotonic()]
 UI_FILE = Path(__file__).with_name("ui.html")
 
 
@@ -130,6 +135,7 @@ def start_prefetch():
 
 def listen(kind, **data):
     """Krijgt de voortgang van de motor en zet die bij de lopende opdracht."""
+    last_progress[0] = time.monotonic()
     job = current[0]
     if job is None:
         return
@@ -682,6 +688,55 @@ def set_login_item(on):
     }))
 
 
+def stall_limit(job):
+    """Hoe lang een opdracht niets mag melden. De sprekerherkenning meldt tussendoor niets en duurt
+    bij lange audio langer, dus de grens groeit mee met de lengte."""
+    return max(STALL_SECONDS, 0.5 * (job.get("duration") or 0))
+
+
+def progress_ok():
+    """Vordert de lopende opdracht nog? Het eenmalige downloaden van het model beoordelen we niet."""
+    job = current[0]
+    if job is None or job.get("stage") == "model":
+        return True
+    return time.monotonic() - last_progress[0] <= stall_limit(job)
+
+
+def leave(code):
+    os._exit(code)
+
+
+def give_up_stalled(job):
+    """Een vastgelopen draad is in Python niet te stoppen. De schone weg: de opdracht terugmelden
+    (een andere Mac kan hem dan oppakken) en de app herstarten."""
+    minutes = max(1, round((time.monotonic() - last_progress[0]) / 60))
+    message = transcribe.L(f"De opdracht meldde {minutes} minuten niets meer en is gestopt.",
+                           f"The job reported nothing for {minutes} minutes and was stopped.")
+    print(f"HANGT: {job['asset_id']} meldde {minutes} minuten niets, de app herstart.", flush=True)
+    job.update(abandoned=True, status="fout", local=True, message=message, finished=datetime.now())
+    if job.get("remote"):
+        # Vaak is de verbinding juist de reden: niet langer dan 30 seconden wachten op het terugmelden.
+        reporter = threading.Thread(target=report_remote, args=(job,), daemon=True)
+        reporter.start()
+        reporter.join(30)
+    current[0] = None
+    with work.mutex:
+        work.queue.clear()   # anders blijft busy() waar en vraagt afsluiten om een bevestiging
+    if restart_hook:
+        restart_hook()
+        time.sleep(STALL_GRACE)
+    leave(0 if restart_hook else 3)
+
+
+def watchdog():
+    """Kijkt elke 30 seconden of de lopende opdracht nog vordert."""
+    while True:
+        time.sleep(30)
+        job = current[0]
+        if job is not None and current[0] is job and not progress_ok():
+            give_up_stalled(job)
+
+
 def worker():
     """Een asset tegelijk. Draait in een eigen draad, naast het venster."""
     while True:
@@ -694,6 +749,7 @@ def worker():
             continue
         job["status"] = "bezig"
         job["started"] = datetime.now()
+        last_progress[0] = time.monotonic()
         current[0] = job
 
         def on_info(title, seconds, job=job):
@@ -738,6 +794,8 @@ def worker():
             job["message"] = f"{type(error).__name__}: {error}"
             print(f"FOUT: {job['message']}")
         finally:
+            if job.get("abandoned"):
+                continue   # de watchdog gaf deze opdracht al op en meldde hem terug
             job["finished"] = datetime.now()
             if job.get("remote"):
                 report_remote(job)
@@ -771,7 +829,8 @@ def start(model="mlx-community/whisper-large-v3-mlx", language=None, mount=None,
     if not transcribe.speaker_model_available(settings["hf_token"]):
         print("Let op: geen sprekermodel gevonden, sprekerherkenning staat uit.")
     threading.Thread(target=worker, daemon=True, name="werkrij").start()
-    remote.start(client, worker_enabled, busy, add_job, languages=worker_languages)
+    threading.Thread(target=watchdog, daemon=True, name="waker").start()
+    remote.start(client, worker_enabled, busy, add_job, languages=worker_languages, healthy=progress_ok)
     threading.Thread(target=check_update, daemon=True, name="update").start()
     return server
 

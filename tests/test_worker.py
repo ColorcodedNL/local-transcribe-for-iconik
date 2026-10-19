@@ -309,6 +309,19 @@ check("report ruimt het asset op", not worker.current)
 check("heartbeat na het resultaat overschrijft het niet", worker.beat(queue) is False
       and fake.values["a"][worker.FIELD] == worker.DONE and "3 regels" in fake.values["a"][worker.INFO])
 
+# een job die niets meer meldt: de heartbeat stopt, het laatste teken blijft staan
+fake, queue = ready()
+worker.current.clear()
+fake.values["a"] = {worker.FIELD: worker.REQUESTED}
+worker.poll_once(queue, "testmac", lambda: False, lambda *a, **k: None, sleep=nap)
+worker.current["beat"] -= worker.HEARTBEAT + 1
+puts = len(fake.puts)
+check("heartbeat zonder voortgang: niets schrijven, het asset blijft van ons",
+      worker.beat(queue, now=later, healthy=lambda: False) is False and len(fake.puts) == puts and worker.current.get("asset") == "a")
+check("heartbeat met voortgang: wel schrijven",
+      worker.beat(queue, now=later, healthy=lambda: True) is True and len(fake.puts) == puts + 1)
+worker.current.clear()
+
 # de eigen Mac probeert het niet meteen opnieuw
 fake, queue = ready()
 worker.current.clear()

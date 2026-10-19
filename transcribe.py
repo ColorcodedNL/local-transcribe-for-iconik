@@ -1067,16 +1067,19 @@ def speech_share(start, end, turns):
 
 
 def ensure_model(repo):
-    """Haalt het Whisper-model eenmalig binnen als het er nog niet is, met voortgang voor het venster."""
+    """Haalt het Whisper-model eenmalig binnen als het er nog niet is, met voortgang voor het venster.
+
+    Geeft het lokale pad van het model terug. Met een repo-naam raadpleegt mlx_whisper bij elke
+    load eerst Hugging Face; een Mac die net uit de slaapstand komt en nog geen verbinding heeft,
+    bleef daar hangen. Met een pad gebeurt er niets met het netwerk."""
     import os
     import threading
     from huggingface_hub import HfApi, constants, snapshot_download
 
     if os.path.isdir(repo):
-        return
+        return repo
     try:
-        snapshot_download(repo, local_files_only=True)
-        return  # staat al in de cache
+        return snapshot_download(repo, local_files_only=True)  # staat al in de cache
     except Exception:
         pass
 
@@ -1104,7 +1107,7 @@ def ensure_model(repo):
 
     threading.Thread(target=watch, daemon=True).start()
     try:
-        snapshot_download(repo)
+        return snapshot_download(repo)
     except Exception as error:
         fail(L(f"Het Whisper-model kon niet worden gedownload ({type(error).__name__}). Dat is eenmalig nodig, "
                "controleer de internetverbinding en probeer het opnieuw.",
@@ -1258,7 +1261,7 @@ def prepare_asset(iconik, args, on_info=None, interactive=True):
     print(f"Bestand: {path}")
 
     print(f"Model:   {args.model}")
-    ensure_model(args.model)
+    model_path = ensure_model(args.model)
     memory_report("begin")
     tell("stage", name="audio")
     samples, microphones = load_audio_tracks(path, getattr(args, "track", None))
@@ -1267,7 +1270,7 @@ def prepare_asset(iconik, args, on_info=None, interactive=True):
     if on_info:
         on_info(asset.get("title"), len(samples) / SAMPLE_RATE)
     return {"asset": asset, "version_id": version_id, "own": own,
-            "samples": samples, "microphones": microphones}
+            "samples": samples, "microphones": microphones, "model_path": model_path}
 
 
 def process_asset(iconik, args, hf_token, on_info=None, prepared=None):
@@ -1281,6 +1284,7 @@ def process_asset(iconik, args, hf_token, on_info=None, prepared=None):
         memory_report("audio (vooruit gelezen)")
     asset, version_id, own = prepared["asset"], prepared["version_id"], prepared["own"]
     samples, microphones = prepared["samples"], prepared["microphones"]
+    model_path = prepared.get("model_path") or args.model  # een lokaal pad: laden raakt het netwerk niet
     print("Transcriberen...")
     tell("stage", name="transcriberen")
     import mlx_whisper  # pas hier laden, dat scheelt opstarttijd bij fouten hierboven
@@ -1313,7 +1317,7 @@ def process_asset(iconik, args, hf_token, on_info=None, prepared=None):
     language = args.language
     if not language or language == "auto":
         try:
-            language, certainty = detect_language(samples, args.model)
+            language, certainty = detect_language(samples, model_path)
             print(f"Taal:    {language} (herkend, {certainty:.0%})")
         except Exception as error:
             language = None  # dan bepaalt Whisper het zelf op het begin van de opname
@@ -1324,7 +1328,7 @@ def process_asset(iconik, args, hf_token, on_info=None, prepared=None):
 
     result = mlx_whisper.transcribe(
         samples,
-        path_or_hf_repo=args.model,
+        path_or_hf_repo=model_path,
         language=language,
         word_timestamps=True,
         verbose=False,  # voortgangsbalk in de terminal

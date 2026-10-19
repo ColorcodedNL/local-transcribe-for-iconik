@@ -63,7 +63,7 @@ How it works: Iconik is the queue. The app creates two metadata fields, `local_t
 The stored values and field names are always English, so Iconik support can read them. What people see are labels, in Dutch (Transcriptie: Aangevraagd, Bezig, Klaar, Fout) or English (Transcription: Requested, In progress, Done, Failed). Choose under **Language of the fields in Iconik** in Preferences (it applies to everyone in that Iconik environment and needs admin rights), or rename the labels in Iconik under Admin, Metadata Fields. A view that already contains the field keeps its own copy of the labels, so add the field to that view again. Version 0.3.1 stored Dutch values; those are converted when the app starts, and old requests are still picked up. The details text each Mac writes follows the language of its own app.
 
 - It uses the Iconik account that is signed in on that Mac, so no extra licence is needed. It only sees assets that account can see, and transcripts appear under that account.
-- Problems with the Mac (storage not mounted, not signed in, no internet) put the asset back in the queue, up to three attempts, then Failed with the reason. The Mac then pauses for ten minutes. Problems with the asset itself are Failed straight away. A Mac that is working refreshes a "last sign" every minute; if it stays silent for four minutes, another Mac takes the asset over. The Mac that failed leaves that asset to another Mac for ten minutes.
+- Problems with the Mac (storage not mounted, not signed in, no internet) put the asset back in the queue, up to three attempts, then Failed with the reason. The Mac then pauses for ten minutes. Problems with the asset itself are Failed straight away. A Mac that is working refreshes a "last sign" every minute; if it stays silent for four minutes, another Mac takes the asset over. The last sign only refreshes while the job makes progress: a job that reports nothing for 15 minutes (longer for long audio), for example after the Mac slept and the storage dropped, is given back to the queue and the app restarts. The Mac that failed leaves that asset to another Mac for ten minutes.
 - Claiming is a write, a short wait and a read back, because Iconik has no atomic operation. Fine for one worker; test it with several Macs before relying on it.
 - With remote jobs on, the app lives in the menu bar and closing the window hides it. **Open at login** (separate, off by default) starts it hidden at login.
 - The storage (ISG) must be mounted on that Mac.
@@ -121,7 +121,7 @@ bash build_update.sh    # dist/code-<version>-shell<N>.zip and .sig, signed with
 | `launcher.c` | Native launcher that loads the bundled Python in the app process |
 | `setup_actions.py` | Create the Custom Actions from the command line |
 | `tools/` | Measuring tools for audio tracks and assets, update signing (`sign_update.py`), `make_manifest.py`, `local_update_test.py` |
-| `tests/` | Tests for the boot layer, the updater, the update state in `serve.py`, the remote-jobs queue and its switch |
+| `tests/` | Tests for the boot layer, the updater, the update state in `serve.py`, the remote-jobs queue and its switch, stalled jobs |
 
 Logs: `~/Library/Logs/Local Transcribe for Iconik/serve.log`. Each job logs time and memory per stage.
 
