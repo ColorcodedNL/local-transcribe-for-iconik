@@ -2,14 +2,14 @@
 # Maakt dist/Local Transcribe for Iconik.dmg: de app, een snelkoppeling naar Programma's
 # en de handleidingen (NL en EN). Draai eerst build_bundle.sh.
 set -euo pipefail
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 
 NAME="Local Transcribe for Iconik"
 APP="build/$NAME.app"
 STAGE="build/dmg-stage"
 OUT="dist/$NAME.dmg"
 
-[ -d "$APP" ] || { echo "Geen $APP, draai eerst build_bundle.sh"; exit 1; }
+[ -d "$APP" ] || { echo "Geen $APP, draai eerst scripts/build_bundle.sh"; exit 1; }
 for f in "docs/Handleiding Local Transcribe.pdf" "docs/Guide Local Transcribe.pdf"; do
   [ -f "$f" ] || { echo "Ontbreekt: $f"; exit 1; }
 done

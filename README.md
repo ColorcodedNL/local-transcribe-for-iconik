@@ -109,14 +109,14 @@ The app is Python with a small native launcher, so it runs as a single Mac app w
 ## Building from source
 
 ```
-bash build_python.sh    # relocatable Python 3.12 with all packages in build/python (needs uv)
-bash build_ffmpeg.sh    # LGPL build of ffmpeg and ffprobe in build/ffmpeg-out
-bash build_bundle.sh    # build/Local Transcribe for Iconik.app
-bash build_dmg.sh       # dist/Local Transcribe for Iconik.dmg with the guides
-bash build_update.sh    # dist/code-<version>-shell<N>.zip and .sig, signed with your update key
+bash scripts/build_python.sh    # relocatable Python 3.12 with all packages in build/python (needs uv)
+bash scripts/build_ffmpeg.sh    # LGPL build of ffmpeg and ffprobe in build/ffmpeg-out
+bash scripts/build_bundle.sh    # build/Local Transcribe for Iconik.app
+bash scripts/build_dmg.sh       # dist/Local Transcribe for Iconik.dmg with the guides
+bash scripts/build_update.sh    # dist/code-<version>-shell<N>.zip and .sig, signed with your update key
 ```
 
-`build_bundle.sh` expects the pyannote speaker model in `~/Library/Application Support/Local Transcribe for Iconik/models/speaker-diarization-community-1`. Download it from [Hugging Face](https://huggingface.co/pyannote/speaker-diarization-community-1) (you need to accept its terms there).
+`scripts/build_bundle.sh` expects the pyannote speaker model in `~/Library/Application Support/Local Transcribe for Iconik/models/speaker-diarization-community-1`. Download it from [Hugging Face](https://huggingface.co/pyannote/speaker-diarization-community-1) (you need to accept its terms there).
 
 | File | Purpose |
 | --- | --- |
@@ -128,7 +128,8 @@ bash build_update.sh    # dist/code-<version>-shell<N>.zip and .sig, signed with
 | `worker.py` | Remote jobs: the Iconik queue (fields, claim, retries, pause) |
 | `transcribe.py` | The engine: audio tracks, Whisper, speakers, filters, writing to Iconik. Also usable from the command line |
 | `ui.html` | The window (jobs and preferences), in English and Dutch |
-| `launcher.c` | Native launcher that loads the bundled Python in the app process |
+| `scripts/` | Build scripts, and `launcher.c`, the native launcher that loads the bundled Python in the app process |
+| `docs/` | The guides (PDF), `RELEASING.md` and `THIRD_PARTY_NOTICES.md` |
 | `setup_actions.py` | Create the Custom Actions from the command line |
 | `tools/` | Measuring tools for audio tracks and assets, update signing (`sign_update.py`), `make_manifest.py`, `local_update_test.py` |
 | `tests/` | Tests for the boot layer, the updater, the update state in `serve.py`, the remote-jobs queue and its switch, stalled jobs |
@@ -147,7 +148,7 @@ Logs: `~/Library/Logs/Local Transcribe for Iconik/serve.log`. Each job logs time
 
 ## Credits and licenses
 
-This project is released under the [MIT license](LICENSE). It builds on Whisper (OpenAI), MLX and mlx-whisper (Apple), pyannote (pyannoteAI), PyTorch, ffmpeg and pywebview. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+This project is released under the [MIT license](LICENSE). It builds on Whisper (OpenAI), MLX and mlx-whisper (Apple), pyannote (pyannoteAI), PyTorch, ffmpeg and pywebview. See [THIRD_PARTY_NOTICES.md](docs/THIRD_PARTY_NOTICES.md).
 
 Not affiliated with or endorsed by Iconik or Backlight. Iconik is a trademark of its owner.
 

@@ -5,11 +5,11 @@
 # Beide gaan als losse bestanden bij de release op GitHub, naast de dmg. Draai eerst build_bundle.sh
 # als de dmg ook mee moet. Weigert te ondertekenen met een sleutel die niet bij app_shell.py past.
 set -e
-HERE="$(cd "$(dirname "$0")" && pwd)"
+HERE="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$HERE"
 PY="${TOOLPY:-$HERE/build/python/bin/python3.12}"
 SIGN="${SIGN_CMD:-uv run tools/sign_update.py}"
-command -v "$PY" >/dev/null || { echo "$PY ontbreekt, draai eerst build_python.sh"; exit 1; }
+command -v "$PY" >/dev/null || { echo "$PY ontbreekt, draai eerst scripts/build_python.sh"; exit 1; }
 
 VERSION="$(sed -n 's/^APP_VERSION = "\([0-9.]*\)".*/\1/p' transcribe.py)"
 SHELLV="$(sed -n 's/^SHELL_VERSION = \([0-9]*\).*/\1/p' app_shell.py)"

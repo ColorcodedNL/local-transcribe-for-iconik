@@ -2,7 +2,7 @@
 # Maakt build/python: de verplaatsbare Python van uv met alle pakketten uit uv.lock.
 # Draai dit eerst, daarna build_ffmpeg.sh en build_bundle.sh.
 set -e
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 if [ -e build/python ]; then
   echo "build/python bestaat al. Verwijder die map eerst voor een schone opbouw."
   exit 1

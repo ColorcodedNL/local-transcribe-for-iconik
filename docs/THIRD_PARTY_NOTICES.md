@@ -9,7 +9,7 @@ The source code in this repository is MIT licensed (see `LICENSE`). The app bund
 | [pyannote.audio](https://github.com/pyannote/pyannote-audio) | Speaker detection | MIT |
 | [pyannote speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1) (pyannoteAI) | Speaker detection model, bundled | CC-BY-4.0 |
 | [PyTorch](https://pytorch.org) | Running the speaker model | BSD-3-Clause |
-| [FFmpeg](https://ffmpeg.org) 9.0.2 (ffmpeg, ffprobe) | Reading audio tracks | LGPL 2.1 or later. Built unmodified from the official source with `build_ffmpeg.sh`; license text in `licenses/` |
+| [FFmpeg](https://ffmpeg.org) 9.0.2 (ffmpeg, ffprobe) | Reading audio tracks | LGPL 2.1 or later. Built unmodified from the official source with `scripts/build_ffmpeg.sh`; license text in `licenses/` (next to this file) |
 | [pywebview](https://pywebview.flowrl.com) | The app window | BSD-3-Clause |
 | [PyObjC](https://github.com/ronaldoussoren/pyobjc) | macOS integration | MIT |
 | [keyring](https://github.com/jaraco/keyring) | Storing the Iconik sign-in in the macOS keychain | MIT |

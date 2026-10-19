@@ -2,13 +2,13 @@
 # Bouwt de zelfstandige app in build/: één bundel, één proces (nog niet in /Applications).
 # Vereist: build/python met alle packages (zie stappen in de note).
 set -e
-HERE="$(cd "$(dirname "$0")" && pwd)"
+HERE="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="$HERE/build/Local Transcribe for Iconik.app"
 PLIST="$OUT/Contents/Info.plist"
 RES="$OUT/Contents/Resources"
 
-[ -x "$HERE/build/python/bin/python3.12" ] || { echo "build/python ontbreekt, draai eerst build_python.sh"; exit 1; }
-[ -x "$HERE/build/ffmpeg-out/bin/ffmpeg" ] || { echo "build/ffmpeg-out ontbreekt, draai eerst build_ffmpeg.sh"; exit 1; }
+[ -x "$HERE/build/python/bin/python3.12" ] || { echo "build/python ontbreekt, draai eerst scripts/build_python.sh"; exit 1; }
+[ -x "$HERE/build/ffmpeg-out/bin/ffmpeg" ] || { echo "build/ffmpeg-out ontbreekt, draai eerst scripts/build_ffmpeg.sh"; exit 1; }
 
 rm -rf "$OUT"
 mkdir -p "$OUT/Contents/MacOS" "$RES/app"
@@ -17,8 +17,8 @@ VERSION="$(sed -n 's/^APP_VERSION = "\([0-9.]*\)".*/\1/p' "$HERE/transcribe.py")
 
 # Hoofdprogramma: laadt de meegeleverde Python in dit proces en start main.py. Zo is de app
 # één proces met de naam en het icoon van de app, in het Dock en in Activity Monitor.
-clang -O2 -arch arm64 -mmacosx-version-min=13.0 -o "$OUT/Contents/MacOS/LocalTranscribe" "$HERE/launcher.c"
-cp "$HERE/LocalTranscribe.icns" "$RES/LocalTranscribe.icns"
+clang -O2 -arch arm64 -mmacosx-version-min=13.0 -o "$OUT/Contents/MacOS/LocalTranscribe" "$HERE/scripts/launcher.c"
+cp "$HERE/scripts/LocalTranscribe.icns" "$RES/LocalTranscribe.icns"
 cat > "$PLIST" <<INFO
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -60,7 +60,7 @@ cp -Rc "$HERE/build/python" "$RES/python"
 # ffmpeg (eigen LGPL-build) en sprekermodel
 mkdir -p "$RES/bin" "$RES/models" "$RES/licenses"
 cp "$HERE/build/ffmpeg-out/bin/ffmpeg" "$HERE/build/ffmpeg-out/bin/ffprobe" "$RES/bin/"
-cp "$HERE/licenses/ffmpeg-COPYING.LGPLv2.1.txt" "$RES/licenses/ffmpeg-COPYING.LGPLv2.1.txt"
+cp "$HERE/docs/licenses/ffmpeg-COPYING.LGPLv2.1.txt" "$RES/licenses/ffmpeg-COPYING.LGPLv2.1.txt"
 cat > "$RES/licenses/ffmpeg-README.txt" <<'TXT'
 FFmpeg 9.0.2 (ffmpeg and ffprobe), licensed under the LGPL version 2.1 or later.
 Source: https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz

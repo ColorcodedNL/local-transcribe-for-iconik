@@ -3,7 +3,7 @@
 set -e
 VERSION=9.0.2
 SHA256=8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e
-HERE="$(cd "$(dirname "$0")" && pwd)"
+HERE="$(cd "$(dirname "$0")/.." && pwd)"
 mkdir -p "$HERE/build/ffmpeg-src"
 cd "$HERE/build/ffmpeg-src"
 if [ ! -d "ffmpeg-$VERSION" ]; then
