@@ -382,7 +382,8 @@ class Queue:
 
 
 def report(queue, job, who=None, log=print):
-    """Zet het resultaat van een afgeronde opdracht uit de rij terug in Iconik."""
+    """Zet het resultaat van een afgeronde opdracht uit de rij terug in Iconik. Geeft "requeued" als het
+    asset terug in de rij is gezet voor een andere Mac, "lost" als het niet meer van ons was, anders None."""
     who = who or machine_name()
     asset_id = job["asset_id"]
     code = None
@@ -406,11 +407,12 @@ def report(queue, job, who=None, log=print):
                                                           " (asset was taken over by another Mac, status not changed)")
         if job["status"] == "fout" and job.get("local"):
             pause()
-        return
+        return "lost"
     if job["status"] == "fout" and job.get("local"):
         if queue.give_back(job["asset_id"], who, job.get("message", ""), int(job.get("remote") or 1)):
             pause()
-        return
+            return "requeued"
+        return None
     if job["status"] == "klaar":
         queue.finish(job["asset_id"], who, True, job.get("message", ""))
     elif job["status"] == "overgeslagen":

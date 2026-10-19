@@ -100,5 +100,37 @@ reset()
 serve.load_jobs()
 check("geen bestand: lege lijst", serve.jobs == [])
 
+# --- terug in de rij is geen eindfout en opdrachten uit de rij krijgen hun titel
+class FakeQueue:
+    def __init__(self, connection): pass
+    def setup(self): pass
+
+
+outcome = ["requeued"]
+serve.client = lambda: types.SimpleNamespace(get=lambda path: {"title": "Titel uit Iconik"})
+serve.remote.Queue = FakeQueue
+serve.remote.report = lambda queue, job: outcome[0]
+reset()
+serve.add_job("r1", remote=2)
+import time
+for _ in range(50):
+    if serve.jobs[0]["title"]:
+        break
+    time.sleep(0.05)
+check("opdracht uit de rij krijgt zijn titel", serve.jobs[0]["title"] == "Titel uit Iconik")
+job = serve.jobs[0]
+job.update(status="fout", local=True, message="Geen internet.")
+serve.report_remote(job)
+check("teruggezet asset is geen eindfout", job["status"] == "teruggezet" and job["message"].startswith("Geen internet.")
+      and ("andere Mac" in job["message"] or "another Mac" in job["message"]), job["message"])
+outcome[0] = None
+job.update(status="fout", local=True, message="Geen internet.")
+serve.report_remote(job)
+check("zonder terugzetten blijft het een fout", job["status"] == "fout" and job["message"] == "Geen internet.")
+serve.save_jobs()
+reset()
+serve.load_jobs()
+check("teruggezet blijft zo bewaard", serve.jobs and serve.jobs[0]["status"] in ("fout", "teruggezet"))
+
 print("\nALLES OK" if not fails else f"\n{fails} FOUT")
 sys.exit(1 if fails else 0)

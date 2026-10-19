@@ -223,9 +223,10 @@ check("give_back na poging 3: definitief fout met uitleg", queue.give_back("a", 
 fake, queue = ready()
 worker._pause[0] = 0.0
 fake.values["a"] = {worker.FIELD: worker.BUSY, worker.INFO: "Bezig op testmac sinds 13:00 (abc)"}
-worker.report(queue, {"asset_id": "a", "status": "fout", "local": True, "remote": 1,
+requeued = worker.report(queue, {"asset_id": "a", "status": "fout", "local": True, "remote": 1,
                       "message": "De map /Volumes/Opslag/Iconik is niet bereikbaar. Is de opslag (ISG) gemount?"}, who="testmac")
 check("report: fout van de Mac zet het asset terug in de rij", fake.values["a"][worker.FIELD] == worker.REQUESTED)
+check("  report zegt dat het asset teruggezet is", requeued == "requeued")
 check("  en pauzeert de werker", worker.paused() is True and re.match(r"^\d\d:\d\d$", worker.state["paused_until"]) is not None, worker.state)
 fake.values["b"] = {worker.FIELD: worker.REQUESTED}
 before = len(fake.puts)
@@ -237,8 +238,8 @@ fake.values["c"] = {worker.FIELD: worker.BUSY, worker.INFO: "Bezig op testmac si
 worker.report(queue, {"asset_id": "c", "status": "fout", "local": False, "remote": 1, "message": "Kapot bestand"}, who="testmac")
 check("report: fout van het asset blijft fout en pauzeert niet", fake.values["c"][worker.FIELD] == worker.FAILED and worker.paused() is False)
 fake.values["d"] = {worker.FIELD: worker.BUSY, worker.INFO: "Bezig op testmac sinds 13:00 (abc)"}
-worker.report(queue, {"asset_id": "d", "status": "fout", "local": True, "remote": 3, "message": "Geen internet"}, who="testmac")
-check("report: derde mislukte poging wordt fout", fake.values["d"][worker.FIELD] == worker.FAILED)
+gave_up = worker.report(queue, {"asset_id": "d", "status": "fout", "local": True, "remote": 3, "message": "Geen internet"}, who="testmac")
+check("report: derde mislukte poging wordt fout, niet teruggezet", fake.values["d"][worker.FIELD] == worker.FAILED and gave_up is None)
 worker._pause[0] = 0.0
 
 # verlopen bezig bij poging 3 is definitief
@@ -342,7 +343,8 @@ claim_a()
 fake.values["a"] = {worker.FIELD: worker.BUSY, worker.INFO: "Bezig op othermac sinds 10:00 (ffffff)"}
 puts = len(fake.puts)
 job = {"asset_id": "a", "status": "klaar", "message": "3 regels"}
-worker.report(queue, job, who="testmac")
+lost_result = worker.report(queue, job, who="testmac")
+check("overgenomen asset: report meldt het verlies", lost_result == "lost")
 check("overgenomen asset: report schrijft niets", len(fake.puts) == puts
       and fake.values["a"][worker.FIELD] == worker.BUSY and "othermac" in fake.values["a"][worker.INFO])
 check("  de job krijgt een notitie en de heartbeat staat uit", ("overgenomen" in job["message"] or "taken over" in job["message"])

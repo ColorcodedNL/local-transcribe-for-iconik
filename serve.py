@@ -469,6 +469,8 @@ def add_job(asset_id, remote=0):
         jobs.append(job)
     touch_jobs()
     work.put(job)
+    if remote:   # opdrachten uit de rij in Iconik hebben nog geen titel: ophalen, anders staat er een asset-ID
+        threading.Thread(target=fill_titles, args=([job],), daemon=True).start()
     return True
 
 
@@ -726,7 +728,13 @@ def report_remote(job):
                 raise Problem("Niet ingelogd bij Iconik.")
             queue_in_iconik = remote.Queue(connection)
             queue_in_iconik.setup()
-            remote.report(queue_in_iconik, job)
+            outcome = remote.report(queue_in_iconik, job)
+            if outcome == "requeued":
+                # Het ligt niet aan het asset: het staat weer in de rij en een andere Mac pakt het op.
+                job["status"] = "teruggezet"
+                job["message"] = ((job.get("message") or "").rstrip() + " "
+                                  + transcribe.L("Terug in de rij voor een andere Mac.", "Back in the queue for another Mac.")).strip()
+                save_jobs()
             return
         except Exception as error:
             print(f"Resultaat terugmelden mislukte ({attempt + 1}/3): {error}")

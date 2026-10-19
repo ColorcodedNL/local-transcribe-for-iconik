@@ -59,7 +59,7 @@ button.plain:disabled { color: var(--idle); cursor: default; }
 .title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 550;
          -webkit-user-select: text; user-select: text; }
 .state { color: var(--muted); white-space: nowrap; }
-.state.bezig { color: var(--accent); } .state.klaar { color: var(--good); } .state.fout { color: var(--bad); } .state.afgebroken { color: var(--muted); }
+.state.bezig { color: var(--accent); } .state.klaar { color: var(--good); } .state.fout { color: var(--bad); } .state.afgebroken { color: var(--muted); } .state.teruggezet { color: var(--warn); }
 .msg { color: var(--muted); margin-top: 2px; -webkit-user-select: text; user-select: text; }
 .msg.fout { color: var(--bad); }
 .stages { display: grid; grid-template-columns: 1fr 4fr 2fr 1fr; gap: 3px; margin-top: 8px; }
@@ -139,7 +139,7 @@ const TEXT = {
     spokenHelp: "Herkennen kijkt naar de luidste stukken van de opname. Zet de taal alleen vast als al je materiaal in één taal is. Herkennen werkt ook voor andere talen die Whisper ondersteunt (niet getest). We hebben Nederlands en Engels getest.", langAuto: "Volg macOS",
     stages: ["Audio lezen", "Transcriberen", "Sprekers", "Naar Iconik"],
     download: "Whisper-model downloaden (eenmalig, ca. 3 GB)",
-    status: {wachtend: "wacht sinds", bezig: "bezig", klaar: "klaar", overgeslagen: "overgeslagen", fout: "fout", afgebroken: "afgebroken"},
+    status: {wachtend: "wacht sinds", bezig: "bezig", klaar: "klaar", overgeslagen: "overgeslagen", fout: "fout", afgebroken: "afgebroken", teruggezet: "teruggezet in de rij"},
     audioLength: "Audio duurt", result: (l, s) => `${l} ${l === 1 ? "regel" : "regels"}, ${s} ${s === 1 ? "spreker" : "sprekers"}`,
     doneIn: (t, x) => `klaar in ${t} (${x} keer realtime)`, hide: "Verberg sporen", tracks: n => `${n} ${n === 1 ? "spoor" : "sporen"}`,
     ignored: "genegeerd", done: "Afgerond", of: "van", audioDone: "Audio getranscribeerd", skipped: "Overgeslagen of fout",
@@ -173,7 +173,7 @@ const TEXT = {
     spokenHelp: "Detection looks at the loudest parts of the recording. Only fix the language if all your footage is in one language. Detection also works for other languages Whisper supports (untested). We tested Dutch and English.", langAuto: "Follow macOS",
     stages: ["Read audio", "Transcribe", "Speakers", "Send to Iconik"],
     download: "Downloading Whisper model (once, about 3 GB)",
-    status: {wachtend: "waiting since", bezig: "running", klaar: "done", overgeslagen: "skipped", fout: "failed", afgebroken: "interrupted"},
+    status: {wachtend: "waiting since", bezig: "running", klaar: "done", overgeslagen: "skipped", fout: "failed", afgebroken: "interrupted", teruggezet: "back in the queue"},
     audioLength: "Audio length", result: (l, s) => `${l} ${l === 1 ? "line" : "lines"}, ${s} ${s === 1 ? "speaker" : "speakers"}`,
     doneIn: (t, x) => `done in ${t} (${x}x realtime)`, hide: "Hide tracks", tracks: n => `${n} ${n === 1 ? "track" : "tracks"}`,
     ignored: "ignored", done: "Finished", of: "of", audioDone: "Audio transcribed", skipped: "Skipped or failed",
@@ -284,7 +284,7 @@ function row(job, isOpen) {
 }
 
 function summary(all) {
-  const jobs = all.filter(j => j.status !== "afgebroken");   // een afgebroken opdracht telt niet mee in de cijfers
+  const jobs = all.filter(j => !["afgebroken", "teruggezet"].includes(j.status));   // telt niet mee in de cijfers
   const done = jobs.filter(j => !["wachtend", "bezig"].includes(j.status));
   const good = jobs.filter(j => j.status === "klaar" && j.elapsed && j.duration);
   const audio = good.reduce((a, j) => a + j.duration, 0), spent = good.reduce((a, j) => a + j.elapsed, 0);
