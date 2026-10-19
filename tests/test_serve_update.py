@@ -4,7 +4,7 @@
 """
 import sys, types, threading, time, json, http.client
 from http.server import ThreadingHTTPServer
-sys.path.insert(0, ".")
+sys.path.insert(0, "app")
 for name in ("keyring", "numpy", "mlx", "mlx_whisper", "torch", "webview"):
     if name not in sys.modules:
         try: __import__(name)

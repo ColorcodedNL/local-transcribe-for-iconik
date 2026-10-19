@@ -5,7 +5,7 @@ Gebruik: cd ~/iconik-transcribe && uv run tools/request_transcript.py <asset_id>
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "app"))
 import transcribe  # noqa: E402
 import worker  # noqa: E402
 

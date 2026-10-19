@@ -15,6 +15,7 @@ from pathlib import Path
 
 # Een code-update bevat precies deze bestanden. main.py en app_shell.py horen er bewust niet bij:
 # die starten de app en controleren de updates, dus die veranderen alleen met een nieuwe dmg.
+# In de repo staan de bestanden in app/; in de bundel en in een code-update staan ze plat, zonder die map.
 CODE_FILES = ["app_main.py", "transcribe.py", "serve.py", "updater.py", "worker.py", "ui.html", "setup_actions.py"]
 SHELL_FILES = ["main.py", "app_shell.py"]
 
@@ -44,7 +45,7 @@ def main():
         sys.exit(f"Ontbreekt in {folder}: {', '.join(missing)}")
     manifest = {
         "version": constant(folder / "transcribe.py", r'^APP_VERSION = "(\d+\.\d+\.\d+)"', "APP_VERSION"),
-        "requires_shell": int(constant(ROOT / "app_shell.py", r"^SHELL_VERSION = (\d+)", "SHELL_VERSION")),
+        "requires_shell": int(constant(ROOT / "app" / "app_shell.py", r"^SHELL_VERSION = (\d+)", "SHELL_VERSION")),
         "files": {name: hashlib.sha256((folder / name).read_bytes()).hexdigest() for name in CODE_FILES},
     }
     (folder / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")

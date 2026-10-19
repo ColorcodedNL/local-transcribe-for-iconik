@@ -8,7 +8,7 @@ import time
 import types
 from pathlib import Path
 
-sys.path.insert(0, ".")
+sys.path.insert(0, "app")
 for name in ("keyring", "numpy", "mlx", "mlx_whisper", "torch", "webview"):
     if name not in sys.modules:
         try:

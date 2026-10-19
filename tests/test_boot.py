@@ -5,7 +5,7 @@
 import importlib.util, json, os, tempfile
 from pathlib import Path
 
-spec = importlib.util.spec_from_file_location("boot", "main.py")
+spec = importlib.util.spec_from_file_location("boot", "app/main.py")
 boot = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(boot)
 boot.log = lambda text: print("    log:", text.splitlines()[0])

@@ -12,7 +12,7 @@ RES="$OUT/Contents/Resources"
 
 rm -rf "$OUT"
 mkdir -p "$OUT/Contents/MacOS" "$RES/app"
-VERSION="$(sed -n 's/^APP_VERSION = "\([0-9.]*\)".*/\1/p' "$HERE/transcribe.py")"
+VERSION="$(sed -n 's/^APP_VERSION = "\([0-9.]*\)".*/\1/p' "$HERE/app/transcribe.py")"
 [ -n "$VERSION" ] || { echo "APP_VERSION niet gevonden in transcribe.py"; exit 1; }
 
 # Hoofdprogramma: laadt de meegeleverde Python in dit proces en start main.py. Zo is de app
@@ -50,7 +50,7 @@ INFO
 # code-update (build_update.sh) uit dezelfde lijst bouwen.
 TOOLPY="$HERE/build/python/bin/python3.12"
 for f in $("$TOOLPY" "$HERE/tools/make_manifest.py" --shell-list) $("$TOOLPY" "$HERE/tools/make_manifest.py" --list); do
-  cp "$HERE/$f" "$RES/app/$f"
+  cp "$HERE/app/$f" "$RES/app/$f"
 done
 "$TOOLPY" "$HERE/tools/make_manifest.py" "$RES/app"   # vóór het ondertekenen, anders klopt de handtekening niet
 

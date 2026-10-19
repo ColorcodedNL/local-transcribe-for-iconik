@@ -61,7 +61,7 @@ The app checks GitHub Releases every six hours. When a newer version exists, a b
 - **Code updates** (most releases) are a small signed zip with the app's Python code. Click **Install**; the app downloads it, verifies an Ed25519 signature and a checksum per file, waits until no job is running, and restarts itself.
 - **Full updates** (a new Python, new packages, a new ffmpeg or models) need the new `.dmg`. The banner then offers the download page instead.
 
-Code updates are stored next to the app (`~/Library/Application Support/Local Transcribe for Iconik/code/`), never inside it, so the app's own code signature stays valid. If an update fails to start, the app notes that version as bad and starts again with the code that came in the app bundle. Nothing is installed without a valid signature from the key whose public half is built into the app (`app_shell.py`).
+Code updates are stored next to the app (`~/Library/Application Support/Local Transcribe for Iconik/code/`), never inside it, so the app's own code signature stays valid. If an update fails to start, the app notes that version as bad and starts again with the code that came in the app bundle. Nothing is installed without a valid signature from the key whose public half is built into the app (`app/app_shell.py`).
 
 ## Remote jobs
 
@@ -117,19 +117,20 @@ bash scripts/build_update.sh    # dist/code-<version>-shell<N>.zip and .sig, sig
 
 `scripts/build_bundle.sh` expects the pyannote speaker model in `~/Library/Application Support/Local Transcribe for Iconik/models/speaker-diarization-community-1`. Download it from [Hugging Face](https://huggingface.co/pyannote/speaker-diarization-community-1) (you need to accept its terms there).
 
-| File | Purpose |
+| Path | Purpose |
 | --- | --- |
-| `main.py` | Boot: picks the bundled code or the newest verified code update, falls back if it fails. Rarely changes |
-| `app_shell.py` | Fixed layer: shell version and the public update key. Rarely changes |
-| `app_main.py` | The app: receiver, job queue, window, menu bar, Iconik links, quitting, restart after an update |
-| `updater.py` | Finds, downloads, verifies and installs code updates |
-| `serve.py` | Local receiver, job queue, sign-in, Custom Action check, remote-jobs switch, open at login |
-| `worker.py` | Remote jobs: the Iconik queue (fields, claim, retries, pause) |
-| `transcribe.py` | The engine: audio tracks, Whisper, speakers, filters, writing to Iconik. Also usable from the command line |
-| `ui.html` | The window (jobs and preferences), in English and Dutch |
-| `scripts/` | Build scripts, and `launcher.c`, the native launcher that loads the bundled Python in the app process |
+| `app/` | All app code. In the app bundle and the code update these files sit flat, without the `app/` folder |
+| `app/main.py` | Boot: picks the bundled code or the newest verified code update, falls back if it fails. Rarely changes |
+| `app/app_shell.py` | Fixed layer: shell version and the public update key. Rarely changes |
+| `app/app_main.py` | The app: receiver, job queue, window, menu bar, Iconik links, quitting, restart after an update |
+| `app/updater.py` | Finds, downloads, verifies and installs code updates |
+| `app/serve.py` | Local receiver, job queue, sign-in, Custom Action check, remote-jobs switch, open at login |
+| `app/worker.py` | Remote jobs: the Iconik queue (fields, claim, retries, pause) |
+| `app/transcribe.py` | The engine: audio tracks, Whisper, speakers, filters, writing to Iconik. Also usable from the command line |
+| `app/ui.html` | The window (jobs and preferences), in English and Dutch |
+| `app/setup_actions.py` | Create the Custom Actions from the command line |
+| `scripts/` | Build scripts, the app icon, and `launcher.c`, the native launcher that loads the bundled Python in the app process |
 | `docs/` | The guides (PDF), `RELEASING.md` and `THIRD_PARTY_NOTICES.md` |
-| `setup_actions.py` | Create the Custom Actions from the command line |
 | `tools/` | Measuring tools for audio tracks and assets, update signing (`sign_update.py`), `make_manifest.py`, `local_update_test.py` |
 | `tests/` | Tests for the boot layer, the updater, the update state in `serve.py`, the remote-jobs queue and its switch, stalled jobs, the saved job list |
 

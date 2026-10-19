@@ -6,7 +6,7 @@ import base64, hashlib, importlib.util, io, json, sys, tempfile, threading, zipf
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from nacl.signing import SigningKey
-sys.path.insert(0, ".")
+sys.path.insert(0, "app")
 import updater, app_shell
 
 KEY = SigningKey.generate(); PUB = base64.b64encode(bytes(KEY.verify_key)).decode()
@@ -86,7 +86,7 @@ check("opruimen: huidige en vorige blijven", sorted(p.name for p in code.iterdir
 check("bad.json: opnieuw geïnstalleerde versie eraf, andere blijft", json.loads((code/"bad.json").read_text()) == ["0.2.9"], (code/"bad.json").read_text())
 
 # samen met de boot
-spec = importlib.util.spec_from_file_location("boot", "main.py"); boot = importlib.util.module_from_spec(spec); spec.loader.exec_module(boot)
+spec = importlib.util.spec_from_file_location("boot", "app/main.py"); boot = importlib.util.module_from_spec(spec); spec.loader.exec_module(boot)
 here = Path(tempfile.mkdtemp()); (here/"manifest.json").write_text(json.dumps({"version": "0.2.0"}))
 chosen = boot.choose_code(here, code, 1, app_shell.version_tuple)
 check("boot kiest de net geïnstalleerde code", chosen and chosen[1] == "0.2.3" and chosen[0] == code/"0.2.3", chosen)

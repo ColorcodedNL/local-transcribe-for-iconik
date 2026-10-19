@@ -11,15 +11,15 @@ PY="${TOOLPY:-$HERE/build/python/bin/python3.12}"
 SIGN="${SIGN_CMD:-uv run tools/sign_update.py}"
 command -v "$PY" >/dev/null || { echo "$PY ontbreekt, draai eerst scripts/build_python.sh"; exit 1; }
 
-VERSION="$(sed -n 's/^APP_VERSION = "\([0-9.]*\)".*/\1/p' transcribe.py)"
-SHELLV="$(sed -n 's/^SHELL_VERSION = \([0-9]*\).*/\1/p' app_shell.py)"
-PUBLIC="$(sed -n 's/^PUBLIC_KEY = "\([^"]*\)".*/\1/p' app_shell.py)"
+VERSION="$(sed -n 's/^APP_VERSION = "\([0-9.]*\)".*/\1/p' app/transcribe.py)"
+SHELLV="$(sed -n 's/^SHELL_VERSION = \([0-9]*\).*/\1/p' app/app_shell.py)"
+PUBLIC="$(sed -n 's/^PUBLIC_KEY = "\([^"]*\)".*/\1/p' app/app_shell.py)"
 [ -n "$VERSION" ] && [ -n "$SHELLV" ] && [ -n "$PUBLIC" ] || { echo "versie, shell of publieke sleutel niet gevonden"; exit 1; }
 git diff --quiet HEAD -- . 2>/dev/null || echo "Let op: er zijn niet-gecommitte wijzigingen. Commit eerst, dan hoort de update bij een commit."
 
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
-for f in $("$PY" tools/make_manifest.py --list); do cp "$f" "$STAGE/"; done
+for f in $("$PY" tools/make_manifest.py --list); do cp "app/$f" "$STAGE/"; done
 "$PY" tools/make_manifest.py "$STAGE"
 
 mkdir -p dist

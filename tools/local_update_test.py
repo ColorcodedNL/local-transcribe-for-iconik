@@ -26,13 +26,13 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "app"))
 import app_shell  # noqa: E402
 import updater  # noqa: E402
 
 def _newer(steps):
     """De huidige versie uit transcribe.py met het laatste getal `steps` hoger, zodat de updater het als nieuwer ziet."""
-    major, minor, patch_ = re.search(r'^APP_VERSION = "(\d+)\.(\d+)\.(\d+)"', (ROOT / "transcribe.py").read_text(), re.M).groups()
+    major, minor, patch_ = re.search(r'^APP_VERSION = "(\d+)\.(\d+)\.(\d+)"', (ROOT / "app" / "transcribe.py").read_text(), re.M).groups()
     return f"{major}.{minor}.{int(patch_) + steps}"
 
 
@@ -44,7 +44,7 @@ CODE_FILES = subprocess.run([sys.executable, str(ROOT / "tools" / "make_manifest
 def build(mode, version):
     work = Path(tempfile.mkdtemp())
     for name in CODE_FILES:
-        shutil.copy(ROOT / name, work / name)
+        shutil.copy(ROOT / "app" / name, work / name)
     path = work / "transcribe.py"
     text = path.read_text()
     text, count = re.subn(r'^APP_VERSION = "[\d.]+"', f'APP_VERSION = "{version}"', text, flags=re.M)
@@ -106,7 +106,7 @@ def main():
     signature, public = sign(data, Path(args.key).expanduser(), args.allow_other_key)
     store = {"zip": data, "sig": signature}
     running = args.running or subprocess.run(
-        [sys.executable, "-c", "import re,sys;print(re.search(r'^APP_VERSION = \"([\\d.]+)\"', open(sys.argv[1]).read(), re.M).group(1))", str(ROOT / "transcribe.py")],
+        [sys.executable, "-c", "import re,sys;print(re.search(r'^APP_VERSION = \"([\\d.]+)\"', open(sys.argv[1]).read(), re.M).group(1))", str(ROOT / "app" / "transcribe.py")],
         capture_output=True, text=True).stdout.strip()
     installed = updater.install({"version": version, "zip_url": "zip", "sig_url": "sig"}, running,
                                 app_shell.SHELL_VERSION, public, code_dir, get=lambda url, limit: store[url])
