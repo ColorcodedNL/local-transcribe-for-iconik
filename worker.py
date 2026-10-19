@@ -47,8 +47,9 @@ STALE_AFTER = 4 * 60      # laatste teken zo oud (drie gemiste hartslagen): de w
 STALE_LEGACY = 3 * 3600   # "bezig" van een oudere versie, zonder laatste teken: dan blijft het bij 3 uur
 RETRY_ELSEWHERE = 10 * 60  # een Mac waarop een asset mislukte, laat het zo lang aan een andere
 
-state = {"enabled": False, "last_poll": None, "last_asset": None, "error": "", "paused_until": None}
+state = {"enabled": False, "last_poll": None, "last_asset": None, "error": "", "paused_until": None, "pause_reason": ""}
 _pause = [0.0]            # tijdstip (time.time) tot wanneer niets wordt opgepakt
+_resumed_at = [0.0]       # wanneer de gebruiker zelf zei dat het weer mag (knop of schakelaar)
 wake = threading.Event()   # de schakelaar in Voorkeuren zet hem, zodat de werker meteen kijkt
 current = {}              # het asset uit de rij waar deze Mac nu aan werkt: asset, code, beat
 _beat_lock = threading.Lock()
@@ -117,22 +118,28 @@ def current_attempt(info):
     return int(match.group(1)) if match else 1
 
 
-def pause(seconds=COOLDOWN):
-    """Deze Mac heeft een probleem (opslag weg, geen inlog): even niets oppakken."""
+def pause(seconds=COOLDOWN, reason=""):
+    """Deze Mac heeft een probleem (opslag weg, geen inlog): even niets oppakken. `reden` is wat de
+    gebruiker te zien krijgt, zonder paden."""
     _pause[0] = time.time() + seconds
     state["paused_until"] = stamp(datetime.fromtimestamp(_pause[0]))[-5:]
+    state["pause_reason"] = scrub(reason).strip()[:160]
 
 
 def resume():
-    """De gebruiker zet de schakelaar om: de pauze vervalt."""
+    """De gebruiker zegt dat het weer mag (knop Nu hervatten of de schakelaar): de pauze vervalt, en de
+    Mac mag ook meteen weer pakken waar hij net op mislukte. Hij heeft het probleem immers opgelost."""
     _pause[0] = 0.0
+    _resumed_at[0] = time.time()
     state["paused_until"] = None
+    state["pause_reason"] = ""
 
 
 def paused():
     if time.time() < _pause[0]:
         return True
     state["paused_until"] = None
+    state["pause_reason"] = ""
     return False
 
 
@@ -314,7 +321,9 @@ class Queue:
             return 0
         failed = failed_on(previous)
         recent = age_seconds(since)
-        if clean_name(who) in failed and recent is not None and recent < RETRY_ELSEWHERE:
+        resumed_since = time.time() - _resumed_at[0] if _resumed_at[0] else None
+        if (clean_name(who) in failed and recent is not None and recent < RETRY_ELSEWHERE
+                and not (resumed_since is not None and resumed_since < recent)):   # zelf hervat na het zetten van de status: laten gaan
             return 0
         attempt = failed_attempts(previous) + 1
         mine = busy_info(who, secrets.token_hex(3), attempt, failed)
@@ -406,11 +415,11 @@ def report(queue, job, who=None, log=print):
         job["message"] = (job.get("message") or "") + tr(" (asset is door een andere Mac overgenomen, status niet aangepast)",
                                                           " (asset was taken over by another Mac, status not changed)")
         if job["status"] == "fout" and job.get("local"):
-            pause()
+            pause(reason=job.get("message", ""))
         return "lost"
     if job["status"] == "fout" and job.get("local"):
         if queue.give_back(job["asset_id"], who, job.get("message", ""), int(job.get("remote") or 1)):
-            pause()
+            pause(reason=job.get("message", ""))
             return "requeued"
         return None
     if job["status"] == "klaar":

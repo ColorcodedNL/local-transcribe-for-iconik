@@ -185,7 +185,9 @@ def status_text():
     if serve.busy():
         return transcribe.L("Bezig met een opdracht", "Working on a job")
     if remote.paused():
-        return transcribe.L(f"Gepauzeerd tot {remote.state['paused_until']}", f"Paused until {remote.state['paused_until']}")
+        until, why = remote.state["paused_until"], remote.state.get("pause_reason") or ""
+        return transcribe.L(f"Gepauzeerd tot {until}" + (f": {why[:70]}" if why else ""),
+                            f"Paused until {until}" + (f": {why[:70]}" if why else ""))
     return transcribe.L("Wacht op opdrachten", "Waiting for jobs")
 
 
@@ -237,8 +239,15 @@ def menu_target():
             def quitApp_(self, sender):
                 AppKit.NSApp.terminate_(None)
 
+            def resumeNow_(self, sender):
+                import worker as remote
+                remote.resume()
+                remote.wake.set()
+
             def menuNeedsUpdate_(self, menu):
+                import worker as remote
                 menu.itemAtIndex_(0).setTitle_(status_text())
+                menu.itemAtIndex_(2).setHidden_(not remote.paused())   # "Nu hervatten" alleen tijdens een pauze
 
         _Target = MenuTarget
     return _Target
@@ -256,7 +265,8 @@ def apply_menubar():
         menu.setAutoenablesItems_(False)
         menu.addItemWithTitle_action_keyEquivalent_(status_text(), None, "").setEnabled_(False)
         menu.addItem_(AppKit.NSMenuItem.separatorItem())
-        for title, action in ((transcribe.L("Venster openen", "Open window"), b"openWindow:"),
+        for title, action in ((transcribe.L("Nu hervatten", "Resume now"), b"resumeNow:"),
+                              (transcribe.L("Venster openen", "Open window"), b"openWindow:"),
                               (transcribe.L("Stop", "Quit"), b"quitApp:")):
             item = menu.addItemWithTitle_action_keyEquivalent_(title, action, "")
             item.setTarget_(target)

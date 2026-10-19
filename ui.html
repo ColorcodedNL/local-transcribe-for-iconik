@@ -134,7 +134,7 @@ const TEXT = {
     fieldsLang: "Taal van de velden in Iconik",
     fieldsHelp: "Wat mensen in Iconik zien bij Transcriptie en de keuzes Aangevraagd, Bezig, Klaar en Fout. Geldt voor iedereen in deze Iconik-omgeving en vraagt beheerrechten. Een view die het veld al bevat, houdt zijn eigen kopie: voeg het veld daar opnieuw toe.",
     fieldsDone: "Bijgewerkt in Iconik.", fieldsFail: "Niet gelukt",
-    workerLast: "Laatst gecontroleerd", workerPaused: "Gepauzeerd tot", workerAsset: "Laatst opgepakt", workerProblem: "Probleem", workerAs: "Naam",
+    workerLast: "Laatst gecontroleerd", workerPaused: "Gepauzeerd tot", resumeNow: "Nu hervatten", workerAsset: "Laatst opgepakt", workerProblem: "Probleem", workerAs: "Naam",
     modelsTitle: "Modellen", language: "Taal van de app", spoken: "Gesproken taal", spokenAuto: "Herken per asset", untested: "niet getest",
     spokenHelp: "Herkennen kijkt naar de luidste stukken van de opname. Zet de taal alleen vast als al je materiaal in één taal is. Herkennen werkt ook voor andere talen die Whisper ondersteunt (niet getest). We hebben Nederlands en Engels getest.", langAuto: "Volg macOS",
     stages: ["Audio lezen", "Transcriberen", "Sprekers", "Naar Iconik"],
@@ -168,7 +168,7 @@ const TEXT = {
     fieldsLang: "Language of the fields in Iconik",
     fieldsHelp: "What people see in Iconik for Transcription and the choices Requested, In progress, Done and Failed. Applies to everyone in this Iconik environment and needs admin rights. A view that already contains the field keeps its own copy: add the field to it again.",
     fieldsDone: "Updated in Iconik.", fieldsFail: "Did not work",
-    workerLast: "Last checked", workerPaused: "Paused until", workerAsset: "Last picked up", workerProblem: "Problem", workerAs: "Name",
+    workerLast: "Last checked", workerPaused: "Paused until", resumeNow: "Resume now", workerAsset: "Last picked up", workerProblem: "Problem", workerAs: "Name",
     modelsTitle: "Models", language: "App language", spoken: "Spoken language", spokenAuto: "Detect per asset", untested: "untested",
     spokenHelp: "Detection looks at the loudest parts of the recording. Only fix the language if all your footage is in one language. Detection also works for other languages Whisper supports (untested). We tested Dutch and English.", langAuto: "Follow macOS",
     stages: ["Read audio", "Transcribe", "Speakers", "Send to Iconik"],
@@ -238,6 +238,9 @@ $("worker").onchange = e => {
     const value = e.target.value; e.target.blur(); fieldsMsg = "";
     fetch("/iconik-language?value=" + value, h).then(r => r.json()).then(r => { fieldsMsg = r.ok ? T.fieldsDone : T.fieldsFail + ": " + (r.error || ""); tick(); }).catch(() => { fieldsMsg = T.fieldsFail; tick(); });
   }
+};
+$("worker").onclick = e => {
+  if (e.target.id === "resumeNow") { e.target.disabled = true; fetch("/worker?value=resume", { headers: { "X-Local-Transcribe": "1" } }).then(tick); }
 };
 $("lang").onchange = e => { e.target.blur(); fetch("/applang?value=" + e.target.value).then(tick); };
 
@@ -328,7 +331,7 @@ function settings(s) {
   const html = {
     account,
     mounts: mounts.length ? mounts.map(m => `<div class="mount"><div><strong>${esc(m.name || "ISG " + m.id)}</strong><br><code>${esc(m.path)}</code></div><button class="plain" data-mount="change" data-id="${esc(m.id)}">${T.change}</button><button class="plain" data-mount="remove" data-id="${esc(m.id)}">${T.remove}</button></div>`).join("") : `<p class="dim">${T.noMounts}</p>`,
-    worker: (w => `<p><label><input type="checkbox" id="workerOn" style="width:auto;margin:0 .5em 0 0;vertical-align:middle"${w.enabled ? " checked" : ""}> ${T.workerOn}</label></p><p class="dim">${T.workerHelp}</p>${w.login_available ? `<p><label><input type="checkbox" id="loginOn" style="width:auto;margin:0 .5em 0 0;vertical-align:middle"${w.login ? " checked" : ""}> ${T.loginOn}</label></p><p class="dim">${T.loginHelp}</p>` : ""}` + fieldsHtml(w) + (w.enabled ? `<p class="dim">${T.workerAs}: ${esc(w.machine || "")}${w.last_poll ? `. ${T.workerLast}: ${esc(w.last_poll)}` : ""}${w.last_asset ? `. ${T.workerAsset}: <code>${esc(w.last_asset)}</code>` : ""}${w.paused_until ? `. ${T.workerPaused} ${esc(w.paused_until)}` : ""}</p>` + (w.error ? `<p>${T.workerProblem}: ${esc(w.error)}</p>` : "") : ""))(s.worker || {}),
+    worker: (w => `<p><label><input type="checkbox" id="workerOn" style="width:auto;margin:0 .5em 0 0;vertical-align:middle"${w.enabled ? " checked" : ""}> ${T.workerOn}</label></p><p class="dim">${T.workerHelp}</p>${w.login_available ? `<p><label><input type="checkbox" id="loginOn" style="width:auto;margin:0 .5em 0 0;vertical-align:middle"${w.login ? " checked" : ""}> ${T.loginOn}</label></p><p class="dim">${T.loginHelp}</p>` : ""}` + fieldsHtml(w) + (w.enabled ? `<p class="dim">${T.workerAs}: ${esc(w.machine || "")}${w.last_poll ? `. ${T.workerLast}: ${esc(w.last_poll)}` : ""}${w.last_asset ? `. ${T.workerAsset}: <code>${esc(w.last_asset)}</code>` : ""}</p>` + (w.paused_until ? `<p>${T.workerPaused} ${esc(w.paused_until)}${w.pause_reason ? ": " + esc(w.pause_reason) : ""}. <button class="plain" id="resumeNow">${T.resumeNow}</button></p>` : "") + (w.error ? `<p>${T.workerProblem}: ${esc(w.error)}</p>` : "") : ""))(s.worker || {}),
     models: `<p>${T.speech}: <code>${esc(s.model)}</code></p><p>${T.speakers}: ${{lokaal: T.spLocal, huggingface: T.spHub, uit: T.spOff}[s.speakers]}</p><p class="dim">${T.credit}</p><p class="dim">${T.version} ${esc(s.version)}</p>`,
   };
   for (const id in html) if (drawn["set-" + id] !== html[id] && !$(id).contains(document.activeElement)) { $(id).innerHTML = html[id]; drawn["set-" + id] = html[id]; }

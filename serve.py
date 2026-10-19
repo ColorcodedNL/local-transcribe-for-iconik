@@ -574,6 +574,9 @@ class Handler(BaseHTTPRequestHandler):
             if url.path == "/worker":
                 if self.headers.get("X-Local-Transcribe") != "1":  # een webpagina mag dit niet omzetten
                     return self.send_error(403)
+                if first("value") == "resume":
+                    remote.resume()
+                    remote.wake.set()
                 if first("value") in ("on", "off"):
                     config = transcribe.load_config()
                     config["worker_enabled"] = first("value") == "on"

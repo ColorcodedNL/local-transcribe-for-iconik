@@ -50,6 +50,11 @@ check("  staat nu in de voorkeuren", serve.worker_enabled() is True and transcri
 check("  en de werker wordt wakker gemaakt", worker.wake.is_set())
 check("  en een pauze na een fout vervalt", worker.paused() is False and worker.state["paused_until"] is None)
 check("onbekende waarde verandert niets", get("/worker?value=misschien", header) == 200 and serve.worker_enabled() is True)
+worker.pause(reason="Geen internet")
+worker.wake.clear()
+check("hervatten zonder header: 403 en de pauze blijft", get("/worker?value=resume") == 403 and worker.paused() is True)
+check("hervatten met header: pauze weg en de werker wordt wakker", get("/worker?value=resume", header) == 200
+      and worker.paused() is False and worker.wake.is_set() and serve.worker_enabled() is True)
 check("met header uit: 200 en uit", get("/worker?value=off", header) == 200 and serve.worker_enabled() is False)
 check("andere voorkeuren blijven staan", (transcribe.save_config({**transcribe.load_config(), "language": "nl"}) or True)
       and get("/worker?value=on", header) == 200 and transcribe.load_config().get("language") == "nl")
@@ -65,7 +70,7 @@ except transcribe.Problem as problem:
 
 state = serve.app_state()
 check("het venster krijgt de status mee", state["worker"]["enabled"] is True and state["worker"]["machine"], state.get("worker"))
-check("de status bevat geen geheimen", set(state["worker"]) <= {"enabled", "last_poll", "last_asset", "error", "machine", "paused_until", "login", "login_available", "iconik_language"}, state["worker"])
+check("de status bevat geen geheimen", set(state["worker"]) <= {"enabled", "last_poll", "last_asset", "error", "machine", "paused_until", "pause_reason", "login", "login_available", "iconik_language"}, state["worker"])
 get("/worker?value=off", header)
 check("uit staat ook zo in de status", serve.app_state()["worker"]["enabled"] is False)
 

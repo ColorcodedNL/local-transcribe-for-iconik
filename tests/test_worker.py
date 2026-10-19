@@ -397,6 +397,26 @@ check("na tien minuten mag de eerste Mac het weer proberen (ook als er maar een 
       queue.claim("a", "testmac", sleep=nap) == 3)
 worker.current.clear()
 
+# pauzereden, en hervatten door de gebruiker
+worker.pause(reason="De map /Volumes/X/y is niet bereikbaar. Is de opslag (ISG) gemount?")
+check("pauze met reden, zonder pad", worker.paused() and worker.state["pause_reason"] == "De map is niet bereikbaar. Is de opslag (ISG) gemount?")
+worker.resume()
+check("hervatten wist de pauze en de reden", not worker.paused() and worker.state["pause_reason"] == "" and worker.state["paused_until"] is None)
+worker.pause(seconds=-1, reason="verlopen")
+check("een verlopen pauze wist de reden", worker.paused() is False and worker.state["pause_reason"] == "")
+
+fake, queue = ready()
+worker.current.clear()
+worker._resumed_at[0] = 0.0
+fake.values["a"] = {worker.FIELD: worker.REQUESTED}
+queue.claim("a", "testmac", sleep=nap)
+queue.give_back("a", "testmac", "Opslag niet gemount.", 1)
+check("zonder hervatten slaat de Mac zijn eigen asset over", queue.claim("a", "testmac", sleep=nap) == 0)
+worker.resume()
+check("na hervatten pakt dezelfde Mac het meteen weer, als poging 2", queue.claim("a", "testmac", sleep=nap) == 2)
+worker.current.clear()
+worker._resumed_at[0] = 0.0
+
 # --- Engelse waarden, labels per taal en omzetten van 0.3.1
 fake, queue = ready()
 check("nieuw veld: Engelse waarden met Nederlandse labels",
