@@ -165,12 +165,11 @@ def claim_code(info):
 def scrub(text):
     """Haalt paden uit een tekst voor het detailveld. Iedereen die de asset ziet, ziet dat veld, en
     een pad verraadt hoe de opslag heet en waar hij staat. In de app zelf blijft de volledige tekst staan."""
-    hidden = tr("(pad verborgen)", "(path hidden)")
-    text = re.sub(r"((?:Bestand niet gevonden|File not found): ).*", lambda m: m.group(1) + hidden, text or "")
-    text = re.sub(r"((?:De map|The folder) ).+?( is niet bereikbaar| cannot be reached)",
-                  lambda m: m.group(1) + hidden + m.group(2), text)
-    text = re.sub(r"""(['"])/[^'"]*\1""", hidden, text)
-    return re.sub(r"(?<![\w.])/(?:Volumes|Users|private|mnt|Library|System|tmp|var)/\S+", hidden, text)
+    text = re.sub(r"(Bestand niet gevonden|File not found): .*", lambda m: m.group(1) + ".", text or "")
+    text = re.sub(r"(De map|The folder) .+?( is niet bereikbaar| cannot be reached)",
+                  lambda m: m.group(1) + m.group(2), text)
+    text = re.sub(r"""\s*(['"])/[^'"]*\1""", " \u2026", text)
+    return re.sub(r"(?<![\w.])/(?:Volumes|Users|private|mnt|Library|System|tmp|var)/\S+", "\u2026", text)
 
 
 def clean_name(name):

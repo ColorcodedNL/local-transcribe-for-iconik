@@ -311,9 +311,9 @@ check("heartbeat na het resultaat overschrijft het niet", worker.beat(queue) is 
 
 # paden komen niet in het detailveld
 check("scrub: bestand niet gevonden", "/Volumes" not in worker.scrub("Bestand niet gevonden: /Volumes/Archief/Iconik/Map met spatie/clip.mp4")
-      and worker.scrub("Bestand niet gevonden: /Volumes/A/b c.mp4").startswith("Bestand niet gevonden: "))
+      and worker.scrub("Bestand niet gevonden: /Volumes/A/b c.mp4") == "Bestand niet gevonden.")
 check("scrub: map niet bereikbaar", worker.scrub("De map /Volumes/Archief/Iconik is niet bereikbaar. Is de opslag (ISG) gemount?")
-      .endswith("is niet bereikbaar. Is de opslag (ISG) gemount?") and "Archief" not in worker.scrub("The folder /Volumes/Archief/Iconik cannot be reached. Is it mounted?"))
+      == "De map is niet bereikbaar. Is de opslag (ISG) gemount?" and "Archief" not in worker.scrub("The folder /Volumes/Archief/Iconik cannot be reached. Is it mounted?"))
 check("scrub: pad tussen aanhalingstekens en los pad", "/Users" not in worker.scrub("[Errno 2] No such file or directory: '/Users/x y/z.wav'")
       and "/private" not in worker.scrub("Fout in /private/var/folders/ab/cd.tmp daarna") and worker.scrub("Geen internet.") == "Geen internet.")
 fake.values["p"] = {worker.FIELD: worker.BUSY, worker.INFO: "x"}
