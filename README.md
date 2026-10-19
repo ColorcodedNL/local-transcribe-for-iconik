@@ -132,7 +132,7 @@ bash scripts/build_update.sh    # dist/code-<version>-shell<N>.zip and .sig, sig
 | `docs/` | The guides (PDF), `RELEASING.md` and `THIRD_PARTY_NOTICES.md` |
 | `setup_actions.py` | Create the Custom Actions from the command line |
 | `tools/` | Measuring tools for audio tracks and assets, update signing (`sign_update.py`), `make_manifest.py`, `local_update_test.py` |
-| `tests/` | Tests for the boot layer, the updater, the update state in `serve.py`, the remote-jobs queue and its switch, stalled jobs |
+| `tests/` | Tests for the boot layer, the updater, the update state in `serve.py`, the remote-jobs queue and its switch, stalled jobs, the saved job list |
 
 Logs: `~/Library/Logs/Local Transcribe for Iconik/serve.log`. Each job logs time and memory per stage.
 

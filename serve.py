@@ -12,6 +12,7 @@ Stoppen met Ctrl+C. Luistert alleen op deze Mac zelf (127.0.0.1).
 """
 
 import argparse
+import atexit
 import html
 import json
 import os
@@ -80,6 +81,92 @@ jobs_lock = threading.Lock()
 work = queue.Queue()
 settings = {}
 cleared = [0]             # aantal opgeruimde opdrachten, zodat nummers uniek blijven
+
+# De lijst blijft bewaard tot de gebruiker hem zelf opruimt. Wat bij een herstart nog liep of wachtte,
+# komt terug als "afgebroken": de opdracht wordt niet hervat. Opdrachten uit de rij in Iconik komen
+# vanzelf terug, want die staan daar nog.
+MAX_KEPT_JOBS = 500
+_KEPT_FIELDS = ("n", "asset_id", "title", "status", "message", "duration", "result", "language", "tracks")
+_save_lock = threading.Lock()
+_dirty = threading.Event()
+
+
+def jobs_path():
+    return transcribe.CONFIG_PATH.parent / "jobs.json"
+
+
+def save_jobs():
+    """Schrijft de lijst weg. Mislukt dat, dan is de lijst alleen niet bewaard: nooit een reden om te stoppen."""
+    try:
+        with jobs_lock:
+            rows = []
+            for job in jobs[-MAX_KEPT_JOBS:]:
+                row = {key: job.get(key) for key in _KEPT_FIELDS}
+                for key in ("added", "started", "finished"):
+                    row[key] = job[key].isoformat() if job.get(key) else None
+                rows.append(row)
+            payload = {"saved": datetime.now().isoformat(), "cleared": cleared[0], "jobs": rows}
+        with _save_lock:
+            path = jobs_path()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            temp = path.with_name(path.name + ".tmp")
+            temp.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+            os.replace(temp, path)
+    except Exception as error:
+        print(f"De lijst met opdrachten bewaren mislukte: {error}")
+
+
+def touch_jobs():
+    """Er is iets veranderd: de lijst wordt binnen een paar seconden bewaard (niet bij elke wijziging,
+    anders schrijft een collectie van honderden assets honderd keer)."""
+    _dirty.set()
+
+
+def _saver():
+    while True:
+        _dirty.wait()
+        time.sleep(2)
+        _dirty.clear()
+        save_jobs()
+
+
+def _time(text):
+    try:
+        return datetime.fromisoformat(text) if text else None
+    except (TypeError, ValueError):
+        return None
+
+
+def load_jobs():
+    """Haalt de bewaarde lijst terug, bij de start. Wat nog liep of wachtte is afgebroken."""
+    try:
+        data = json.loads(jobs_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    if not isinstance(data, dict) or not isinstance(data.get("jobs", []), list):
+        return
+    saved = _time(data.get("saved")) or datetime.now()
+    loaded = []
+    for row in data.get("jobs", []):
+        try:
+            job = {"n": int(row["n"]), "asset_id": str(row["asset_id"]), "title": row.get("title") or "",
+                   "status": row.get("status") or "fout", "message": row.get("message") or "",
+                   "added": _time(row.get("added")) or saved, "remote": 0,
+                   "started": _time(row.get("started")), "finished": _time(row.get("finished")),
+                   "stage": "", "fraction": None, "tracks": row.get("tracks") or [],
+                   "duration": row.get("duration"), "result": row.get("result"), "language": row.get("language")}
+        except (KeyError, TypeError, ValueError, AttributeError):
+            continue
+        if job["status"] in ("wachtend", "bezig"):
+            job.update(status="afgebroken", finished=saved,
+                       message=transcribe.L("Afgebroken: de app is herstart.", "Interrupted: the app was restarted."))
+        loaded.append(job)
+    with jobs_lock:
+        jobs[:0] = loaded
+        try:
+            cleared[0] = max(cleared[0], int(data.get("cleared") or 0))
+        except (TypeError, ValueError):
+            pass
 current = [None]          # de opdracht die nu verwerkt wordt
 # Zonder opdracht en zonder open venster stopt de ontvanger zichzelf, zodat het geheugen vrijkomt.
 # De volgende klik in Iconik start hem opnieuw. Het venster haalt elke paar seconden /state op.
@@ -365,6 +452,7 @@ def clear_finished():
         keep = [job for job in jobs if job["status"] in ("wachtend", "bezig")]
         cleared[0] += len(jobs) - len(keep)
         jobs[:] = keep
+    save_jobs()
 
 
 def add_job(asset_id, remote=0):
@@ -379,6 +467,7 @@ def add_job(asset_id, remote=0):
                "started": None, "finished": None, "stage": "", "fraction": None,
                "tracks": []}
         jobs.append(job)
+    touch_jobs()
     work.put(job)
     return True
 
@@ -703,6 +792,7 @@ def progress_ok():
 
 
 def leave(code):
+    save_jobs()
     os._exit(code)
 
 
@@ -715,6 +805,7 @@ def give_up_stalled(job):
                            f"The job reported nothing for {minutes} {en} and was stopped.")
     print(f"HANGT: {job['asset_id']} meldde {minutes} {nl} niets, de app herstart.", flush=True)
     job.update(abandoned=True, status="fout", local=True, message=message, finished=datetime.now())
+    save_jobs()
     if job.get("remote"):
         # Vaak is de verbinding juist de reden: niet langer dan 30 seconden wachten op het terugmelden.
         reporter = threading.Thread(target=report_remote, args=(job,), daemon=True)
@@ -750,6 +841,7 @@ def worker():
             continue
         job["status"] = "bezig"
         job["started"] = datetime.now()
+        touch_jobs()
         last_progress[0] = time.monotonic()
         current[0] = job
 
@@ -798,6 +890,7 @@ def worker():
             if job.get("abandoned"):
                 continue   # de watchdog gaf deze opdracht al op en meldde hem terug
             job["finished"] = datetime.now()
+            save_jobs()
             if job.get("remote"):
                 report_remote(job)
             current[0] = None
@@ -821,6 +914,9 @@ def start(model="mlx-community/whisper-large-v3-mlx", language=None, mount=None,
         language=language, mount=mount, idle_exit=idle_exit)
 
     transcribe.LISTENER = listen
+    load_jobs()
+    atexit.register(save_jobs)
+    threading.Thread(target=_saver, daemon=True, name="bewaren").start()
     server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     threading.Thread(target=server.serve_forever, daemon=True, name="ontvanger").start()
     print(f"Luistert op http://localhost:{port}")

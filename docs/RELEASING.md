@@ -38,6 +38,7 @@ uv run --with pynacl --with requests python tests/test_serve_update.py
 uv run --with pynacl --with requests python tests/test_worker.py
 uv run --with pynacl --with requests python tests/test_serve_worker.py
 uv run --with pynacl --with requests python tests/test_stall.py
+uv run --with pynacl --with requests python tests/test_jobs.py
 ```
 
 On a Mac, `uv run tools/local_update_test.py good|syntax|crash` installs a locally signed test update, so you can watch the app pick it, or fall back. `reset` removes installed updates.
