@@ -58,13 +58,13 @@ Code updates are stored next to the app (`~/Library/Application Support/Local Tr
 
 Not everyone has a Mac with enough memory for fast transcripts. With **Allow remote jobs** (Preferences) a Mac picks up requests made in the Iconik browser, from any location, and processes them in the background. The normal workflow, started from the Custom Action, does not change.
 
-How it works: Iconik is the queue. The app creates two metadata fields, `local_transcribe_status` (values `requested`, `in_progress`, `done`, `failed`) and `local_transcribe_info`, and a metadata view called "Local Transcribe". Add the two fields to a metadata view your team uses. To request a transcript, set the status to Requested on an asset. The Mac checks once a minute, claims the asset, runs the usual engine and writes the outcome back.
+How it works: Iconik is the queue. The app creates two metadata fields, `local_transcribe_status` (values `requested`, `in_progress`, `done`, `failed`) and `local_transcribe_info`, and a metadata view called "Local Transcribe". Add the two fields to a metadata view your team uses. To request a transcript, set the status to Requested on an asset. For a whole collection, select it in Iconik, choose Update Metadata and set the transcription field to Requested: that applies to every item in it. The Mac checks once a minute, claims the asset, runs the usual engine and writes the outcome back.
 
 The stored values and field names are always English, so Iconik support can read them. What people see are labels, in Dutch (Transcriptie: Aangevraagd, Bezig, Klaar, Fout) or English (Transcription: Requested, In progress, Done, Failed). Choose under **Language of the fields in Iconik** in Preferences (it applies to everyone in that Iconik environment and needs admin rights), or rename the labels in Iconik under Admin, Metadata Fields. A view that already contains the field keeps its own copy of the labels, so add the field to that view again. Version 0.3.1 stored Dutch values; those are converted when the app starts, and old requests are still picked up. The details text each Mac writes follows the language of its own app.
 
 - It uses the Iconik account that is signed in on that Mac, so no extra licence is needed. It only sees assets that account can see, and transcripts appear under that account.
 - Problems with the Mac (storage not mounted, not signed in, no internet) put the asset back in the queue, up to three attempts, then Failed with the reason. The Mac then pauses for ten minutes. Problems with the asset itself are Failed straight away. A Mac that is working refreshes a "last sign" every minute; if it stays silent for four minutes, another Mac takes the asset over. The last sign only refreshes while the job makes progress: a job that reports nothing for 15 minutes (longer for long audio), for example after the Mac slept and the storage dropped, is given back to the queue and the app restarts. The Mac that failed leaves that asset to another Mac for ten minutes.
-- Claiming is a write, a short wait and a read back, because Iconik has no atomic operation. Fine for one worker; test it with several Macs before relying on it.
+- Claiming is a write, a short wait and a read back, because Iconik has no atomic operation. Tested with two Macs on one Iconik account: they split the queue without double work, and a Mac that is force-quit, goes to sleep or loses its storage hands its asset to the other. More Macs and separate Iconik accounts are not tested yet.
 - With remote jobs on, the app lives in the menu bar and closing the window hides it. **Open at login** (separate, off by default) starts it hidden at login.
 - The storage (ISG) must be mounted on that Mac.
 
@@ -127,7 +127,9 @@ Logs: `~/Library/Logs/Local Transcribe for Iconik/serve.log`. Each job logs time
 
 ## Roadmap
 
-- Test the shared queue with several Macs, so a whole archive can be transcribed in parallel
+- Test the shared queue with more than two Macs and with separate Iconik accounts, so a whole archive can be transcribed in parallel
+- Keep the history of a taken-over asset in the details field, and let a Mac check that the asset is still its own before it writes a result
+- Keep the list of jobs across restarts
 - A one-click button in Iconik for remote jobs (needs an endpoint Iconik can reach)
 - Sign and notarize the app, which would allow fully automatic updates (Sparkle)
 - Native Mac interface in Swift

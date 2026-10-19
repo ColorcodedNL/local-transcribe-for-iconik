@@ -157,7 +157,7 @@ def restart():
     if bundle.suffix != ".app":
         print("Herstarten kan alleen vanuit de app zelf.")
         return
-    print(f"[{datetime.now():%H:%M:%S}] herstart voor een update")
+    print(f"[{datetime.now():%H:%M:%S}] de app herstart (update of vastgelopen opdracht)")
     # Een los scriptje wacht tot dit proces weg is en opent dan de app. Is dit proces na een minuut nog
     # niet weg (iemand koos Annuleren), dan opent het niets.
     script = ("n=0; while kill -0 \"$1\" 2>/dev/null && [ $n -lt 120 ]; do sleep 0.5; n=$((n+1)); done; "

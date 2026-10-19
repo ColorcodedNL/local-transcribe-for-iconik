@@ -710,9 +710,10 @@ def give_up_stalled(job):
     """Een vastgelopen draad is in Python niet te stoppen. De schone weg: de opdracht terugmelden
     (een andere Mac kan hem dan oppakken) en de app herstarten."""
     minutes = max(1, round((time.monotonic() - last_progress[0]) / 60))
-    message = transcribe.L(f"De opdracht meldde {minutes} minuten niets meer en is gestopt.",
-                           f"The job reported nothing for {minutes} minutes and was stopped.")
-    print(f"HANGT: {job['asset_id']} meldde {minutes} minuten niets, de app herstart.", flush=True)
+    nl, en = ("minuut", "minute") if minutes == 1 else ("minuten", "minutes")
+    message = transcribe.L(f"De opdracht meldde {minutes} {nl} niets meer en is gestopt.",
+                           f"The job reported nothing for {minutes} {en} and was stopped.")
+    print(f"HANGT: {job['asset_id']} meldde {minutes} {nl} niets, de app herstart.", flush=True)
     job.update(abandoned=True, status="fout", local=True, message=message, finished=datetime.now())
     if job.get("remote"):
         # Vaak is de verbinding juist de reden: niet langer dan 30 seconden wachten op het terugmelden.
