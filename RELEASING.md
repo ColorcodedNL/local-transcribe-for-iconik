@@ -6,7 +6,7 @@ Two kinds of release, depending on what changed.
 
 Changes in `app_main.py`, `serve.py`, `transcribe.py`, `updater.py`, `worker.py`, `ui.html` or `setup_actions.py`.
 
-1. Raise `APP_VERSION` in `transcribe.py`.
+1. Raise `APP_VERSION` in `transcribe.py`, and update the "New in" block at the top of `README.md`.
 2. Run the tests (see below).
 3. Commit.
 4. `bash build_update.sh` makes `dist/code-<version>-shell<N>.zip` and `.sig`. It refuses to sign with a key that does not match `PUBLIC_KEY` in `app_shell.py`.
