@@ -1,22 +1,13 @@
 # Local Transcribe for Iconik
 
 > [!IMPORTANT]
-> **Remote jobs with several Macs (0.3.2): several Macs can share the queue, and jobs no longer hang after sleep.** Use 0.3.2 or newer if you use remote jobs.
+> **Remote jobs with several Macs.** Several Macs can share one queue in Iconik, so a whole archive can be transcribed in parallel. Use 0.3.2 or newer.
 >
 > - **Several Macs:** if a Mac goes silent for four minutes, another Mac takes its asset over. Tested with two Macs.
 > - **A whole collection at once:** select it in Iconik, choose Update Metadata and set the transcription field to Requested.
-> - **Queue values are now English.** Values from 0.3.1 are converted automatically.
-> - **Fixed:** after a Mac went to sleep and the connection or storage dropped, a job could stay on "busy" for ever and that Mac took no new work. A stalled job is now handed back to the queue and the app restarts itself.
+> - **No hanging jobs:** a job that stalls, for example after sleep, is handed back to the queue and the app restarts itself.
 >
-> Installed apps offer the update in the banner. [Release notes](../../releases/tag/v0.3.2)
-
-> [!NOTE]
-> **New in 0.3.3** (a code update: install it from the banner in the app, no new `.dmg` needed)
->
-> - A Mac that lost its asset to another Mac no longer writes over that Mac's status.
-> - The details field in Iconik no longer shows storage paths, and keeps a short line with earlier failed attempts.
-> - The job list is kept across restarts. Jobs that were running show as interrupted, an asset put back in the queue is no longer shown as a failure, and queue jobs show their title.
-> - A paused Mac says why, and **Resume now** (Preferences or the menu bar) lifts the pause.
+> Installed apps offer updates in the banner. See the [latest release](../../releases/latest) for what changed.
 
 A Mac app that transcribes assets from [Iconik](https://www.iconik.io) on your own machine and writes the result back to Iconik as native transcriptions, with word timing and speaker labels.
 
