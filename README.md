@@ -3,10 +3,10 @@
 > [!IMPORTANT]
 > **New in 0.3.2: several Macs can share the queue, and a fix for jobs that hang after sleep.** Install this update if you use remote jobs.
 >
-> - **Fixed:** after a Mac went to sleep and the connection or storage dropped, a job could stay on "busy" for ever and that Mac took no new work. A stalled job is now handed back to the queue and the app restarts itself.
 > - **Several Macs:** if a Mac goes silent for four minutes, another Mac takes its asset over. Tested with two Macs.
 > - **A whole collection at once:** select it in Iconik, choose Update Metadata and set the transcription field to Requested.
 > - **Queue values are now English.** Values from 0.3.1 are converted automatically.
+> - **Fixed:** after a Mac went to sleep and the connection or storage dropped, a job could stay on "busy" for ever and that Mac took no new work. A stalled job is now handed back to the queue and the app restarts itself.
 >
 > Installed apps offer the update in the banner. [Release notes](../../releases/tag/v0.3.2)
 
