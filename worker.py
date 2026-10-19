@@ -52,6 +52,7 @@ _pause = [0.0]            # tijdstip (time.time) tot wanneer niets wordt opgepak
 wake = threading.Event()   # de schakelaar in Voorkeuren zet hem, zodat de werker meteen kijkt
 current = {}              # het asset uit de rij waar deze Mac nu aan werkt: asset, code, beat
 _beat_lock = threading.Lock()
+lost = set()              # assets die deze Mac kwijt is (overgenomen of gewijzigd): daar schrijft hij niets meer naartoe
 language = ["nl"]         # de taal van de tekst die deze Mac in het detailveld schrijft
 iconik_language = ["nl"]  # de taal van de labels als deze Mac de velden in Iconik aanmaakt
 
@@ -360,12 +361,32 @@ class Queue:
         self.write(asset_id, DONE if ok else FAILED, f"{who}, {stamp()}: {(message or '')[:300]}")
 
 
-def report(queue, job, who=None):
+def report(queue, job, who=None, log=print):
     """Zet het resultaat van een afgeronde opdracht uit de rij terug in Iconik."""
     who = who or machine_name()
+    asset_id = job["asset_id"]
+    code = None
     with _beat_lock:          # het asset is klaar: de heartbeat mag er niet meer aan komen
-        if current.get("asset") == job["asset_id"]:
+        if current.get("asset") == asset_id:
+            code = current.get("code")
             current.clear()
+        was_lost = asset_id in lost
+        lost.discard(asset_id)
+    if not was_lost and code:
+        try:
+            status, info, _ = queue.read(asset_id)
+            was_lost = status != BUSY or claim_code(info) != code
+        except Exception:     # niet te lezen: laat het schrijven zelf maar falen of slagen
+            pass
+    if was_lost:
+        # Het asset is niet meer van ons (door een andere Mac overgenomen of door een mens gewijzigd).
+        # Status en details zijn van de nieuwe eigenaar, dus daar schrijven we niet overheen.
+        log(f"Werker: {asset_id} is niet meer van deze Mac, resultaat niet in de rij gezet")
+        job["message"] = (job.get("message") or "") + tr(" (asset is door een andere Mac overgenomen, status niet aangepast)",
+                                                          " (asset was taken over by another Mac, status not changed)")
+        if job["status"] == "fout" and job.get("local"):
+            pause()
+        return
     if job["status"] == "fout" and job.get("local"):
         if queue.give_back(job["asset_id"], who, job.get("message", ""), int(job.get("remote") or 1)):
             pause()
@@ -391,6 +412,7 @@ def beat(queue, now=None, healthy=None):
             return False
         status, info, _ = queue.read(current["asset"])
         if status != BUSY or claim_code(info) != current["code"]:
+            lost.add(current["asset"])
             current.clear()
             return False
         queue.write(current["asset"], info=refresh_sign(info, now))
@@ -408,6 +430,7 @@ def poll_once(queue, who, busy, add_job, sleep=time.sleep):
         if attempt:
             with _beat_lock:
                 current.clear()
+                lost.discard(asset_id)
                 current.update(asset=asset_id, code=claim_code(queue.claimed_info), beat=time.time())
             add_job(asset_id, remote=attempt)   # het nummer van de poging, voor het terugmelden
             return asset_id

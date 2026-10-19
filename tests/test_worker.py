@@ -309,6 +309,37 @@ check("report ruimt het asset op", not worker.current)
 check("heartbeat na het resultaat overschrijft het niet", worker.beat(queue) is False
       and fake.values["a"][worker.FIELD] == worker.DONE and "3 regels" in fake.values["a"][worker.INFO])
 
+# een Mac die zijn asset kwijt is schrijft er niet meer overheen
+def claim_a():
+    fake.values["a"] = {worker.FIELD: worker.REQUESTED}
+    worker.poll_once(queue, "testmac", lambda: False, lambda *a, **k: None, sleep=nap)
+
+claim_a()
+fake.values["a"] = {worker.FIELD: worker.BUSY, worker.INFO: "Bezig op othermac sinds 10:00 (ffffff)"}
+puts = len(fake.puts)
+job = {"asset_id": "a", "status": "klaar", "message": "3 regels"}
+worker.report(queue, job, who="testmac")
+check("overgenomen asset: report schrijft niets", len(fake.puts) == puts
+      and fake.values["a"][worker.FIELD] == worker.BUSY and "othermac" in fake.values["a"][worker.INFO])
+check("  de job krijgt een notitie en de heartbeat staat uit", ("overgenomen" in job["message"] or "taken over" in job["message"])
+      and not worker.current)
+
+claim_a()
+fake.values["a"] = {worker.FIELD: worker.BUSY, worker.INFO: "Bezig op othermac sinds 10:00 (ffffff)"}
+worker.current["beat"] -= worker.HEARTBEAT + 1
+check("heartbeat merkt het verlies op", worker.beat(queue) is False and "a" in worker.lost)
+puts = len(fake.puts)
+worker.report(queue, {"asset_id": "a", "status": "fout", "local": True, "remote": 1, "message": "Geen internet"}, who="testmac")
+check("  daarna schrijft report ook niets, maar de Mac pauzeert wel", len(fake.puts) == puts and worker.paused()
+      and "a" not in worker.lost)
+worker.resume()
+
+claim_a()
+puts = len(fake.puts)
+worker.report(queue, {"asset_id": "a", "status": "klaar", "message": "5 regels"}, who="testmac")
+check("nog van ons: report schrijft het resultaat", len(fake.puts) == puts + 1 and fake.values["a"][worker.FIELD] == worker.DONE
+      and "5 regels" in fake.values["a"][worker.INFO])
+
 # een job die niets meer meldt: de heartbeat stopt, het laatste teken blijft staan
 fake, queue = ready()
 worker.current.clear()
