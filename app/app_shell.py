@@ -12,7 +12,7 @@ PUBLIC_KEY controleert de handtekening van updates. De privésleutel staat in Pr
 import re
 from pathlib import Path
 
-SHELL_VERSION = 1
+SHELL_VERSION = 2
 PUBLIC_KEY = "g4XE02D2oSS+XiFvXbzqQdRpF0Mboixkr8iKnKRIczM="  # Ed25519, base64
 
 APP_NAME = "Local Transcribe for Iconik"
