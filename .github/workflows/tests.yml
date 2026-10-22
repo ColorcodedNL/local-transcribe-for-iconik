@@ -1,14 +1,17 @@
 # Alle tests bij elke push en pull request, ook de browsertest van het venster.
 # De app zelf draait alleen op een Mac; de tests vervangen MLX, torch en de sleutelhanger, dus Linux volstaat.
+# De browsertest gebruikt de Google Chrome die al op de runner staat: geen download, geen apt.
 name: tests
 on: [push, pull_request]
 jobs:
   tests:
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
-      - name: Browser voor de browsertest
-        run: uv run --no-project --python 3.12 --with playwright playwright install --with-deps chromium
+      - uses: actions/checkout@v5
+      - name: uv
+        run: pipx install uv
       - name: Tests
+        env:
+          LT_CHROMIUM: /usr/bin/google-chrome
         run: bash scripts/run_tests.sh
