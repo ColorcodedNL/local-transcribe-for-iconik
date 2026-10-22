@@ -131,3 +131,4 @@ for spoof in ("http://127.0.0.1.evil.example/x", "https://x@127.0.0.1.evil.examp
     except updater.UpdateError: ok = True
     check("fetch: naam die met 127.0.0.1 begint geweigerd", ok)
 print("ALLES OK" if not fails else f"{fails} FOUT")
+raise SystemExit(1 if fails else 0)

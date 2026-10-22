@@ -247,7 +247,7 @@ $("worker").onclick = e => {
 };
 $("account").onclick = e => {
   if (e.target.id !== "logout") return;
-  e.preventDefault(); act("/logout").then(tick);
+  e.preventDefault(); e.target.blur(); act("/logout").then(tick);   // blur: anders tekent settings() dit blok niet opnieuw
 };
 $("account").onsubmit = e => {
   if (e.target.id !== "clientForm") return;

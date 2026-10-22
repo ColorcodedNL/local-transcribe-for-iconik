@@ -7,6 +7,8 @@
 set -e
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$HERE"
+# Eerst alle tests, ook de browsertest. Alleen bij nood overslaan met SKIP_TESTS=1.
+[ "${SKIP_TESTS:-}" = 1 ] || bash scripts/run_tests.sh || { echo "Niet gebouwd: tests mislukt"; exit 1; }
 PY="${TOOLPY:-$HERE/build/python/bin/python3.12}"
 SIGN="${SIGN_CMD:-uv run tools/sign_update.py}"
 command -v "$PY" >/dev/null || { echo "$PY ontbreekt, draai eerst scripts/build_python.sh"; exit 1; }

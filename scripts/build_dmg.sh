@@ -3,6 +3,8 @@
 # en de handleidingen (NL en EN). Draai eerst build_bundle.sh.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# Eerst alle tests, ook de browsertest. Alleen bij nood overslaan met SKIP_TESTS=1.
+[ "${SKIP_TESTS:-}" = 1 ] || bash scripts/run_tests.sh || { echo "Niet gebouwd: tests mislukt"; exit 1; }
 
 NAME="Local Transcribe for Iconik"
 APP="build/$NAME.app"

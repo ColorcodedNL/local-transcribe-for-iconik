@@ -1,0 +1,14 @@
+# Alle tests bij elke push en pull request, ook de browsertest van het venster.
+# De app zelf draait alleen op een Mac; de tests vervangen MLX, torch en de sleutelhanger, dus Linux volstaat.
+name: tests
+on: [push, pull_request]
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Browser voor de browsertest
+        run: uv run --no-project --python 3.12 --with playwright playwright install --with-deps chromium
+      - name: Tests
+        run: bash scripts/run_tests.sh
