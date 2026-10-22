@@ -11,7 +11,7 @@
 De privésleutel komt in een bestand (standaard ~/.config/local-transcribe/update-signing.key,
 rechten 600) en wordt nooit getoond. Bewaar een kopie in je wachtwoordmanager. Wie de sleutel
 heeft, kan updates maken die de app vertrouwt. De publieke sleutel staat in de app
-(updater.PUBLIC_KEY) en mag openbaar zijn.
+(app_shell.PUBLIC_KEY) en mag openbaar zijn.
 """
 import argparse
 import base64

@@ -68,7 +68,7 @@ def local_get(path, timeout=60):
     """GET op de eigen ontvanger, zonder doorverwijzingen te volgen. Geeft (status, Location)."""
     connection = http.client.HTTPConnection("127.0.0.1", PORT, timeout=timeout)
     try:
-        connection.request("GET", path)
+        connection.request("GET", path, headers={"X-Local-Transcribe": "1"})  # /window/show vraagt erom
         response = connection.getresponse()
         location = response.getheader("Location") or ""
         response.read()

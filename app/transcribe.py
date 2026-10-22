@@ -41,7 +41,7 @@ DEFAULT_HOST = "https://app.iconik.io"
 REDIRECT_URI = "http://localhost:8765/oauth/callback"
 OAUTH_SCOPE = "assets:read assets:write collections:read user_impersonation"
 APP_NAME = "Local Transcribe for Iconik"
-APP_VERSION = "0.3.4"  # ook het versienummer van de app-bundel (build_bundle.sh leest het hier)
+APP_VERSION = "0.3.5"  # ook het versienummer van de app-bundel (build_bundle.sh leest het hier)
 RELEASES_REPO = "ColorcodedNL/local-transcribe-for-iconik"  # hier kijkt de app of er een nieuwere versie is
 OLD_APP_NAME = "Iconik Transcribe"  # de naam tot oktober 2026; voorkeuren en inlog verhuizen mee
 SUPPORT_DIR = Path.home() / "Library" / "Application Support" / APP_NAME
@@ -298,14 +298,32 @@ def load_login():
 def save_login(login):
     import keyring
     keyring.set_password(KEYCHAIN_SERVICE, "login", json.dumps(login))
+    _has_login[:] = [True, time.monotonic()]
 
 
 def clear_login():
     import keyring
+    _has_login[:] = [False, time.monotonic()]
     try:
         keyring.delete_password(KEYCHAIN_SERVICE, "login")
     except Exception:
         pass
+
+
+# Is er een inlog? Het venster vraagt dat elke seconde; de sleutelhanger hoeft dan niet elke keer.
+# Alleen voor die vraag: het token zelf komt altijd vers uit de sleutelhanger (zie Iconik._authorize),
+# want een ververstoken mag maar een keer gebruikt worden.
+HAS_LOGIN_SECONDS = 5
+_has_login = [None, 0.0]   # [uitkomst, wanneer gekeken]
+
+
+def has_login():
+    known, checked = _has_login
+    if known is not None and time.monotonic() - checked < HAS_LOGIN_SECONDS:
+        return known
+    found = bool(load_login())
+    _has_login[:] = [found, time.monotonic()]
+    return found
 
 
 def token_request(fields):
@@ -419,7 +437,7 @@ class Iconik:
 def make_client():
     """De inlog van de gebruiker als die er is, anders het token uit de omgeving, anders None."""
     try:
-        if load_login():
+        if has_login():
             return Iconik()
     except Exception:
         pass  # sleutelhanger niet beschikbaar: dan alleen het token uit de omgeving
@@ -459,6 +477,9 @@ def find_version(asset):
     return versions[-1]["id"]
 
 
+CONFIG_LOCK = threading.RLock()
+
+
 def load_config():
     try:
         return json.loads(CONFIG_PATH.read_text())
@@ -467,8 +488,37 @@ def load_config():
 
 
 def save_config(config):
-    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    CONFIG_PATH.write_text(json.dumps(config, ensure_ascii=False, indent=2))
+    """Schrijft via een tijdelijk bestand: wie tegelijk leest, ziet de oude of de nieuwe versie, nooit een halve."""
+    with CONFIG_LOCK:
+        CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        temp = CONFIG_PATH.with_name(CONFIG_PATH.name + ".tmp")
+        temp.write_text(json.dumps(config, ensure_ascii=False, indent=2))
+        os.replace(temp, CONFIG_PATH)
+
+
+def update_config(change):
+    """Leest de voorkeuren, past ze aan met `change(config)` en schrijft ze weg, in één keer.
+    Zo gaat er geen wijziging verloren die een andere draad intussen deed."""
+    with CONFIG_LOCK:
+        config = load_config()
+        change(config)
+        save_config(config)
+        return config
+
+
+def set_config(key, value):
+    update_config(lambda config: config.__setitem__(key, value))
+
+
+def set_mount(storage_id, folder):
+    """Onthoudt (of vergeet, met None) waar een storage op deze Mac staat."""
+    def change(config):
+        mounts = config.setdefault("mounts", {})
+        if folder is None:
+            mounts.pop(storage_id, None)
+        else:
+            mounts[storage_id] = str(folder)
+    update_config(change)
 
 
 def ask_folder(prompt, start=None):
@@ -541,9 +591,7 @@ def find_media_file(iconik, asset_id, mount_override=None, ask_mount=False, inte
         return path
 
     storage_id = chosen["storage_id"]
-    config = load_config()
-    mounts = config.setdefault("mounts", {})
-    known = mounts.get(storage_id)
+    known = (load_config().get("mounts") or {}).get(storage_id)
 
     if known and not ask_mount:
         path = Path(known) / relative
@@ -551,8 +599,7 @@ def find_media_file(iconik, asset_id, mount_override=None, ask_mount=False, inte
             return path
         moved = find_moved_mount(known, relative)
         if moved is not None:
-            mounts[storage_id] = str(moved)
-            save_config(config)
+            set_mount(storage_id, moved)
             print(f"Opslag staat nu op {moved} (was {known}), dat is onthouden.")
             return moved / relative
         if not Path(known).is_dir():
@@ -568,8 +615,8 @@ def find_media_file(iconik, asset_id, mount_override=None, ask_mount=False, inte
     remote = storage.get("settings", {}).get("mount_point")
 
     def remember(mount):
-        mounts[storage_id] = str(mount)
-        save_config(config)
+        # Pas nu lezen en schrijven: het venster kan lang open hebben gestaan.
+        set_mount(storage_id, mount)
         print(f"Onthouden: storage {name} staat hier op {mount}")
 
     # Staat de storage hier op hetzelfde pad als in Iconik, dan hoeft niemand iets te kiezen.
@@ -705,6 +752,18 @@ def read_all_tracks(path, tracks):
     return data[: len(data) // len(tracks) * len(tracks)].reshape(-1, len(tracks))
 
 
+def similarity(a, b, step=16):
+    """Hoe sterk twee sporen op elkaar lijken (absolute correlatie, 0 tot 1), op elk 16e sample (1 kHz).
+    Voor "is dit dezelfde microfoon" is dat genoeg, en het kost een paar MB in plaats van bijna 2 GB
+    per paar per uur audio met np.corrcoef op de volle sporen."""
+    x = a[::step].astype(np.float64)
+    y = b[::step].astype(np.float64)
+    x -= x.mean()
+    y -= y.mean()
+    scale = float(np.sqrt((x @ x) * (y @ y)))
+    return abs(float(x @ y)) / scale if scale > 0 else 0.0
+
+
 def analyse_tracks(data, mix_same_source=False):
     """Bepaalt welke sporen gebruikt worden. Geeft (samples, microfoons) terug.
 
@@ -724,7 +783,7 @@ def analyse_tracks(data, mix_same_source=False):
     group = {i: i for i in usable}
     for a in usable:
         for b in usable:
-            if a < b and abs(float(np.corrcoef(floats[a], floats[b])[0, 1])) > TRACK_COPY_CORRELATION:
+            if a < b and similarity(floats[a], floats[b]) > TRACK_COPY_CORRELATION:
                 root_a, root_b = group[a], group[b]
                 for key in group:
                     if group[key] == root_b:
@@ -1454,21 +1513,40 @@ def process_asset(iconik, args, hf_token, on_info=None, prepared=None):
                 "speakers": len(numbers), "pushed": False, "language": language}
 
     tell("stage", name="schrijven")
-    # Pas nu het oude weghalen: de nieuwe transcriptie is gelukt.
-    for old in own:
-        removed = delete_transcription(iconik, args.asset_id, version_id, old["id"])
-        print(f"Oud transcript {old['id']} verwijderd ({removed} segmenten).")
+    still_ours = getattr(args, "still_ours", None)
+    if still_ours is not None and not still_ours():
+        fail(L("Een andere Mac heeft dit asset overgenomen; er is niets naar Iconik geschreven.",
+               "Another Mac took over this asset; nothing was written to Iconik."), skip=True)
 
-    created = iconik.post(
-        f"assets/v1/assets/{args.asset_id}/versions/{version_id}/transcriptions/properties/",
-        properties,
-    )
-    transcription_id = created["id"]
+    # Eerst het nieuwe transcript helemaal neerzetten, pas daarna het oude weghalen. Mislukt het
+    # schrijven halverwege, dan blijft het oude staan en gaat het halve nieuwe weer weg.
+    transcriptions = f"assets/v1/assets/{args.asset_id}/versions/{version_id}/transcriptions/properties/"
+    transcription_id = iconik.post(transcriptions, properties)["id"]
     segments = [to_iconik_segment(w, transcription_id, version_id, n) for n, w in pieces]
-    for offset in range(0, len(segments), BULK_LIMIT):
-        batch = segments[offset:offset + BULK_LIMIT]
-        iconik.post(f"assets/v1/assets/{args.asset_id}/segments/bulk/", {"objects": batch})
-        print(f"Gepusht: segment {offset + 1} tot en met {offset + len(batch)}")
+    segments = [s for s in segments if s["segment_text"]]   # alleen witruimte: geen regel
+    try:
+        for offset in range(0, len(segments), BULK_LIMIT):
+            batch = segments[offset:offset + BULK_LIMIT]
+            iconik.post(f"assets/v1/assets/{args.asset_id}/segments/bulk/", {"objects": batch})
+            print(f"Gepusht: segment {offset + 1} tot en met {offset + len(batch)}")
+    except BaseException:
+        try:
+            delete_transcription(iconik, args.asset_id, version_id, transcription_id)
+            print(f"Schrijven mislukte; het halve transcript {transcription_id} is weer weggehaald.")
+        except Exception as error:
+            print(f"Schrijven mislukte en het halve transcript {transcription_id} weghalen ook: {error}")
+        raise
+
+    # Opnieuw opvragen in plaats van de lijst van het begin: zo gaan ook transcripten weg die een
+    # andere Mac intussen op dit asset zette, en blijft er precies een van deze app over.
+    try:
+        existing = iconik.get(transcriptions).get("objects", [])
+    except Problem:
+        existing = own
+    for old in existing:
+        if (old.get("engine_info") or {}).get("name") == ENGINE_NAME and old["id"] != transcription_id:
+            removed = delete_transcription(iconik, args.asset_id, version_id, old["id"])
+            print(f"Oud transcript {old['id']} verwijderd ({removed} segmenten).")
     print(f"\nKlaar. Transcript {transcription_id} staat op het asset.")
     return {"title": asset.get("title"), "segments": len(segments),
             "speakers": len(numbers), "pushed": True, "language": language}

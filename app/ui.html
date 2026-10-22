@@ -195,6 +195,9 @@ const open = {};
 let drawn = {}, view = "jobs", lang = "en", T = TEXT.en, started = false, landed = false;
 
 const $ = id => document.getElementById(id);
+// Verzoeken die iets veranderen gaan met deze header; de ontvanger weigert ze zonder (zie PROTECTED in serve.py).
+const H = { headers: { "X-Local-Transcribe": "1" } };
+const act = path => fetch(path, H);
 const esc = text => String(text ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 const clock = s => { s = Math.max(0, Math.round(s)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60); return (h ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(s % 60).padStart(2, "0"); };
 const num = (n, d = 1) => lang === "nl" ? n.toFixed(d).replace(".", ",") : n.toFixed(d);
@@ -218,13 +221,13 @@ document.querySelectorAll(".nav").forEach(b => b.onclick = () => {
   document.querySelectorAll(".nav").forEach(x => x.setAttribute("aria-current", x === b));
   $("jobs").hidden = view !== "jobs"; $("settings").hidden = view !== "settings";
 });
-$("clear").onclick = () => fetch("/clear").then(tick);
+$("clear").onclick = () => act("/clear").then(tick);
 $("list").onclick = e => { const b = e.target.closest("[data-toggle]"); if (b) { open[b.dataset.toggle] = b.dataset.open !== "1"; tick(); } };
-$("mounts").onclick = e => { const b = e.target.closest("[data-mount]"); if (b) { b.blur(); fetch(`/mount/${b.dataset.mount}?id=${encodeURIComponent(b.dataset.id)}`).then(tick); } };
-$("spoken").onchange = e => { e.target.blur(); fetch("/language?value=" + e.target.value).then(tick); };
-$("getUpdate").onclick = () => fetch("/update/install", { headers: { "X-Local-Transcribe": "1" } });
-$("openUpdate").onclick = () => fetch("/update/open");
-$("install").onclick = e => { e.target.disabled = true; fetch("/actions/install").then(tick).finally(() => e.target.disabled = false); };
+$("mounts").onclick = e => { const b = e.target.closest("[data-mount]"); if (b) { b.blur(); act(`/mount/${b.dataset.mount}?id=${encodeURIComponent(b.dataset.id)}`).then(tick); } };
+$("spoken").onchange = e => { e.target.blur(); act("/language?value=" + e.target.value).then(tick); };
+$("getUpdate").onclick = () => act("/update/install");
+$("openUpdate").onclick = () => act("/update/open");
+$("install").onclick = e => { e.target.disabled = true; act("/actions/install").then(tick).finally(() => e.target.disabled = false); };
 let fieldsMsg = "";
 function fieldsHtml(w) {
   const cur = w.iconik_language || "nl";
@@ -232,7 +235,7 @@ function fieldsHtml(w) {
 }
 $("worker").onchange = e => {
   const h = { headers: { "X-Local-Transcribe": "1" } };
-  if (e.target.id === "loginOn") { e.target.blur(); fetch("/login?value=" + (e.target.checked ? "on" : "off"), h).then(tick); return; }
+  if (e.target.id === "loginOn") { e.target.blur(); fetch("/login-item?value=" + (e.target.checked ? "on" : "off"), h).then(tick); return; }
   if (e.target.id === "workerOn") { e.target.blur(); fetch("/worker?value=" + (e.target.checked ? "on" : "off"), h).then(tick); return; }
   if (e.target.id === "fieldsLang") {
     const value = e.target.value; e.target.blur(); fieldsMsg = "";
@@ -240,9 +243,22 @@ $("worker").onchange = e => {
   }
 };
 $("worker").onclick = e => {
-  if (e.target.id === "resumeNow") { e.target.disabled = true; fetch("/worker?value=resume", { headers: { "X-Local-Transcribe": "1" } }).then(tick); }
+  if (e.target.id === "resumeNow") { e.target.disabled = true; act("/worker?value=resume").then(tick); }
 };
-$("lang").onchange = e => { e.target.blur(); fetch("/applang?value=" + e.target.value).then(tick); };
+$("account").onclick = e => {
+  if (e.target.id !== "logout") return;
+  e.preventDefault(); act("/logout").then(tick);
+};
+$("account").onsubmit = e => {
+  if (e.target.id !== "clientForm") return;
+  e.preventDefault();
+  const id = new FormData(e.target).get("client_id") || "";
+  act("/settings?client_id=" + encodeURIComponent(id)).then(r => r.json()).then(r => {
+    if (r.ok) { location.href = "/login"; return; }
+    $("note").textContent = r.error; $("note").hidden = false;
+  });
+};
+$("lang").onchange = e => { e.target.blur(); act("/applang?value=" + e.target.value).then(tick); };
 
 function wave(track) {
   const env = track.env || [], n = env.length;
@@ -304,11 +320,11 @@ function summary(all) {
 }
 
 function settings(s) {
-  const form = `<form action="/settings" method="get"><p>${T.clientId}</p><p><input name="client_id" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"><button class="go">${T.save}</button></p></form>`;
+  const form = `<form id="clientForm"><p>${T.clientId}</p><p><input name="client_id" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"><button class="go">${T.save}</button></p></form>`;
   const account = {
     geen: `<p>${T.accNone}</p>` + form,
     uitgelogd: `<p>${T.accOut} <a class="plain" href="/login">${T.login}</a></p><details><summary>${T.otherId}</summary>${form}</details>`,
-    gebruiker: `<p>${s.user ? T.accAs + " " + esc(s.user) + "." : T.accUser} <a class="plain" href="/logout">${T.logout}</a></p>` + (s.actions === "aanwezig" ? `<p class="dim">${T.btnPresent}</p>` : ""),
+    gebruiker: `<p>${s.user ? T.accAs + " " + esc(s.user) + "." : T.accUser} <a class="plain" href="/" id="logout">${T.logout}</a></p>` + (s.actions === "aanwezig" ? `<p class="dim">${T.btnPresent}</p>` : ""),
     token: `<p>${T.accToken} <code>~/.iconik-env</code>.</p>` + (s.has_client_id ? `<p><a class="plain" href="/login">${T.loginOwn}</a></p>` : form),
   }[s.account];
   const mounts = s.mounts;

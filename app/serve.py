@@ -105,7 +105,10 @@ def save_jobs():
                 for key in ("added", "started", "finished"):
                     row[key] = job[key].isoformat() if job.get(key) else None
                 rows.append(row)
-            payload = {"saved": datetime.now().isoformat(), "cleared": cleared[0], "jobs": rows}
+            # Wat buiten de bewaarde 500 valt telt mee als opgeruimd, anders krijgt een nieuwe opdracht
+            # na een herstart een nummer dat al bestaat.
+            dropped = max(0, len(jobs) - MAX_KEPT_JOBS)
+            payload = {"saved": datetime.now().isoformat(), "cleared": cleared[0] + dropped, "jobs": rows}
         with _save_lock:
             path = jobs_path()
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -181,9 +184,11 @@ UI_FILE = Path(__file__).with_name("ui.html")
 
 
 def make_options(job):
+    # Een opdracht uit de rij die een andere Mac heeft overgenomen, wordt niet meer naar Iconik geschreven.
+    still_ours = (lambda: job["asset_id"] not in remote.lost) if job.get("remote") else None
     return argparse.Namespace(
         asset_id=job["asset_id"], model=settings["model"], language=settings["language"] or transcribe.load_config().get("language", "auto"),
-        mount=settings["mount"], push=True, replace=True, speakers=None,
+        mount=settings["mount"], push=True, replace=True, speakers=None, still_ours=still_ours,
         no_speakers=not transcribe.speaker_model_available(settings["hf_token"]), no_voice_check=False, out="/tmp/whisper-test")
 
 
@@ -384,21 +389,18 @@ def mount_list(config):
 
 
 def change_mount(storage_id, remove=False):
-    config = transcribe.load_config()
-    mounts = config.get("mounts", {})
+    mounts = transcribe.load_config().get("mounts", {})
     if storage_id not in mounts:
         return
     if remove:
-        del mounts[storage_id]
-    else:
-        name = storage_names.get(storage_id) or storage_id
-        folder = transcribe.ask_folder(transcribe.L(
-            f"ISG \u201c{name}\u201d: kies het mount point van deze ISG op deze Mac.",
-            f"ISG \u201c{name}\u201d: choose the mount point of this ISG on this Mac."), mounts[storage_id])
-        if not folder:
-            return
-        mounts[storage_id] = folder
-    transcribe.save_config(config)
+        transcribe.set_mount(storage_id, None)
+        return
+    name = storage_names.get(storage_id) or storage_id
+    folder = transcribe.ask_folder(transcribe.L(
+        f"ISG \u201c{name}\u201d: kies het mount point van deze ISG op deze Mac.",
+        f"ISG \u201c{name}\u201d: choose the mount point of this ISG on this Mac."), mounts[storage_id])
+    if folder:
+        transcribe.set_mount(storage_id, folder)   # na het venster opnieuw gelezen, zie set_mount
 
 
 def app_state():
@@ -462,7 +464,8 @@ def add_job(asset_id, remote=0):
         for job in jobs:
             if job["asset_id"] == asset_id and job["status"] in ("wachtend", "bezig"):
                 return False
-        job = {"n": len(jobs) + 1 + cleared[0], "asset_id": asset_id, "title": "",
+        number = max(len(jobs) + cleared[0], max((j["n"] for j in jobs), default=0)) + 1
+        job = {"n": number, "asset_id": asset_id, "title": "",
                "status": "wachtend", "message": "", "added": datetime.now(), "remote": remote,
                "started": None, "finished": None, "stage": "", "fraction": None,
                "tracks": []}
@@ -528,6 +531,12 @@ def status_page(note=""):
     return UI_FILE.read_text().replace('"__NOTE__"', json.dumps(note))
 
 
+# Routes die iets veranderen: alleen met de header X-Local-Transcribe, die alleen het venster meestuurt.
+PROTECTED = {"/clear", "/mount/change", "/mount/remove", "/language", "/applang", "/actions/install",
+             "/update/open", "/update/install", "/worker", "/iconik-language", "/login-item", "/settings",
+             "/logout", "/window/show"}
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
@@ -553,119 +562,125 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Location", location)
         self.end_headers()
 
+    def host_ok(self):
+        """Alleen verzoeken aan deze Mac zelf. Een webpagina die haar domeinnaam naar 127.0.0.1 laat
+        wijzen (DNS-rebinding) stuurt haar eigen naam mee en komt er zo niet in."""
+        port = self.server.server_address[1]
+        return self.headers.get("Host", "") in (f"localhost:{port}", f"127.0.0.1:{port}")
+
     def do_GET(self):
         url = urlparse(self.path)
-        query = parse_qs(url.query)
-        first = lambda name: query.get(name, [""])[0]
+        if not self.host_ok():
+            return self.send_error(403)
+        # Wat iets verandert, mag alleen het venster zelf: een andere webpagina kan deze header niet
+        # meesturen naar localhost. Links (inloggen, de knop in Iconik met sleutel) staan hier niet in.
+        if url.path in PROTECTED and self.headers.get("X-Local-Transcribe") != "1":
+            return self.send_error(403)
         try:
-            if url.path == "/":
-                return self.reply(200, status_page())
-            if url.path == "/state":
-                activity["poll"] = time.time()
-                return self.reply_json(app_state())
-            if url.path in ("/mount/change", "/mount/remove"):
-                change_mount(first("id"), remove=url.path.endswith("remove"))
-                return self.reply_json({"ok": True})
-            if url.path == "/update/install":
-                if self.headers.get("X-Local-Transcribe") != "1":  # een webpagina kan dit niet meesturen
-                    return self.send_error(403)
-                install_update()
-                return self.reply_json({"ok": True})
-            if url.path == "/worker":
-                if self.headers.get("X-Local-Transcribe") != "1":  # een webpagina mag dit niet omzetten
-                    return self.send_error(403)
-                if first("value") == "resume":
-                    remote.resume()
-                    remote.wake.set()
-                if first("value") in ("on", "off"):
-                    config = transcribe.load_config()
-                    config["worker_enabled"] = first("value") == "on"
-                    transcribe.save_config(config)
-                    remote.resume()
-                    remote.wake.set()
-                return self.reply_json({"ok": True})
-            if url.path == "/iconik-language":
-                if self.headers.get("X-Local-Transcribe") != "1":
-                    return self.send_error(403)
-                code = first("value")
-                if code not in ("nl", "en"):
-                    return self.reply_json({"ok": False, "error": "language"})
-                try:
-                    connection = client()
-                    if connection is None:
-                        raise Problem(transcribe.L("Niet ingelogd bij Iconik.", "Not logged in to Iconik."))
-                    queue_in_iconik = remote.Queue(connection)
-                    queue_in_iconik.setup(create=True, language=code)
-                    queue_in_iconik.apply_language(code)
-                except Exception as error:
-                    return self.reply_json({"ok": False, "error": str(error)[:300]})
-                config = transcribe.load_config()
-                config["iconik_language"] = code
-                transcribe.save_config(config)
-                return self.reply_json({"ok": True})
-            if url.path == "/login":
-                if self.headers.get("X-Local-Transcribe") != "1":
-                    return self.send_error(403)
-                if first("value") in ("on", "off"):
-                    set_login_item(first("value") == "on")
-                return self.reply_json({"ok": True})
-            if url.path == "/update/open":
-                if update.get("url"):
-                    subprocess.Popen(["open", update["url"]])  # in de gewone browser, niet in het venster
-                return self.reply_json({"ok": True})
-            if url.path == "/actions/install":
-                install_actions()
-                return self.reply_json({"ok": True})
-            if url.path == "/applang":
-                if first("value") in ("auto", "nl", "en"):
-                    config = transcribe.load_config()
-                    config["app_language"] = first("value")
-                    transcribe.save_config(config)
-                return self.reply_json({"ok": True})
-            if url.path == "/language":
-                value = first("value")
-                if re.fullmatch(r"auto|[a-z]{2,3}", value):
-                    config = transcribe.load_config()
-                    config["language"] = value
-                    transcribe.save_config(config)
-                return self.reply_json({"ok": True})
-            if url.path == "/clear":
-                clear_finished()
-                return self.reply_json({"ok": True})
-            if url.path == "/window/state":
-                return self.reply_json(window_state)
-            if url.path == "/window/show":
-                # De app vraagt het venster een pagina te tonen en naar voren te komen.
-                window_state["page"] = "/login" if first("page") == "/login" else "/"
-                window_state["n"] += 1
-                if show_hook:
-                    show_hook(window_state["page"])
-                return self.reply_json(window_state)
-            if url.path == "/settings":
-                return self.save_settings(first("client_id").strip())
-            if url.path == "/login":
-                address, state, verifier = transcribe.start_login()
-                pending_login.clear()
-                pending_login[state] = verifier
-                return self.redirect(address)
-            if url.path == "/oauth/callback":
-                return self.finish_login(first("code"), first("state"), first("error"))
-            if url.path == "/logout":
-                transcribe.clear_login()
-                who.clear()
-                actions.clear()
-                return self.redirect("/")
-            return self.transcribe(url, query)
+            return self.route(url)
         except Problem as problem:
             return self.reply(200, status_page(str(problem)))
+        except Exception as error:
+            # Geen netwerk of een onverwachte fout: een pagina met de fout, geen verbroken verbinding.
+            print(f"Fout bij {url.path}: {type(error).__name__}: {error}")
+            try:
+                return self.reply(500, status_page(f"{type(error).__name__}: {error}"))
+            except Exception:
+                pass
+
+    def route(self, url):
+        query = parse_qs(url.query)
+        first = lambda name: query.get(name, [""])[0]
+        if url.path == "/":
+            return self.reply(200, status_page())
+        if url.path == "/state":
+            activity["poll"] = time.time()
+            return self.reply_json(app_state())
+        if url.path in ("/mount/change", "/mount/remove"):
+            change_mount(first("id"), remove=url.path.endswith("remove"))
+            return self.reply_json({"ok": True})
+        if url.path == "/update/install":
+            install_update()
+            return self.reply_json({"ok": True})
+        if url.path == "/worker":
+            if first("value") == "resume":
+                remote.resume()
+                remote.wake.set()
+            if first("value") in ("on", "off"):
+                transcribe.set_config("worker_enabled", first("value") == "on")
+                remote.resume()
+                remote.wake.set()
+            return self.reply_json({"ok": True})
+        if url.path == "/iconik-language":
+            code = first("value")
+            if code not in ("nl", "en"):
+                return self.reply_json({"ok": False, "error": "language"})
+            try:
+                connection = client()
+                if connection is None:
+                    raise Problem(transcribe.L("Niet ingelogd bij Iconik.", "Not logged in to Iconik."))
+                queue_in_iconik = remote.Queue(connection)
+                queue_in_iconik.setup(create=True, language=code)
+                queue_in_iconik.apply_language(code)
+            except Exception as error:
+                return self.reply_json({"ok": False, "error": str(error)[:300]})
+            transcribe.set_config("iconik_language", code)
+            return self.reply_json({"ok": True})
+        if url.path == "/login-item":   # opstarten bij inloggen op de Mac; /login is inloggen bij Iconik
+            if first("value") in ("on", "off"):
+                set_login_item(first("value") == "on")
+            return self.reply_json({"ok": True})
+        if url.path == "/update/open":
+            if update.get("url"):
+                subprocess.Popen(["open", update["url"]])  # in de gewone browser, niet in het venster
+            return self.reply_json({"ok": True})
+        if url.path == "/actions/install":
+            install_actions()
+            return self.reply_json({"ok": True})
+        if url.path == "/applang":
+            if first("value") in ("auto", "nl", "en"):
+                transcribe.set_config("app_language", first("value"))
+            return self.reply_json({"ok": True})
+        if url.path == "/language":
+            value = first("value")
+            if re.fullmatch(r"auto|[a-z]{2,3}", value):
+                transcribe.set_config("language", value)
+            return self.reply_json({"ok": True})
+        if url.path == "/clear":
+            clear_finished()
+            return self.reply_json({"ok": True})
+        if url.path == "/window/state":
+            return self.reply_json(window_state)
+        if url.path == "/window/show":
+            # De app vraagt het venster een pagina te tonen en naar voren te komen.
+            window_state["page"] = "/login" if first("page") == "/login" else "/"
+            window_state["n"] += 1
+            if show_hook:
+                show_hook(window_state["page"])
+            return self.reply_json(window_state)
+        if url.path == "/settings":
+            return self.save_settings(first("client_id").strip())
+        if url.path == "/login":
+            address, state, verifier = transcribe.start_login()
+            pending_login.clear()
+            pending_login[state] = verifier
+            return self.redirect(address)
+        if url.path == "/oauth/callback":
+            return self.finish_login(first("code"), first("state"), first("error"))
+        if url.path == "/logout":
+            transcribe.clear_login()
+            who.clear()
+            actions.clear()
+            return self.reply_json({"ok": True})
+        return self.transcribe(url, query)
 
     def save_settings(self, client_id):
+        """Het venster stuurt de client-ID; daarna gaat het zelf naar /login."""
         if not re.fullmatch(r"[0-9a-fA-F-]{36}", client_id):
-            return self.reply(200, status_page(transcribe.L("Dat lijkt geen geldige client-ID.", "That does not look like a valid client ID.")))
-        config = transcribe.load_config()
-        config["client_id"] = client_id.lower()
-        transcribe.save_config(config)
-        return self.redirect("/login")
+            return self.reply_json({"ok": False, "error": transcribe.L(
+                "Dat lijkt geen geldige client-ID.", "That does not look like a valid client ID.")})
+        transcribe.set_config("client_id", client_id.lower())
+        return self.reply_json({"ok": True})
 
     def finish_login(self, code, state, error):
         verifier = pending_login.pop(state, None)
@@ -897,21 +912,21 @@ def worker():
             job["status"] = "fout"
             job["message"] = f"{type(error).__name__}: {error}"
             print(f"FOUT: {job['message']}")
-        finally:
-            if job.get("abandoned"):
-                continue   # de watchdog gaf deze opdracht al op en meldde hem terug
-            job["finished"] = datetime.now()
-            save_jobs()
-            if job.get("remote"):
-                report_remote(job)
-            current[0] = None
-            activity["done"] = time.time()
-            if work.empty():
-                try:
-                    transcribe.release_models()
-                    transcribe.memory_report("vrijgeven")
-                except Exception as error:
-                    print(f"Modellen vrijgeven mislukte: {error}")
+        # Niet in een finally: daar is continue vanaf Python 3.14 een waarschuwing (PEP 765).
+        if job.get("abandoned"):
+            continue   # de watchdog gaf deze opdracht al op en meldde hem terug
+        job["finished"] = datetime.now()
+        save_jobs()
+        if job.get("remote"):
+            report_remote(job)
+        current[0] = None
+        activity["done"] = time.time()
+        if work.empty():
+            try:
+                transcribe.release_models()
+                transcribe.memory_report("vrijgeven")
+            except Exception as error:
+                print(f"Modellen vrijgeven mislukte: {error}")
 
 
 def start(model="mlx-community/whisper-large-v3-mlx", language=None, mount=None, port=PORT, idle_exit=False):
