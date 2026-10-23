@@ -19,11 +19,13 @@ import base64
 import builtins
 import hashlib
 import json
+import mmap
 import os
 import re
 import secrets
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from importlib.metadata import version as pkg_version
@@ -671,6 +673,60 @@ def list_tracks(path):
     return tracks
 
 
+def media_seconds(path):
+    """Duur van het bestand volgens ffprobe, of None."""
+    out = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "json", str(path)],
+                         capture_output=True, text=True).stdout
+    try:
+        return float(json.loads(out or "{}").get("format", {}).get("duration"))
+    except (TypeError, ValueError):
+        return None
+
+
+PCM_BLOCK = 64 * 1024 * 1024  # bytes per extra blok als de duur onbekend of te krap is
+
+
+def pcm_block(size):
+    """Een int16-tabel van `size` bytes in eigen geheugen (mmap). macOS geeft gewoon vrijgegeven
+    grote blokken niet terug aan het systeem maar houdt ze vast voor hergebruik in het proces; dan
+    bleef de ruwe audio van een lang bestand na afloop als bezet geheugen staan. Een mmap gaat bij
+    het vrijgeven van de laatste verwijzing gegarandeerd terug."""
+    return np.frombuffer(mmap.mmap(-1, max(size, 2)), np.int16)
+
+
+def read_pcm(command, channels, seconds=None):
+    """Draait ffmpeg met s16le op stdout en leest dat in blokken direct in een int16-tabel.
+
+    Met subprocess.run(capture_output=True) stond de hele uitvoer eerst als bytes in het geheugen
+    en daarna nog eens als een samengevoegde kopie: bij 12 sporen van anderhalf uur ruim 4 GB.
+    Met de duur vooraf is er één tabel van de juiste grootte. Geeft (samples, returncode, stderr)."""
+    frame = 2 * channels
+    size = int((seconds + 5) * SAMPLE_RATE) * frame if seconds else PCM_BLOCK // frame * frame
+    blocks, current, used = [], pcm_block(size), 0
+    with tempfile.TemporaryFile() as errors:   # een bestand: een volle stderr-pijp kan ffmpeg niet laten wachten
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=errors)
+        try:
+            view = memoryview(current).cast("B")
+            while True:
+                if used == len(view):
+                    blocks.append(current)
+                    current, used = pcm_block(PCM_BLOCK), 0
+                    view = memoryview(current).cast("B")
+                read = process.stdout.readinto(view[used:])
+                if not read:
+                    break
+                used += read
+            view.release()
+        finally:
+            process.stdout.close()
+            code = process.wait()
+        errors.seek(0)
+        message = errors.read().decode(errors="replace")
+    current = current[: used // 2]
+    data = np.concatenate(blocks + [current]) if blocks else current
+    return data[: len(data) // channels * channels], code, message
+
+
 def read_track(path, track=None, seconds=None):
     """Leest een spoor (of, zonder spoor, de gewone mix) als mono 16 kHz."""
     command = ["ffmpeg", "-nostdin", "-v", "error"]
@@ -683,10 +739,10 @@ def read_track(path, track=None, seconds=None):
         if channels > 1:
             command += ["-af", f"pan=mono|c0=c{channel}"]
     command += ["-ac", "1", "-ar", str(SAMPLE_RATE), "-f", "s16le", "-"]
-    result = subprocess.run(command, capture_output=True)
-    if result.returncode != 0 and not result.stdout:
-        fail(L("ffmpeg kon geen audio lezen: ", "ffmpeg could not read audio: ") + result.stderr.decode(errors="replace")[:300])
-    return np.frombuffer(result.stdout, np.int16).astype(np.float32) / 32768.0
+    data, code, errors = read_pcm(command, 1, seconds or media_seconds(path))
+    if code != 0 and not len(data):
+        fail(L("ffmpeg kon geen audio lezen: ", "ffmpeg could not read audio: ") + errors[:300])
+    return data.astype(np.float32) / 32768.0
 
 
 def measure_track(x):
@@ -745,14 +801,16 @@ def read_all_tracks(path, tracks):
         inputs = "".join(f"[0:a:{index}]" for index in streams)
         command += ["-filter_complex", f"{inputs}amerge=inputs={len(streams)}[all]", "-map", "[all]"]
     command += ["-ar", str(SAMPLE_RATE), "-f", "s16le", "-"]
-    result = subprocess.run(command, capture_output=True)
-    if result.returncode != 0 and not result.stdout:
-        fail(L("ffmpeg kon de sporen niet lezen: ", "ffmpeg could not read the tracks: ") + result.stderr.decode(errors="replace")[:300])
-    data = np.frombuffer(result.stdout, np.int16)
+    data, code, errors = read_pcm(command, len(tracks), media_seconds(path))
+    if code != 0 and not len(data):
+        fail(L("ffmpeg kon de sporen niet lezen: ", "ffmpeg could not read the tracks: ") + errors[:300])
     return data[: len(data) // len(tracks) * len(tracks)].reshape(-1, len(tracks))
 
 
-def similarity(a, b, step=16):
+SIMILARITY_STEP = 16  # 1 kHz uit 16 kHz
+
+
+def similarity(a, b, step=SIMILARITY_STEP):
     """Hoe sterk twee sporen op elkaar lijken (absolute correlatie, 0 tot 1), op elk 16e sample (1 kHz).
     Voor "is dit dezelfde microfoon" is dat genoeg, en het kost een paar MB in plaats van bijna 2 GB
     per paar per uur audio met np.corrcoef op de volle sporen."""
@@ -773,9 +831,26 @@ def analyse_tracks(data, mix_same_source=False):
     plaats van dat er een gekozen wordt.
     """
     count = data.shape[1]
-    floats = [data[:, i].astype(np.float32) / 32768.0 for i in range(count)]
-    measured = [measure_track(x) for x in floats]
-    kinds = [classify_track(d) for d in measured]
+
+    def floats(i):
+        # Een spoor als float32, pas op het moment dat het nodig is. Alle sporen tegelijk
+        # omzetten kostte bij 12 sporen van anderhalf uur ruim 4 GB, ook voor stille sporen.
+        return data[:, i].astype(np.float32) / 32768.0
+
+    # Eén spoor tegelijk: meten, en van de bruikbare alleen bewaren wat later nodig is
+    # (een uitgedunde kopie voor de vergelijking en het niveau per 100 ms).
+    frame = SAMPLE_RATE // 10
+    frames = len(data) // frame
+    measured, kinds, infos, thin, power_of = [], [], [], {}, {}
+    for i in range(count):
+        x = floats(i)
+        measured.append(measure_track(x))
+        kinds.append(classify_track(measured[-1]))
+        infos.append(track_info(i + 1, x, "", False))
+        if kinds[-1] == "geluid":
+            thin[i] = x[::SIMILARITY_STEP].copy()
+            power_of[i] = (x[: frames * frame].reshape(frames, frame) ** 2).mean(axis=1)
+        del x
     usable = [i for i in range(count) if kinds[i] == "geluid"]
 
     # Sporen die (vrijwel) hetzelfde signaal dragen horen bij elkaar: een microfoon
@@ -783,7 +858,7 @@ def analyse_tracks(data, mix_same_source=False):
     group = {i: i for i in usable}
     for a in usable:
         for b in usable:
-            if a < b and similarity(floats[a], floats[b]) > TRACK_COPY_CORRELATION:
+            if a < b and similarity(thin[a], thin[b], step=1) > TRACK_COPY_CORRELATION:
                 root_a, root_b = group[a], group[b]
                 for key in group:
                     if group[key] == root_b:
@@ -800,17 +875,14 @@ def analyse_tracks(data, mix_same_source=False):
     for i in usable:
         if i not in mics:
             notes[i] = f"zelfde signaal als spoor {chosen[group[i]] + 1}"
-    tell("tracks", tracks=[track_info(i + 1, floats[i], notes[i], i in mics) for i in range(count)])
+    tell("tracks", tracks=[{**infos[i], "note": notes[i], "used": i in mics} for i in range(count)])
     if not mics:
         for i in range(count):
             print(f"  spoor {i + 1}: {notes[i]}")
         fail(L("Geen spoor met geluid gevonden in dit bestand.", "No track with audio found in this file."), skip=True)
 
     # Niveau per 100 ms, per spoor gelijkgetrokken op zijn eigen luide momenten.
-    frame = SAMPLE_RATE // 10
-    frames = len(floats[0]) // frame
-    power = np.array([(floats[i][: frames * frame].reshape(frames, frame) ** 2).mean(axis=1)
-                      for i in mics]) if frames else np.zeros((len(mics), 0))
+    power = np.array([power_of[i] for i in mics]) if frames else np.zeros((len(mics), 0))
     level = 10 * np.log10(np.maximum(power, 1e-12))
     reference = np.array([np.percentile(row, 90) if len(row) else 0.0 for row in level])
     relative = level - reference[:, None]
@@ -834,7 +906,7 @@ def analyse_tracks(data, mix_same_source=False):
     if len(own) >= 2:
         # Elk van deze sporen is geregeld duidelijk het luidst: eigen microfoons.
         gains = 10 ** ((reference[own].mean() - reference[own]) / 20)
-        mix = sum(floats[mics[k]] * gain for k, gain in zip(own, gains))
+        mix = sum(floats(mics[k]) * gain for k, gain in zip(own, gains))
         peak = float(np.abs(mix).max()) if len(mix) else 0.0
         if peak > 0.99:
             mix = mix * (0.99 / peak)
@@ -844,7 +916,7 @@ def analyse_tracks(data, mix_same_source=False):
 
     if len(own) < 2 and mix_same_source and len(mics) > 1:
         print("  gebruikt: sporen " + " + ".join(str(i + 1) for i in mics) + " gemixt")
-        return (sum(floats[i] for i in mics) / len(mics)).astype(np.float32), None
+        return (sum(floats(i) for i in mics) / len(mics)).astype(np.float32), None
     if own:
         best = mics[own[0]]
     else:
@@ -856,7 +928,7 @@ def analyse_tracks(data, mix_same_source=False):
         if len(mics) > 1:
             print("  Meerdere sporen met dezelfde bron; gekozen is het spoor met de helderste spraak.")
     print(f"  gebruikt: spoor {best + 1}")
-    return floats[best], None
+    return floats(best), None
 
 
 def speaker_from_tracks(words, microphones, previous):
@@ -925,12 +997,7 @@ def release_models():
         mx.clear_cache()
     except Exception:
         pass
-    try:
-        import torch
-        if torch.backends.mps.is_available():
-            torch.mps.empty_cache()
-    except Exception:
-        pass
+    empty_gpu_cache()
 
 
 def diarize(samples, token, num_speakers):
@@ -1015,14 +1082,33 @@ def drop_repeats(pieces):
     return result, removed
 
 
+VOICE_CACHE_EVERY = 64  # de GPU-cache van torch legen na zoveel stemafdrukken
+
+
+def empty_gpu_cache():
+    """Geeft de buffers terug die torch op de GPU (MPS) vasthoudt voor hergebruik."""
+    try:
+        import torch
+        if torch.backends.mps.is_available():
+            torch.mps.empty_cache()
+    except Exception:
+        pass
+
+
 def make_voiceprint(samples):
     """Geeft een functie (start, eind) -> stemafdruk, met het model uit diarize()."""
     import torch
 
     embedder = _pipeline._embedding
     minimum = int(getattr(embedder, "min_num_samples", 0) or 0)
+    calls = [0]
 
     def voiceprint(start, end):
+        # Elke zin heeft een andere lengte, en torch houdt op de GPU voor elke lengte nieuwe
+        # buffers aan: bij 1452 zinnen groeide dat van 9,5 naar 14,1 GB. Af en toe legen.
+        calls[0] += 1
+        if calls[0] % VOICE_CACHE_EVERY == 0:
+            empty_gpu_cache()
         a, b = int(start * SAMPLE_RATE), int(end * SAMPLE_RATE)
         if b - a < minimum:  # te kort voor het model: symmetrisch iets ruimer nemen
             extra = (minimum - (b - a)) // 2 + 1
@@ -1462,6 +1548,7 @@ def process_asset(iconik, args, hf_token, on_info=None, prepared=None):
                 pieces.append((speaker_at(words[0]["start"], words[-1]["end"], turns), words))
         if not args.no_voice_check:
             pieces, note = refine_speakers(pieces, turns, make_voiceprint(samples))
+            empty_gpu_cache()
             print(f"Stemcontrole: {note}")
             memory_report("stemcontrole")
 
