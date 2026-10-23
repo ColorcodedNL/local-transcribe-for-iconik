@@ -32,6 +32,7 @@ Apps with a lower shell version only see a link to the release page, not an Inst
 - Dependencies: `uv export --no-hashes --no-emit-project -o /tmp/req.txt && uvx pip-audit -r /tmp/req.txt --no-deps`, and upgrade what it finds with `uv lock --upgrade-package <name>`. pip-audit only covers PyPI advisories, not the bundled ffmpeg or the OpenSSL in the bundled Python.
 - certifi: the app uses its own CA list, so a browser blocking a CA does not protect it. After a CA incident, grep `cacert.pem` in the built bundle.
 - ffmpeg: compare the bundled version with the newest tag, `git ls-remote --tags --refs https://git.ffmpeg.org/ffmpeg.git 'n9.0*' | sed 's|.*refs/tags/||' | sort -V | tail -3`. A newer 9.0.x means rebuilding with `scripts/build_ffmpeg.sh`, updating the version in the `ffmpeg-README.txt` text in `build_bundle.sh`, and a full release.
+- Guides: the PDFs in `docs/` are built from `docs/guide/en.html` and `nl.html` (shared `guide.css`, screenshots in `docs/guide/images/`). After changing the app, update both texts and run `uv run --no-project --with playwright python -B scripts/build_guides.py`. `build_dmg.sh` puts the PDFs in the dmg.
 - After building: version and SHELL_VERSION in the bundle, the packages that matter, the dmg checksum, and a quick start of the app from `build/`.
 
 ## Tests

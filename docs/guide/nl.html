@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<title>Handleiding: Local Transcribe for Iconik instellen</title>
+<link rel="stylesheet" href="guide.css">
+</head>
+<body>
+
+<h1>Handleiding: Local Transcribe for Iconik instellen</h1>
+
+<h2>Wat doet de app</h2>
+<p>Local Transcribe for Iconik maakt transcripties van assets in Iconik, volledig op je eigen Mac. De spraakherkenning is Whisper large-v3 (via MLX), en een aparte spreker-herkenning labelt wie er praat. De transcriptie wordt met woordtijden en sprekers terug in Iconik gezet.</p>
+<p>Je start een opdracht met de knop <b>Local Transcribe</b> bij een asset of collectie in Iconik. De opdracht draait op de computer waarop je klikt, dus de bronbestanden moeten daar bereikbaar zijn (bijvoorbeeld het gemounte archief). Het venster van de app laat per opdracht de voortgang zien.</p>
+<p>Bij de eerste opdracht downloadt de app eenmalig het Whisper-model (ongeveer 3 GB). Daarna werkt alles lokaal.</p>
+<p>De app maakt alleen verbinding met Iconik zelf, eenmalig met Hugging Face voor het model, en met GitHub om te kijken of er een nieuwe versie is en om die te downloaden als je een update installeert. Er gaan geen gebruiksgegevens naar buiten.</p>
+<p>Is er een nieuwe versie, dan verschijnt bovenin het venster een melding. Bij de meeste updates klik je op <b>Installeren</b>: de app downloadt de update, controleert de handtekening, wacht tot er geen opdracht meer loopt en start zichzelf opnieuw op. Bij een grotere update verwijst de melding naar de downloadpagina. Installeer dan de nieuwe dmg op dezelfde manier als de eerste keer.</p>
+<p>Bij een collectie of een selectie van meerdere assets leest de app de audio van het volgende asset al in, terwijl het huidige nog wordt getranscribeerd. Bij grote bestanden op een netwerkarchief scheelt dat per asset de tijd van het lezen.</p>
+<p class="note">Een klik vervangt de transcriptie die door deze app is gemaakt, inclusief handmatige correcties daarin. Transcripties uit andere bronnen worden niet overschreven. Vindt een run geen verstaanbare spraak, dan blijft de eerdere transcriptie staan.</p>
+<p>Deze handleiding laat zien hoe een Iconik-beheerder Local Transcribe for Iconik voor het eerst koppelt aan een Iconik-omgeving. Het gaat om vijf stappen, waarvan de laatste bij de eerste opdracht gebeurt. Stap 1 en 4 hoeven maar één keer te gebeuren, voor alle gebruikers samen. Collega's slaan die over, zie het kopje <b>Collega's aansluiten</b>.</p>
+
+<h2>Voor je begint</h2>
+<ul>
+<li>Een Mac met Apple Silicon en macOS 13 of nieuwer.</li>
+<li>Genoeg geheugen. Een volledige opdracht gebruikt op zijn piek tot ongeveer 9 GB. 16 GB is genoeg voor je eigen opdrachten. Voor een Mac die ook opdrachten op afstand doet of automatisch transcribeert is 32 GB of meer beter: automatische opdrachten starten pas met 12 GB vrij.</li>
+<li>Een Iconik-account. Voor stap 1 en 4 heb je beheerrechten nodig.</li>
+<li>Toegang tot het archief op die Mac, bijvoorbeeld als gemounte schijf of netwerkmap.</li>
+<li>Internet, voor Iconik zelf en voor de eenmalige modeldownload bij de eerste opdracht.</li>
+</ul>
+
+<h2>Stap 1: applicatie aanmaken in Iconik</h2>
+<p>Dit doet een Iconik-beheerder. Je maakt één applicatie aan waarmee de app mag inloggen.</p>
+<ol>
+<li>Ga in Iconik naar <b>Admin</b> en open <b>Application tokens</b>. Klik rechtsboven op <b>New application</b>.
+<figure><img src="images/iconik-app-tokens.jpg" alt=""></figure></li>
+<li>Kies <b>Browser or device app</b> en klik op <b>Next</b>. Deze keuze kan achteraf niet meer worden gewijzigd.
+<figure class="half"><img src="images/iconik-app-type.jpg" alt=""></figure></li>
+<li>Vul de gegevens in en klik op <b>Create</b>:
+<table>
+<tr><th>Veld</th><th>Waarde</th></tr>
+<tr><td>Name</td><td>Local Transcribe</td></tr>
+<tr><td>Redirect URIs</td><td><code>http://localhost:8765/oauth/callback</code></td></tr>
+<tr><td>Allowed origins</td><td>leeg laten</td></tr>
+<tr><td>Scopes</td><td>assets:read, assets:write, collections:read, user_impersonation</td></tr>
+</table>
+<figure class="half"><img src="images/iconik-app-details.jpg" alt=""></figure></li>
+<li>Kopieer het <b>Client ID</b>. Dit is wat je in stap 2 nodig hebt. Er is geen client secret.
+<figure class="half"><img src="images/iconik-app-created.jpg" alt=""></figure></li>
+</ol>
+
+<h2>Stap 2: de app installeren en het Client ID invullen</h2>
+<p><b>Installeren.</b> Open het installatiebestand (dmg). Naast de app staan een snelkoppeling naar Programma's en de handleidingen (Nederlands en Engels). Sleep <b>Local Transcribe for Iconik</b> naar <b>Applications</b>.</p>
+<figure class="half"><img src="images/dmg-contents.jpg" alt=""></figure>
+<p><b>Eerste start.</b> Open de app vanuit Programma's. macOS meldt dat Apple niet kon verifiëren dat de app geen malware bevat, omdat de app nog niet is ondertekend. Klik op <b>Gereed</b>, niet op <b>Verplaats naar prullenmand</b>.</p>
+<figure class="small"><img src="images/gatekeeper-blocked.jpg" alt=""></figure>
+<p>Ga naar <b>Systeeminstellingen</b>, <b>Privacy en beveiliging</b> en scroll naar <b>Beveiliging</b>. Klik bij de melding dat Local Transcribe for Iconik is geblokkeerd op <b>Open toch</b>.</p>
+<figure class="half"><img src="images/privacy-open-anyway.jpg" alt=""></figure>
+<p>Er komt nog een melding. Kies <b>Open toch</b> en bevestig zo nodig met je wachtwoord of Touch ID. Dit hoeft maar één keer per Mac.</p>
+<figure class="small"><img src="images/gatekeeper-open-anyway.jpg" alt=""></figure>
+<p><b>Client ID invullen.</b> Daarna:</p>
+<ol>
+<li>Open de app. Verschijnt de waarschuwing, doe dan eerst de stappen hierboven en kies <b>Open toch</b>.</li>
+<li>Het venster opent op <b>Voorkeuren</b>. De status linksonder staat op <b>Niet verbonden</b>.</li>
+<li>Plak het Client ID uit stap 1 in het veld en klik op <b>Opslaan en inloggen</b>.</li>
+</ol>
+<figure><img src="images/app-client-id.jpg" alt=""></figure>
+
+<h2>Stap 3: inloggen bij Iconik</h2>
+<p>Het venster toont eerst de inlogpagina van Iconik. Vul je e-mailadres in en log in zoals je dat gewend bent.</p>
+<figure class="half"><img src="images/iconik-sign-in.jpg" alt=""></figure>
+<p>Daarna vraagt Iconik of Local Transcribe toegang mag krijgen. Controleer dat het Local Transcribe is dat erom vraagt en klik op <b>Allow access</b>. Daarna staat linksonder <b>Ingelogd bij Iconik</b>.</p>
+<figure class="half"><img src="images/iconik-allow-access.jpg" alt=""></figure>
+
+<h2>Stap 4: de knop in Iconik zetten</h2>
+<p>Na het inloggen controleert de app of de knop <b>Local Transcribe</b> al in deze Iconik-omgeving staat. Zo niet, dan verschijnt bovenaan <b>Opdrachten</b> een gele melding. Klik op <b>Zet de knop in Iconik</b>. Dit hoeft maar één keer, voor alle gebruikers tegelijk, en vraagt rechten om knoppen aan te maken.</p>
+<figure><img src="images/app-button-missing.jpg" alt=""></figure>
+<p>Daarna kies je in Iconik een asset of collectie en klik je op <b>Local Transcribe</b>. De transcriptie draait op de computer waarop je klikt, en de voortgang staat in het venster onder <b>Opdrachten</b>.</p>
+<p>Een asset zonder transcriptie ziet er in Iconik zo uit. De knop <b>Transcribe</b> in dit paneel is die van Iconik zelf, niet van deze app.</p>
+<figure><img src="images/iconik-asset-panel.jpg" alt=""></figure>
+<p>Open het menu met de drie puntjes rechtsboven en kies <b>Local Transcribe</b>.</p>
+<figure class="half"><img src="images/iconik-asset-menu.jpg" alt=""></figure>
+<p>De app controleert elke minuut opnieuw of de knop er nog is. Wordt de knop in Iconik verwijderd, dan verschijnt de melding vanzelf weer.</p>
+
+<h2>Stap 5: de opslag koppelen (bij de eerste opdracht)</h2>
+<p>Iconik weet per asset op welke storage (ISG) het bestand staat en in welke map. De app moet weten waar die storage op deze Mac is gemount. Dat stel je niet vooraf in: het gebeurt bij de eerste opdracht van een storage, en daarna wordt het onthouden.</p>
+<ol>
+<li>Zorg dat het archief op de Mac is gemount, zoals je dat normaal ook doet.</li>
+<li>Start een opdracht vanuit Iconik. Staat de storage op dezelfde plek als in de storage-instellingen van Iconik (het mount point daar), dan vindt de app het bestand zelf en hoef je niets te kiezen.</li>
+<li>Klopt dat pad niet, dan opent er een venster met de vraag welk mount point bij de storage hoort. Kies de map waarin de eerste map van het asset staat. Het venster noemt die mapnaam en toont het pad dat Iconik zelf opgeeft. Een map erboven of eronder kiezen werkt ook. De app geeft je drie pogingen.</li>
+<li>De keuze wordt per storage onthouden. Onder <b>Voorkeuren</b>, bij <b>ISG Mount Points</b>, zie je de lijst en kun je een pad later wijzigen.</li>
+</ol>
+<p>Zo ziet de vraag naar het mount point eruit. Boven in het venster staat voor welke storage het is, welke map er in moet staan, en welk pad Iconik zelf opgeeft.</p>
+<figure class="half"><img src="images/mount-question.jpg" alt=""></figure>
+<p>Browse naar de map waarin het archief staat en klik op <b>Kies</b>.</p>
+<figure class="half"><img src="images/mount-choose.jpg" alt=""></figure>
+<p>Is het archief niet gemount, dan stopt de opdracht met de melding dat de map niet bereikbaar is. Mount het archief en start de opdracht opnieuw. Heeft een asset meer dan één mediabestand, dan gebruikt de app het eerste.</p>
+
+<h2>De eerste keer: het model downloaden</h2>
+<p>Bij de eerste opdracht downloadt de app het Whisper-model, ongeveer 3 GB. Dit gebeurt maar één keer. In het venster staat dan de melding dat het Whisper-model wordt gedownload.</p>
+<figure><img src="images/model-download.jpg" alt=""></figure>
+<p>Dit kan lang duren, van enkele minuten tot langer. Het model komt van Hugging Face, en zonder account gaan downloads daar trager. De voortgangsbalk kan lang op 0% blijven staan terwijl de download gewoon doorloopt. Laat de app draaien en sluit hem niet af. Zodra het model binnen is, start de transcriptie vanzelf.</p>
+
+<h2>Het resultaat</h2>
+<p>In de app staat de opdracht onder <b>Opdrachten</b>. Per opdracht zie je het aantal regels, het aantal sprekers, de herkende taal en hoe snel het ging. Onder de titel staan de audiosporen van het bestand. De app kiest zelf de sporen met spraak. Een spoor dat hetzelfde signaal is als een ander spoor wordt genegeerd, en dat zie je erbij staan. Met <b>Verberg sporen</b> klap je die weergave dicht.</p>
+<figure><img src="images/app-result.jpg" alt=""></figure>
+<p>In Iconik staat de transcriptie daarna bij het asset onder <b>Transcriptions</b>, met de sprekers (Spreker 1, Spreker 2) en de taal.</p>
+<figure><img src="images/iconik-transcript.jpg" alt=""></figure>
+<p>Sluit je de app met Cmd+Q terwijl er een opdracht loopt, dan vraagt hij wat je wilt. <b>Na deze opdracht</b> maakt de lopende opdracht af, pakt niets nieuws meer op en sluit dan zelf af. <b>Toch afsluiten</b> breekt de opdracht af; je kunt hem later opnieuw starten vanuit Iconik.</p>
+
+<h2>Collega's aansluiten</h2>
+<p>Een collega hoeft stap 1 en 4 niet te doen, want die gelden voor de hele Iconik-omgeving. Voor een collega is het:</p>
+<ol>
+<li>De app installeren (stap 2, eerste punt).</li>
+<li>Het Client ID invullen dat de beheerder uit stap 1 heeft doorgegeven.</li>
+<li>Inloggen met het eigen Iconik-account (stap 3).</li>
+<li>Bij de eerste opdracht het archief koppelen (stap 5).</li>
+</ol>
+<p>Het Client ID is geen geheim in de zin van een wachtwoord (er is geen client secret), maar deel het wel alleen met mensen binnen je eigen omgeving. Iedereen werkt met een eigen login en transcribeert op de eigen Mac.</p>
+
+<h2>Voorkeuren</h2>
+<ul>
+<li><b>Gesproken taal</b>: standaard staat dit op <b>Herken per asset</b>. Zet de taal alleen vast als al je materiaal in één taal is. Met herkennen aan verwacht de app Nederlands of Engels: een clip die als een andere taal wordt herkend en minder dan tien woorden heeft (vaak muziek of geruis) wordt overgeslagen.</li>
+<li><b>Opdrachten op afstand toestaan</b>, <b>Automatisch transcriberen</b> en <b>Ook audiobestanden</b>: zie de hoofdstukken hieronder.</li>
+<li><b>Opstarten bij inloggen</b>: de app start in de menubalk als je inlogt op de Mac.</li>
+<li><b>ISG Mount Points</b>: de gekoppelde opslag, zie stap 5.</li>
+<li><b>Modellen</b>: Whisper large-v3 voor spraak, pyannote community-1 voor sprekers. Het sprekermodel zit in de app. Het Whisper-model komt bij de eerste opdracht binnen.</li>
+</ul>
+
+<h2 class="new">Opdrachten op afstand en hele collecties</h2>
+<p>Optioneel. Staat <b>Opdrachten op afstand toestaan</b> aan onder Voorkeuren, dan pakt een Mac verzoeken op die in Iconik gedaan zijn, vanaf elke locatie, en verwerkt ze op de achtergrond. De knop <b>Local Transcribe</b> werkt gewoon zoals eerder. Met opdrachten op afstand aan blijft de app in de menubalk en verbergt het sluiten van het venster hem alleen. Het archief moet op die Mac gemount zijn.</p>
+
+<h3>Eén asset aanvragen</h3>
+<p>Zet in de metadata van de asset <b>Transcriptie</b> op <b>Aangevraagd</b>. De twee velden (<b>Transcriptie</b> en <b>Transcriptie details</b>) zitten in de metadataweergave <b>Local Transcribe</b>. Voeg ze toe aan een weergave die je team al gebruikt als je ze daar wilt hebben.</p>
+
+<h3>Een hele collectie aanvragen</h3>
+<p>Open de collectie, selecteer de assets (of selecteer de collectie zelf), klik met de rechtermuisknop en kies <b>Update Metadata</b>. Vink <b>Transcriptie</b> aan, kies <b>Aangevraagd</b> en klik op <b>Update</b>. Alleen aangevinkte velden worden aangepast. Elke asset in de selectie krijgt het verzoek.</p>
+<div class="pair">
+<figure><img src="images/iconik-context-menu.png" alt=""><figcaption>Het contextmenu. Local Transcribe in dit menu start een opdracht op de Mac waar je op werkt. Update Metadata zet de assets in de wachtrij voor elke Mac met opdrachten op afstand aan.</figcaption></figure>
+<figure><img src="images/iconik-update-metadata.png" alt=""><figcaption>Transcriptie op Aangevraagd gezet voor alle items. Het scherm toont een Engelstalige Iconik-omgeving.</figcaption></figure>
+</div>
+
+<h3>Wat de status betekent</h3>
+<table>
+<tr><th>Transcriptie</th><th>Betekenis</th></tr>
+<tr><td>Aangevraagd</td><td>Wacht tot een Mac hem oppakt</td></tr>
+<tr><td>Bezig</td><td>Een Mac werkt eraan. Het detailveld toont welke Mac, sinds wanneer en het laatste teken van leven</td></tr>
+<tr><td>Klaar</td><td>Het transcript staat op de asset onder Transcriptions. Een asset zonder audio of zonder spraak staat ook op Klaar, met "Skipped:" en de reden in het detailveld</td></tr>
+<tr><td>Fout</td><td>De reden staat in het detailveld. Zet hem opnieuw op Aangevraagd om het nog eens te proberen</td></tr>
+</table>
+
+<h3>Meerdere Macs</h3>
+<p>Macs delen de wachtrij zonder dubbel werk. Een Mac die werkt ververst elke minuut een laatste teken. Blijft dat vier minuten weg, bijvoorbeeld omdat hij in slaap viel of het archief kwijt is, dan neemt een andere Mac de asset over. Een opdracht die vijftien minuten geen voortgang laat zien, geeft de app zelf terug aan de wachtrij, waarna de app herstart. Na drie pogingen gaat een asset op Fout met de reden.</p>
+<p>Een Mac met een eigen probleem (archief niet gemount, niet ingelogd) pauzeert tien minuten. Voorkeuren en de menubalk zeggen waarom. Met <b>Nu hervatten</b> hef je de pauze meteen op.</p>
+<p>De labels in Iconik (Aangevraagd, Bezig, Klaar, Fout) hangen af van de taal van de Iconik-omgeving. De waarden eronder zijn altijd Engels. Een admin kiest de taal onder Voorkeuren, <b>Taal van de velden in Iconik</b>. Dat geldt voor iedereen in die omgeving.</p>
+<p>Getest met twee Macs op één Iconik-account. Meer Macs en aparte Iconik-accounts zijn nog niet getest.</p>
+
+<h2>Automatisch transcriberen</h2>
+<p>Optioneel, en alleen met <b>Opdrachten op afstand toestaan</b> aan. Zet je daaronder <b>Automatisch transcriberen</b> aan, dan werkt de Mac alles af op zijn gekoppelde opslag (ISG) dat nog geen transcript en geen transcriptiestatus heeft. Niemand hoeft iets aan te vragen.</p>
+<ul>
+<li><b>Wat hij pakt.</b> Video tot een uur, nieuwste eerst. Met <b>Ook audiobestanden</b> aan gaan audiobestanden ook mee. Dat staat standaard uit, omdat een archief vaak veel muziek en los opgenomen geluid bevat.</li>
+<li><b>Aanvragen gaan voor.</b> Een Mac kijkt altijd eerst naar Aangevraagd voordat hij automatisch werk zoekt. Komt er een aanvraag binnen terwijl alle Macs met een automatische opdracht bezig zijn, dan wacht die tot er een klaar is.</li>
+<li><b>Alleen als er ruimte is.</b> De Mac staat op netstroom, heeft minstens 12 GB geheugen vrij en gebruikt minder dan 40% CPU en GPU, gemeten over de laatste minuten. Dat werkt ook als iemand op de Mac werkt. Onder de schakelaar zegt de app of hij klaar staat of waar hij op wacht, bijvoorbeeld "op batterij" of "CPU 55% bezet".</li>
+<li><b>De Mac blijft wakker.</b> Zolang automatisch transcriberen aan staat en de Mac op netstroom is, gaat hij niet slapen. Het scherm wel.</li>
+<li><b>Herkenbaar.</b> Een automatische opdracht heeft onder Opdrachten het label <b>Auto</b>, en <code>[auto]</code> in het veld Transcriptie details in Iconik.</li>
+<li><b>Nooit een berg Aangevraagd.</b> De Mac claimt één asset tegelijk, meteen op Bezig. Een automatische opdracht die mislukt gaat terug naar een lege status in plaats van Fout, en die Mac probeert hem niet zelf opnieuw.</li>
+</ul>
+<p>De grenzen staan in <code>config.json</code> (<code>auto_min_free_gb</code>, <code>auto_max_cpu</code>, <code>auto_max_gpu</code>) voor wie ze wil aanpassen.</p>
+
+<h2 class="new">Als het niet werkt</h2>
+<table>
+<tr><th>Wat je ziet</th><th>Wat er speelt</th><th>Wat je doet</th></tr>
+<tr><td>Venster op Voorkeuren, status Niet verbonden</td><td>Er is nog geen Client ID ingevuld</td><td>Stap 2</td></tr>
+<tr><td>Status Niet ingelogd</td><td>Je bent uitgelogd</td><td>Klik op <b>Log in bij Iconik</b>. Is het Client ID fout, klap dan <b>Andere Client ID gebruiken</b> open en vul het juiste in</td></tr>
+<tr><td>Iconik meldt dat de app niet is geconfigureerd als OAuth2-client</td><td>Het Client ID klopt niet of is niet volledig</td><td>Controleer het ID uit stap 1 en vul het opnieuw in</td></tr>
+<tr><td>Gele melding dat de knop ontbreekt</td><td>De knop staat nog niet in Iconik, of is verwijderd</td><td>Klik op <b>Zet de knop in Iconik</b>. Lukt dat niet, vraag dan een beheerder om één keer in te loggen in deze app en de knop toe te voegen</td></tr>
+<tr><td>De map is niet bereikbaar, is het archief gemount?</td><td>Het archief staat niet op de Mac</td><td>Mount het archief en start de opdracht opnieuw</td></tr>
+<tr><td>Bestand niet gevonden</td><td>Het gekozen mount point past niet bij het asset</td><td>Wijzig het pad onder <b>ISG Mount Points</b></td></tr>
+<tr><td>Een asset blijft op Aangevraagd staan</td><td>Er draait geen Mac met <b>Opdrachten op afstand toestaan</b> aan, alle Macs zijn bezig, of de Macs die aan staan zijn gepauzeerd</td><td>Controleer dat er een Mac met opdrachten op afstand aan draait, ingelogd en met het archief gemount. Een aanvraag wacht op lopende opdrachten, ook automatische</td></tr>
+<tr><td>Een Mac meldt dat hij gepauzeerd is</td><td>Hij liep tegen een eigen probleem aan, bijvoorbeeld een archief dat niet gemount was</td><td>Los de oorzaak op die in Voorkeuren of de menubalk staat en klik op <b>Nu hervatten</b>. Anders stopt de pauze na tien minuten vanzelf</td></tr>
+<tr><td>Automatisch transcriberen staat op Wacht</td><td>De Mac heeft nu geen ruimte: op batterij, te weinig geheugen vrij, CPU of GPU te druk, of geen opslag gekoppeld</td><td>Niets, hij begint vanzelf zodra er ruimte is. Vlak na het aanzetten meet hij eerst ongeveer een minuut</td></tr>
+</table>
+
+</body>
+</html>

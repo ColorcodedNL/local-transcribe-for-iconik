@@ -1,0 +1,25 @@
+/* Opmaak van de handleidingen. scripts/build_guides.py maakt er A4-PDF's van. */
+@page { size: A4; margin: 18mm 18mm 20mm; }
+body { font: 10.5pt/1.5 -apple-system, "Helvetica Neue", Helvetica, Arial, sans-serif; color: #1d1d1f; margin: 0; }
+h1 { font-size: 21pt; line-height: 1.2; margin: 0 0 14pt; }
+h2 { font-size: 14.5pt; margin: 20pt 0 6pt; break-after: avoid; }
+h3 { font-size: 11.5pt; margin: 14pt 0 4pt; break-after: avoid; }
+p { margin: 0 0 7pt; }
+ul, ol { margin: 0 0 8pt; padding-left: 18pt; }
+li { margin: 0 0 3pt; }
+b { font-weight: 600; }
+code { font: 9.5pt ui-monospace, Menlo, monospace; background: #f2f2f4; padding: 0 3pt; border-radius: 3pt; }
+.note { background: #f5f5f7; border-left: 3pt solid #0a84ff; padding: 6pt 9pt; margin: 8pt 0; }
+table { border-collapse: collapse; width: 100%; margin: 6pt 0 10pt; font-size: 9.5pt; break-inside: avoid; }
+th, td { text-align: left; vertical-align: top; padding: 4pt 6pt; border-bottom: 0.6pt solid #d2d2d7; }
+th { font-weight: 600; background: #f5f5f7; }
+tr { break-inside: avoid; }
+figure { margin: 8pt 0 12pt; break-inside: avoid; }
+figure img { display: block; max-width: 100%; max-height: 95mm; width: auto; height: auto; border: 0.6pt solid #d2d2d7; border-radius: 4pt; }
+figure.small img { max-width: 55%; max-height: 62mm; }
+figure.half img { max-width: 75%; max-height: 78mm; }
+figcaption { font-size: 9pt; color: #6e6e73; margin-top: 3pt; }
+.pair { display: flex; gap: 12pt; align-items: flex-start; break-inside: avoid; margin: 8pt 0 12pt; }
+.pair figure { margin: 0; flex: 1; }
+.pair figure:first-child { flex: 0 0 30%; }
+.new { break-before: page; }

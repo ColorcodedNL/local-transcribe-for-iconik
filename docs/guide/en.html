@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Guide: setting up Local Transcribe for Iconik</title>
+<link rel="stylesheet" href="guide.css">
+</head>
+<body>
+
+<h1>Guide: setting up Local Transcribe for Iconik</h1>
+
+<h2>What the app does</h2>
+<p>Local Transcribe for Iconik transcribes assets from Iconik entirely on your own Mac. Speech recognition is Whisper large-v3 (via MLX), and a separate speaker detection model labels who is talking. The transcript is written back to Iconik with word timings and speakers.</p>
+<p>You start a job with the <b>Local Transcribe</b> button on an asset or collection in Iconik. The job runs on the computer where you click, so the source files must be reachable there (for example the mounted archive). The app window shows the progress of each job.</p>
+<p>On the first job the app downloads the Whisper model once (about 3 GB). After that everything runs locally.</p>
+<p>The app only connects to Iconik itself, once to Hugging Face for the model, and to GitHub to check for a newer version and to download it when you install an update. No usage data is sent anywhere.</p>
+<p>When a new version is available, a notice appears at the top of the window. For most updates you click <b>Install</b>: the app downloads the update, checks its signature, waits until no job is running and restarts itself. For a larger update the notice links to the download page instead. Install the new dmg the same way as the first time.</p>
+<p>For a collection or a selection of several assets, the app reads the audio of the next asset while the current one is still being transcribed. With large files on a network archive this saves the reading time for each asset.</p>
+<p class="note">A click replaces the transcript this app made earlier, including any manual corrections in it. Transcripts from other sources are not overwritten. A run that finds no intelligible speech keeps the earlier transcript.</p>
+<p>This guide covers five steps, the last of which happens on the first job. Steps 1 and 4 only need to be done once, for all users together. Colleagues skip those, see <b>Connecting colleagues</b>.</p>
+
+<h2>Before you start</h2>
+<ul>
+<li>A Mac with Apple Silicon and macOS 13 or newer.</li>
+<li>Enough memory. A full job uses up to about 9 GB at its peak. 16 GB is enough for your own jobs. For a Mac that also takes remote jobs or transcribes automatically, 32 GB or more is better: automatic jobs only start with 12 GB free.</li>
+<li>An Iconik account. Steps 1 and 4 need admin rights.</li>
+<li>Access to the archive on that Mac, for example as a mounted drive or network folder.</li>
+<li>Internet, for Iconik itself and for the one-time model download on the first job.</li>
+</ul>
+
+<h2>Step 1: create the application in Iconik</h2>
+<p>An Iconik admin does this. You create one application that the app is allowed to log in with.</p>
+<ol>
+<li>In Iconik go to <b>Admin</b> and open <b>Application tokens</b>. Click <b>New application</b> at the top right.
+<figure><img src="images/iconik-app-tokens.jpg" alt=""></figure></li>
+<li>Choose <b>Browser or device app</b> and click <b>Next</b>. This choice cannot be changed afterwards.
+<figure class="half"><img src="images/iconik-app-type.jpg" alt=""></figure></li>
+<li>Fill in the details and click <b>Create</b>:
+<table>
+<tr><th>Field</th><th>Value</th></tr>
+<tr><td>Name</td><td>Local Transcribe</td></tr>
+<tr><td>Redirect URIs</td><td><code>http://localhost:8765/oauth/callback</code></td></tr>
+<tr><td>Allowed origins</td><td>leave empty</td></tr>
+<tr><td>Scopes</td><td>assets:read, assets:write, collections:read, user_impersonation</td></tr>
+</table>
+<figure class="half"><img src="images/iconik-app-details.jpg" alt=""></figure></li>
+<li>Copy the <b>Client ID</b>. You need it in step 2. There is no client secret.
+<figure class="half"><img src="images/iconik-app-created.jpg" alt=""></figure></li>
+</ol>
+
+<h2>Step 2: install the app and enter the Client ID</h2>
+<p><b>Install.</b> Open the installer (dmg). Next to the app are a shortcut to Applications and the guides (Dutch and English). Drag <b>Local Transcribe for Iconik</b> to <b>Applications</b>.</p>
+<figure class="half"><img src="images/dmg-contents.jpg" alt=""></figure>
+<p><b>First launch.</b> Open the app from Applications. macOS says Apple could not verify that the app is free of malware, because the app is not signed yet. Click <b>Done</b>, not <b>Move to Trash</b>.</p>
+<figure class="small"><img src="images/gatekeeper-blocked.jpg" alt=""></figure>
+<p>Go to <b>System Settings</b>, <b>Privacy &amp; Security</b> and scroll down to <b>Security</b>. Next to the notice that Local Transcribe for Iconik was blocked, click <b>Open Anyway</b>.</p>
+<figure class="half"><img src="images/privacy-open-anyway.jpg" alt=""></figure>
+<p>Another prompt appears. Choose <b>Open Anyway</b> and confirm with your password or Touch ID if asked. You only need to do this once per Mac.</p>
+<figure class="small"><img src="images/gatekeeper-open-anyway.jpg" alt=""></figure>
+<p><b>Enter the Client ID.</b> Then:</p>
+<ol>
+<li>Open the app. If the warning appears, do the steps above first and choose <b>Open Anyway</b>.</li>
+<li>The window opens on <b>Preferences</b>. The status at the bottom left says <b>Not connected</b>.</li>
+<li>Paste the Client ID from step 1 into the field and click <b>Save and log in</b>.</li>
+</ol>
+<figure><img src="images/app-client-id.jpg" alt=""></figure>
+
+<h2>Step 3: log in to Iconik</h2>
+<p>The window first shows the Iconik sign-in page. Enter your email address and sign in as you normally do.</p>
+<figure class="half"><img src="images/iconik-sign-in.jpg" alt=""></figure>
+<p>Iconik then asks whether Local Transcribe may have access. Check that it is Local Transcribe asking and click <b>Allow access</b>. The status at the bottom left then says <b>Logged in to Iconik</b>.</p>
+<figure class="half"><img src="images/iconik-allow-access.jpg" alt=""></figure>
+
+<h2>Step 4: add the button to Iconik</h2>
+<p>After logging in the app checks whether the <b>Local Transcribe</b> button already exists in this Iconik environment. If not, a yellow notice appears at the top of <b>Jobs</b>. Click <b>Add the button to Iconik</b>. This is needed only once, for all users at the same time, and requires the right to create Custom Actions.</p>
+<figure><img src="images/app-button-missing.jpg" alt=""></figure>
+<p>Then pick an asset or collection in Iconik and click <b>Local Transcribe</b>. The transcription runs on the computer where you click, and progress shows in the window under <b>Jobs</b>.</p>
+<p>An asset without a transcript looks like this in Iconik. The <b>Transcribe</b> button in this panel is Iconik's own, not this app's.</p>
+<figure><img src="images/iconik-asset-panel.jpg" alt=""></figure>
+<p>Open the menu with the three dots at the top right and choose <b>Local Transcribe</b>.</p>
+<figure class="half"><img src="images/iconik-asset-menu.jpg" alt=""></figure>
+<p>The app checks again every minute whether the button is still there. If the button is removed from Iconik, the notice returns by itself.</p>
+
+<h2>Step 5: link the storage (on the first job)</h2>
+<p>Iconik knows for each asset which storage (ISG) the file is on and in which folder. The app needs to know where that storage is mounted on this Mac. You do not set this up in advance: it happens on the first job from a storage, and is remembered afterwards.</p>
+<ol>
+<li>Make sure the archive is mounted on the Mac, the way you normally do.</li>
+<li>Start a job from Iconik. If the storage is at the same place as in the storage settings in Iconik (its mount point there), the app finds the file by itself and you do not need to choose anything.</li>
+<li>If that path does not match, a window asks which mount point belongs to the storage. Choose the folder that contains the first folder of the asset. The window names that folder and shows the path Iconik reports. Choosing a folder one level above or below also works. You get three attempts.</li>
+<li>The choice is remembered per storage. Under <b>Preferences</b>, in <b>ISG Mount Points</b>, you see the list and can choose another folder later.</li>
+</ol>
+<p>This is what the question looks like. At the top it says which storage it is for, which folder must be in it, and which path Iconik reports.</p>
+<figure class="half"><img src="images/mount-question.jpg" alt=""></figure>
+<p>Browse to the folder that holds the archive and click <b>Choose</b> (<b>Kies</b>).</p>
+<figure class="half"><img src="images/mount-choose.jpg" alt=""></figure>
+<p>If the archive is not mounted, the job stops with a message that the folder cannot be reached. Mount the archive and start the job again. If an asset has more than one media file, the app uses the first one.</p>
+
+<h2>The first time: downloading the model</h2>
+<p>On the first job the app downloads the Whisper model, about 3 GB. This happens only once. The window shows a notice that the Whisper model is being downloaded.</p>
+<figure><img src="images/model-download.jpg" alt=""></figure>
+<p>This can take a long time, from a few minutes to longer. The model comes from Hugging Face, and downloads without an account are slower there. The progress bar can stay at 0% for a long while while the download is still running. Leave the app running and do not quit it. Once the model is in, the transcription starts by itself.</p>
+
+<h2>The result</h2>
+<p>The job appears in the app under <b>Jobs</b>. For each job you see the number of lines, the number of speakers, the detected language and how fast it ran. Below the title are the audio tracks of the file. The app picks the tracks with speech by itself. A track that carries the same signal as another track is ignored, and it says so next to it. <b>Hide tracks</b> collapses that view.</p>
+<figure><img src="images/app-result.jpg" alt=""></figure>
+<p>In Iconik the transcript then appears on the asset under <b>Transcriptions</b>, with the speakers and the language.</p>
+<figure><img src="images/iconik-transcript.jpg" alt=""></figure>
+<p>When you quit the app with Cmd+Q while a job is running, it asks what to do. <b>After this job</b> finishes the running job, picks up nothing new and then quits by itself. <b>Quit anyway</b> stops the job; you can start it again from Iconik later.</p>
+
+<h2>Connecting colleagues</h2>
+<p>A colleague does not need steps 1 and 4, because those apply to the whole Iconik environment. For a colleague it is:</p>
+<ol>
+<li>Install the app (step 2, first point).</li>
+<li>Enter the Client ID the admin got in step 1.</li>
+<li>Log in with their own Iconik account (step 3).</li>
+<li>Link the archive on the first job (step 5).</li>
+</ol>
+<p>The Client ID is not a secret in the sense of a password (there is no client secret), but only share it with people inside your own organisation. Everyone logs in with their own account and transcribes on their own Mac.</p>
+
+<h2>Preferences</h2>
+<ul>
+<li><b>Spoken language</b>: the default is <b>Detect per asset</b>. Only fix the language if all your footage is in one language. With detection on, the app expects Dutch or English: a clip detected as another language with fewer than ten words (often music or noise) is skipped.</li>
+<li><b>Allow remote jobs</b>, <b>Transcribe automatically</b> and <b>Audio files too</b>: see the sections below.</li>
+<li><b>Open at login</b>: the app starts in the menu bar when you log in to the Mac.</li>
+<li><b>ISG Mount Points</b>: the linked storage, see step 5.</li>
+<li><b>Models</b>: Whisper large-v3 for speech, pyannote community-1 for speakers. The speaker model is bundled with the app. The Whisper model is downloaded on the first job.</li>
+</ul>
+
+<h2 class="new">Remote jobs and whole collections</h2>
+<p>Optional. With <b>Allow remote jobs</b> turned on under Preferences, a Mac picks up transcription requests made in Iconik, from any location, and processes them in the background. The <b>Local Transcribe</b> button keeps working as before. With remote jobs on, the app lives in the menu bar and closing the window hides it. The archive must be mounted on that Mac.</p>
+
+<h3>Request one asset</h3>
+<p>In the asset's metadata, set <b>Transcription</b> to <b>Requested</b>. The two fields (<b>Transcription</b> and <b>Transcription details</b>) are part of the metadata view <b>Local Transcribe</b>. Add them to a view your team already uses if you want them there.</p>
+
+<h3>Request a whole collection</h3>
+<p>Open the collection, select the assets (or select the collection itself), right-click and choose <b>Update Metadata</b>. Tick <b>Transcription</b>, choose <b>Requested</b> and click <b>Update</b>. Only ticked fields are changed. Every asset in the selection gets the request.</p>
+<div class="pair">
+<figure><img src="images/iconik-context-menu.png" alt=""><figcaption>The context menu. Local Transcribe in this menu starts a job on the Mac you are using. Update Metadata puts the assets in the queue for any Mac with remote jobs on.</figcaption></figure>
+<figure><img src="images/iconik-update-metadata.png" alt=""><figcaption>Transcription set to Requested for all items.</figcaption></figure>
+</div>
+
+<h3>What the status means</h3>
+<table>
+<tr><th>Transcription</th><th>Meaning</th></tr>
+<tr><td>Requested</td><td>Waiting for a Mac to pick it up</td></tr>
+<tr><td>In progress</td><td>A Mac is working on it. The details field shows which Mac, since when, and the last sign of life</td></tr>
+<tr><td>Done</td><td>The transcript is on the asset under Transcriptions. An asset without audio or without speech is also Done, with "Skipped:" and the reason in the details field</td></tr>
+<tr><td>Failed</td><td>The reason is in the details field. Set it to Requested again to retry</td></tr>
+</table>
+
+<h3>Several Macs</h3>
+<p>Macs share the queue without double work. A working Mac refreshes a last sign every minute. If it stays silent for four minutes, for example because it went to sleep or lost the archive, another Mac takes the asset over. A job that makes no progress for fifteen minutes is handed back by the app itself and the app restarts. After three attempts an asset goes to Failed with the reason.</p>
+<p>A Mac with a problem of its own (archive not mounted, not signed in) pauses for ten minutes. Preferences and the menu bar say why. <b>Resume now</b> lifts the pause straight away.</p>
+<p>The labels you see in Iconik (Requested, In progress, Done, Failed) depend on the language of the Iconik environment. The values behind them are always English. An admin can choose the language under Preferences, <b>Language of the fields in Iconik</b>. It applies to everyone in that environment.</p>
+<p>Tested with two Macs on one Iconik account. More Macs and separate Iconik accounts are not tested yet.</p>
+
+<h2>Auto transcribe</h2>
+<p>Optional, and only with <b>Allow remote jobs</b> on. Turn on <b>Transcribe automatically</b> under it, and the Mac works through everything on its linked storage (ISG) that has no transcript yet and no transcription status. Nobody needs to request anything.</p>
+<ul>
+<li><b>What it takes.</b> Video up to an hour, newest first. With <b>Audio files too</b> on, audio files are included as well. That is off by default, because an archive often holds a lot of music and separately recorded sound.</li>
+<li><b>Requests come first.</b> A Mac always checks for Requested before it looks for automatic work. A request that comes in while every Mac is busy with an automatic job waits until one of them finishes.</li>
+<li><b>Only when there is room.</b> The Mac is on mains power, has at least 12 GB of memory free and uses less than 40% CPU and GPU, measured over the last minutes. This also works while someone is using the Mac. Under the switch the app says whether it is ready or what it is waiting for, for example "on battery" or "CPU 55% in use".</li>
+<li><b>The Mac stays awake.</b> While auto transcribe is on and the Mac is on mains power, it does not go to sleep. The display does.</li>
+<li><b>Recognisable.</b> An automatic job has the label <b>Auto</b> under Jobs, and <code>[auto]</code> in the Transcription details field in Iconik.</li>
+<li><b>Never a flood of Requested.</b> The Mac claims one asset at a time, straight on In progress. An automatic job that fails goes back to an empty status instead of Failed, and that Mac does not try it again by itself.</li>
+</ul>
+<p>The limits are in <code>config.json</code> (<code>auto_min_free_gb</code>, <code>auto_max_cpu</code>, <code>auto_max_gpu</code>) for anyone who wants to change them.</p>
+
+<h2 class="new">If something does not work</h2>
+<table>
+<tr><th>What you see</th><th>What is going on</th><th>What to do</th></tr>
+<tr><td>Window on Preferences, status Not connected</td><td>No Client ID entered yet</td><td>Step 2</td></tr>
+<tr><td>Status Not logged in</td><td>You are logged out</td><td>Click <b>Log in to Iconik</b>. If the Client ID is wrong, expand <b>Use another Client ID</b> and enter the right one</td></tr>
+<tr><td>Iconik says the app is not configured as an OAuth2 client</td><td>The Client ID is wrong or incomplete</td><td>Check the ID from step 1 and enter it again</td></tr>
+<tr><td>Yellow notice that the button is missing</td><td>The button is not in Iconik yet, or was removed</td><td>Click <b>Add the button to Iconik</b>. If that is refused, ask an Iconik admin to log in to this app once and add it</td></tr>
+<tr><td>The folder cannot be reached, is the storage mounted?</td><td>The archive is not on this Mac</td><td>Mount the archive and start the job again</td></tr>
+<tr><td>File not found</td><td>The chosen mount point does not fit the asset</td><td>Choose another folder under <b>ISG Mount Points</b></td></tr>
+<tr><td>An asset stays on Requested</td><td>No Mac with <b>Allow remote jobs</b> on is running, every Mac is busy, or the Macs that are on are paused</td><td>Check that a Mac with remote jobs on is running and logged in, with the archive mounted. A request waits for running jobs, including automatic ones</td></tr>
+<tr><td>A Mac says it is paused</td><td>It ran into a problem of its own, for example the archive was not mounted</td><td>Fix the cause named in Preferences or the menu bar and click <b>Resume now</b>. Otherwise the pause ends by itself after ten minutes</td></tr>
+<tr><td>Auto transcribe says Waiting</td><td>The Mac has no room right now: on battery, not enough memory free, CPU or GPU too busy, or no storage linked</td><td>Nothing, it starts by itself once there is room. Right after switching on it measures for about a minute first</td></tr>
+</table>
+<p>The screenshots show the Dutch version of the app. In English the labels read as in this text.</p>
+
+</body>
+</html>
