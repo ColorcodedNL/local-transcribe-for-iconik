@@ -12,7 +12,8 @@ Changes in `app/app_main.py`, `serve.py`, `transcribe.py`, `updater.py`, `worker
 4. `bash scripts/build_update.sh` runs all tests first, then makes `dist/code-<version>-shell<N>.zip` and `.sig`. It refuses to build when a test fails, and refuses to sign with a key that does not match `PUBLIC_KEY` in `app/app_shell.py`.
 5. Write `dist/notes-<version>.md`.
 6. Build the dmg as well, so new users get the latest from the release page: `bash scripts/build_bundle.sh && bash scripts/build_dmg.sh`. Start the app once from `build/` before publishing. The dmg comes out as `dist/Local Transcribe for Iconik.dmg`; copy it to `dist/Local-Transcribe-for-Iconik-<version>.dmg`.
-7. `gh release create v<version> dist/Local-Transcribe-for-Iconik-<version>.dmg dist/code-<version>-shell<N>.zip dist/code-<version>-shell<N>.zip.sig --notes-file dist/notes-<version>.md`
+7. `python3 scripts/build_sbom.py` writes `dist/sbom-<version>.cdx.json` (CycloneDX) from the built bundle. Update `docs/SBOM.md` when packages, ffmpeg or the bundled Python changed.
+8. `gh release create v<version> dist/Local-Transcribe-for-Iconik-<version>.dmg dist/code-<version>-shell<N>.zip dist/code-<version>-shell<N>.zip.sig dist/sbom-<version>.cdx.json --notes-file dist/notes-<version>.md`
 
 Installed apps offer the update within six hours, or at the next start.
 

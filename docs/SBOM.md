@@ -7,6 +7,8 @@ What is inside the app bundle of Local Transcribe for Iconik, and the known vuln
 - Last updated: 2026-10-23
 - Last vulnerability check: 2026-10-23
 
+A machine-readable version (CycloneDX 1.6) is attached to every release from 0.4.0 on as `sbom-<version>.cdx.json`, made by `scripts/build_sbom.py`. Scan it with for example `grype sbom:sbom-0.4.0.cdx.json`.
+
 Found something we missed? Open an issue, or for anything sensitive use a private security advisory on this repository.
 
 ## Native components
@@ -169,7 +171,7 @@ Vulnerabilities in distributed training, CUDA, server use of torch, lightning or
 
 ## Updating this file
 
-After building the bundle:
+After building the bundle, `python3 scripts/build_sbom.py` prints the versions it finds. By hand:
 
 ```
 cd "build/Local Transcribe for Iconik.app/Contents/Resources"
