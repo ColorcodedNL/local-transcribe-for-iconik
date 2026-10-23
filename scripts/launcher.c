@@ -9,16 +9,29 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 typedef int (*py_bytes_main_t)(int, char **);
 
 int main(int argc, char **argv) {
-    (void)argc; (void)argv;
+    (void)argc;
     char exe[PATH_MAX], resolved[PATH_MAX];
     uint32_t size = sizeof(exe);
     if (_NSGetExecutablePath(exe, &size) != 0 || !realpath(exe, resolved)) {
         fprintf(stderr, "launcher: eigen pad niet te bepalen\n");
         return 1;
+    }
+
+    // macOS houdt vrijgegeven grote geheugenblokken in het proces vast voor hergebruik, in plaats van
+    // ze terug te geven: na de audiostap van een lang bestand bleef zo 1,3 GB onnodig bezet. Met
+    // MallocLargeCache=0 gaat het terug. De geheugenbeheerder leest dit bij de start van het proces,
+    // dus een setenv hier komt te laat: zet hem en start dit programma één keer opnieuw (zelfde
+    // proces-ID, nog voor Python of een venster bestaat). Gemeten 23 oktober 2026: piek 9,9 naar
+    // 9,1 GB, tijd binnen een paar procent.
+    if (!getenv("MallocLargeCache")) {
+        setenv("MallocLargeCache", "0", 1);
+        execv(resolved, argv);
+        // Lukt dat niet, dan gewoon verder zonder.
     }
     char copy[PATH_MAX], macos_dir[PATH_MAX];
     snprintf(copy, sizeof(copy), "%s", resolved);      // dirname mag zijn invoer aanpassen

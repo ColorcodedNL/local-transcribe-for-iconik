@@ -5,7 +5,6 @@ push-volgorde en sporenvergelijking. Draaien vanuit de projectmap:
 """
 import http.client
 import json
-import os
 import sys
 import tempfile
 import threading

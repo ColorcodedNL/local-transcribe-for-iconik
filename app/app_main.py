@@ -45,7 +45,8 @@ def log_start():
     """Kopregel in het log. Pas als vaststaat dat dit exemplaar de app wordt: een tweede start (een klik
     in Iconik terwijl de app al draait) schreef hem anders midden in de regels van een lopende opdracht."""
     code = f"code-update {CODE_VERSION}" if CODE_VERSION else "code uit de bundel"
-    print(f"\n===== app gestart {datetime.now():%Y-%m-%d %H:%M:%S} vanaf {RES.parent.parent} ({code}) =====")
+    cache = "MallocLargeCache=" + os.environ.get("MallocLargeCache", "standaard")   # zet de launcher
+    print(f"\n===== app gestart {datetime.now():%Y-%m-%d %H:%M:%S} vanaf {RES.parent.parent} ({code}, {cache}) =====")
 
 
 prepare()
@@ -262,7 +263,6 @@ def apply_menubar():
     """Op de hoofddraad: icoon in de menubalk zolang opdrachten op afstand aan staan, Dock-icoon weg als het venster verborgen is."""
     global menubar
     import AppKit
-    import objc
     want = serve.worker_enabled()
     if want and menubar is None:
         target = menu_target().alloc().init()

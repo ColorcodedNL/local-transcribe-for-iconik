@@ -2,7 +2,7 @@
 
     uv run --with pynacl --with requests python tests/test_serve_update.py
 """
-import sys, types, threading, time, json, http.client
+import sys, types, threading, time, http.client
 from http.server import ThreadingHTTPServer
 sys.path.insert(0, "app")
 for name in ("keyring", "numpy", "mlx", "mlx_whisper", "torch", "webview"):

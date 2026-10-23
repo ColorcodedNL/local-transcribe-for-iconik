@@ -13,7 +13,6 @@ Stoppen met Ctrl+C. Luistert alleen op deze Mac zelf (127.0.0.1).
 
 import argparse
 import atexit
-import html
 import json
 import os
 import re
@@ -35,7 +34,7 @@ import resources
 import transcribe
 import updater
 import worker as remote
-from transcribe import Iconik, Problem
+from transcribe import Problem
 
 PORT = 8765
 PAGE_SIZE = 100

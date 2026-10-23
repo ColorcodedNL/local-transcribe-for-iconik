@@ -977,10 +977,6 @@ def load_audio_tracks(path, track_number=None):
     return analyse_tracks(read_all_tracks(path, tracks), mix_same_source=stereo)
 
 
-def load_audio(path, track_number=None):
-    return load_audio_tracks(path, track_number)[0]
-
-
 _pipeline = None  # het sprekermodel blijft geladen tussen opdrachten
 
 
@@ -1269,7 +1265,7 @@ def detect_language(samples, model_repo):
     op de eerste 30 seconden: daar zit vaak een leader of muziek.
     Geeft (taalcode, zekerheid) terug."""
     import mlx.core as mx
-    import mlx_whisper
+    import mlx_whisper  # noqa: F401  laadt mlx_whisper.transcribe, waar ModelHolder hieronder vandaan komt
     from mlx_whisper.audio import N_FRAMES, log_mel_spectrogram, pad_or_trim
 
     model = sys.modules["mlx_whisper.transcribe"].ModelHolder.get_model(model_repo, mx.float16)
@@ -1619,7 +1615,7 @@ def process_asset(iconik, args, hf_token, on_info=None, prepared=None):
             print(f"  {seconds:7.2f}s  {L('Spreker', 'Speaker')} {number}  {segment['segment_text']}")
         if len(segments) > 25:
             print(f"  ... en nog {len(segments) - 25} stukken")
-        print(f"\nProefrun klaar, niets naar Iconik geschreven.")
+        print("\nProefrun klaar, niets naar Iconik geschreven.")
         print(f"Volledige payload: {out_file}")
         return {"title": asset.get("title"), "segments": len(segments),
                 "speakers": len(numbers), "pushed": False, "language": language}

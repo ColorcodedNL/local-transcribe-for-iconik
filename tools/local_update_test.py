@@ -15,7 +15,6 @@ naast de app. Start de app daarna opnieuw en kijk in het log:
 import argparse
 import base64
 import io
-import json
 import os
 import re
 import shutil

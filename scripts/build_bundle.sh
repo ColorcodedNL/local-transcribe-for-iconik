@@ -71,12 +71,17 @@ MODEL_SRC="$HOME/Library/Application Support/Local Transcribe for Iconik/models/
 cp -RL "$MODEL_SRC" "$RES/models/"
 
 # Onderdelen die de app nooit gebruikt eruit: testmappen van pakketten, C-headers om
-# uitbreidingen te bouwen, en Tk/IDLE. Scheelt ongeveer 250 MB. Alleen mappen met de
-# naam "tests": een module tests.py (jinja2) en torch/testing blijven staan.
+# uitbreidingen te bouwen, Tk/IDLE, en pip met wat erbij hoort (de app installeert niets).
+# Scheelt ongeveer 260 MB. Alleen mappen met de naam "tests": een module tests.py (jinja2)
+# en torch/testing blijven staan. mlx/include bevat ook een script dat bij compileall een
+# SyntaxWarning gaf. setuptools blijft: torch laadt het. site-packages/build is de bouwmap van
+# mlx-whisper 0.4.3, per ongeluk in het wiel meegekomen (drie lagen build/lib met kopieën).
 PYLIB="$RES/python/lib"
 SP="$PYLIB/python3.12/site-packages"
 find "$SP" -type d \( -name tests -o -name PyObjCTest \) -prune -exec rm -rf {} +
-rm -rf "$SP/torch/include" "$SP/torch/share" \
+rm -rf "$SP/torch/include" "$SP/torch/share" "$SP/mlx/include" \
+       "$SP/pip" "$SP"/pip-*.dist-info "$PYLIB/python3.12/ensurepip" "$PYLIB/python3.12/lib2to3" \
+       "$SP/build" \
        "$PYLIB/python3.12/idlelib" "$PYLIB/python3.12/tkinter" "$PYLIB/python3.12/turtledemo" \
        "$PYLIB"/python3.12/lib-dynload/_tkinter.*.so \
        "$PYLIB/tcl9" "$PYLIB/tcl9.0" "$PYLIB/tk9.0" "$PYLIB/itcl4.3.8" "$PYLIB/thread3.0.6" \

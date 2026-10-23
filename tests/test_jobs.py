@@ -93,7 +93,7 @@ serve.jobs_path().write_text(json.dumps({"saved": "nooit", "cleared": "x?", "job
 try:
     serve.load_jobs()
     ok = True
-except Exception as error:
+except Exception:
     ok = False
 check("rare inhoud: geen crash", ok)
 serve.jobs_path().unlink()

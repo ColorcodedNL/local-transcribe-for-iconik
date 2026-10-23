@@ -69,14 +69,9 @@ samples, microphones = transcribe.load_audio_tracks(path)
 print(f"\nAudio: {len(samples) / transcribe.SAMPLE_RATE / 60:.1f} min, {time.time() - start:.0f} s, "
       f"samples {samples.nbytes / GB:.2f} GB ({samples.dtype})")
 line("na audiostap")
-import ctypes  # noqa: E402
 import gc  # noqa: E402
 gc.collect()
 line("na gc.collect")
-relief = ctypes.CDLL("/usr/lib/libSystem.B.dylib").malloc_zone_pressure_relief
-relief.restype, relief.argtypes = ctypes.c_size_t, [ctypes.c_void_p, ctypes.c_size_t]
-released = relief(None, 0)
-line(f"na pressure relief ({released / 1e9:.1f} GB)")
 
 print("\nPer functie (stijging = hoeveel er tijdens die functie bij kwam):")
 for name, s in stats.items():
