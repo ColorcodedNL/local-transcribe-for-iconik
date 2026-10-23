@@ -167,7 +167,7 @@ Vulnerabilities in distributed training, CUDA, server use of torch, lightning or
 | 2026-10-23 | CVE-2026-107676 | FFmpeg 9.0.2, HDR10+ serializer | Low | Applies to remuxing HDR metadata. The app only extracts audio |
 | 2026-10-23 | CVE-2026-107696 | FFmpeg 9.0.2, RTSP/RTP | Not affected | Built with `--disable-network` |
 | 2026-10-23 | CVE-2026-107675 | FFmpeg 9.0.2, libssh | Not affected | libssh not linked |
-| 2026-10-23 | Supply chain | Whisper model | Open | Not pinned to a revision |
+| 2026-10-23 | Supply chain | Whisper model | Planned | Not pinned to a revision yet. From the next release it is pinned, and every release checks for a newer revision and ships it after testing |
 
 ## Updating this file
 
