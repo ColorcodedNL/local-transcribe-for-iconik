@@ -31,6 +31,7 @@ from urllib.parse import parse_qs, urlparse
 import requests
 
 import app_shell
+import resources
 import transcribe
 import updater
 import worker as remote
@@ -810,6 +811,38 @@ def worker_enabled():
     return bool(transcribe.load_config().get("worker_enabled"))
 
 
+meter = resources.Meter(lambda: busy())   # meet pas zodra auto transcribe aan staat
+
+
+def number_setting(config, key, default):
+    value = config.get(key)
+    return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0 else default
+
+
+def auto_settings():
+    """Voor de werker: de instellingen van auto transcribe als die aan staat en er op deze Mac ruimte
+    is, anders None. Wat de meter vond staat in remote.state["auto"], voor het venster.
+    De grenzen staan in config.json (auto_min_free_gb, auto_max_cpu, auto_max_gpu, auto_max_minutes),
+    bewust niet in Voorkeuren."""
+    config = transcribe.load_config()
+    if not config.get("auto_transcribe"):
+        remote.state["auto"] = None
+        return None
+    storages = list((config.get("mounts") or {}).keys())
+    meter.start()
+    if storages:
+        limits = {key: number_setting(config, key, default) for key, default in resources.DEFAULTS.items()}
+        ready, reason, values = meter.check(limits)
+    else:
+        ready, reason, values = False, "storage", {}
+    remote.state["auto"] = {"ready": ready, "reason": reason,
+                            "values": {k: round(v, 1) if isinstance(v, float) else v for k, v in values.items()}}
+    if not ready:
+        return None
+    return {"storages": storages, "audio": bool(config.get("auto_audio")),
+            "max_minutes": number_setting(config, "auto_max_minutes", remote.AUTO_MAX_MINUTES)}
+
+
 def worker_languages():
     """(taal van het detailveld, taal van de labels in Iconik). De labels volgen de app tot iemand
     een taal kiest: ze gelden voor iedereen in deze Iconik-omgeving, dus ze wisselen niet vanzelf mee."""
@@ -1000,7 +1033,7 @@ def start(model="mlx-community/whisper-large-v3-mlx", language=None, mount=None,
         print("Let op: geen sprekermodel gevonden, sprekerherkenning staat uit.")
     threading.Thread(target=worker, daemon=True, name="werkrij").start()
     threading.Thread(target=watchdog, daemon=True, name="waker").start()
-    remote.start(client, worker_enabled, busy, add_job, languages=worker_languages, healthy=progress_ok)
+    remote.start(client, worker_enabled, busy, add_job, languages=worker_languages, healthy=progress_ok, auto=auto_settings)
     threading.Thread(target=check_update, daemon=True, name="update").start()
     return server
 

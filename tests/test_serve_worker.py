@@ -70,7 +70,7 @@ except transcribe.Problem as problem:
 
 state = serve.app_state()
 check("het venster krijgt de status mee", state["worker"]["enabled"] is True and state["worker"]["machine"], state.get("worker"))
-check("de status bevat geen geheimen", set(state["worker"]) <= {"enabled", "last_poll", "last_asset", "error", "machine", "paused_until", "pause_reason", "login", "login_available", "iconik_language"}, state["worker"])
+check("de status bevat geen geheimen", set(state["worker"]) <= {"enabled", "last_poll", "last_asset", "error", "machine", "paused_until", "pause_reason", "login", "login_available", "iconik_language", "last_auto", "auto"}, state["worker"])
 get("/worker?value=off", header)
 check("uit staat ook zo in de status", serve.app_state()["worker"]["enabled"] is False)
 

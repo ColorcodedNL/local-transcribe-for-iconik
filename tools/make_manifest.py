@@ -16,7 +16,7 @@ from pathlib import Path
 # Een code-update bevat precies deze bestanden. main.py en app_shell.py horen er bewust niet bij:
 # die starten de app en controleren de updates, dus die veranderen alleen met een nieuwe dmg.
 # In de repo staan de bestanden in app/; in de bundel en in een code-update staan ze plat, zonder die map.
-CODE_FILES = ["app_main.py", "transcribe.py", "serve.py", "updater.py", "worker.py", "ui.html", "setup_actions.py"]
+CODE_FILES = ["app_main.py", "transcribe.py", "serve.py", "updater.py", "worker.py", "resources.py", "ui.html", "setup_actions.py"]
 SHELL_FILES = ["main.py", "app_shell.py"]
 
 ROOT = Path(__file__).resolve().parent.parent

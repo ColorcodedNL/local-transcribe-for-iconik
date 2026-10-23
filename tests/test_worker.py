@@ -678,6 +678,39 @@ released = queue.release_stale("Ploefbook")
 check("vastgelopen auto-job gaat terug naar leeg", released == ["audio"] and worker.FIELD not in fake.values["audio"]
       and worker.failed_on(fake.values["audio"][worker.INFO]) == ["rocinante"], fake.values["audio"])
 
+# --- de lus: eerst aanvragen, dan pas automatisch
+fake, queue = ready()
+for asset, created in (("auto-1", "2026-09-02"), ("auto-2", "2026-09-01")):
+    fake.media[asset] = {"type": "video", "storage": "opslag-1", "minutes": 5, "created": created, "transcript": False}
+taken = []
+add = lambda asset_id, remote=0: taken.append((asset_id, remote))
+settings = {"storages": ["opslag-1"], "audio": False, "max_minutes": 60}
+worker.current.clear()
+worker._pause[0] = 0.0
+check("auto uit: niets automatisch", worker.poll_once(queue, "rocinante", lambda: False, add, sleep=lambda s: None) is None
+      and not taken)
+check("geen ruimte (auto geeft None): niets automatisch",
+      worker.poll_once(queue, "rocinante", lambda: False, add, sleep=lambda s: None, auto=lambda: None) is None and not taken)
+fake.values["aanvraag"] = {worker.FIELD: worker.REQUESTED}
+got = worker.poll_once(queue, "rocinante", lambda: False, add, sleep=lambda s: None, auto=lambda: settings)
+check("een aanvraag gaat voor, ook met auto aan", got == "aanvraag" and taken[-1] == ("aanvraag", 1)
+      and not worker.is_auto(fake.values["aanvraag"][worker.INFO]), taken)
+got = worker.poll_once(queue, "rocinante", lambda: False, add, sleep=lambda s: None, auto=lambda: settings)
+check("geen aanvraag meer: het nieuwste asset zonder status", got == "auto-1" and taken[-1] == ("auto-1", 1)
+      and worker.is_auto(fake.values["auto-1"][worker.INFO]) and worker.state["last_auto"] == "auto-1", taken)
+check("de heartbeat volgt het auto-asset", worker.current.get("asset") == "auto-1"
+      and worker.current.get("code") == worker.claim_code(fake.values["auto-1"][worker.INFO]))
+check("tijdens een opdracht wordt niets gezocht",
+      worker.poll_once(queue, "rocinante", lambda: True, add, sleep=lambda s: None, auto=lambda: settings) is None)
+calls = []
+worker.poll_once(queue, "rocinante", lambda: False, add, sleep=lambda s: None,
+                 auto=lambda: calls.append(1) or None)
+fake.values["aanvraag-2"] = {worker.FIELD: worker.REQUESTED}
+worker.poll_once(queue, "rocinante", lambda: False, add, sleep=lambda s: None,
+                 auto=lambda: calls.append(2) or settings)
+check("de ruimte wordt pas gemeten als er geen aanvraag ligt", calls == [1], calls)
+worker.current.clear()
+
 # Een gewone aanvraag blijft zich gedragen zoals voorheen
 fake.values["gewoon"] = {worker.FIELD: worker.REQUESTED}
 queue.claim("gewoon", "rocinante", sleep=lambda s: None)

@@ -50,7 +50,8 @@ AUTO_TAG = "[auto]"       # in het detailveld: dit asset is automatisch opgepakt
 CLEAR = ""                # als status: het veld leegmaken (een mislukte auto-job gaat terug naar "nog niet gedaan")
 AUTO_MAX_MINUTES = 60     # auto transcribe pakt geen langere assets: een aanvraag van een collega wacht nooit uren
 
-state = {"enabled": False, "last_poll": None, "last_asset": None, "error": "", "paused_until": None, "pause_reason": ""}
+state = {"enabled": False, "last_poll": None, "last_asset": None, "error": "", "paused_until": None, "pause_reason": "",
+         "last_auto": None, "auto": None}   # "auto": wat serve over auto transcribe laat zien (aan, klaar, reden)
 _pause = [0.0]            # tijdstip (time.time) tot wanneer niets wordt opgepakt
 _resumed_at = [0.0]       # wanneer de gebruiker zelf zei dat het weer mag (knop of schakelaar)
 wake = threading.Event()   # de schakelaar in Voorkeuren zet hem, zodat de werker meteen kijkt
@@ -511,24 +512,42 @@ def beat(queue, now=None, healthy=None):
         return True
 
 
-def poll_once(queue, who, busy, add_job, sleep=time.sleep):
-    """Een rondje. Geeft het aangenomen asset-ID terug, of None."""
+def poll_once(queue, who, busy, add_job, sleep=time.sleep, auto=None):
+    """Een rondje. Geeft het aangenomen asset-ID terug, of None.
+
+    Eerst wat collega's hebben aangevraagd. Alleen als daar niets ligt en `auto()` instellingen geeft
+    (auto transcribe staat aan en er is ruimte op deze Mac), één asset zonder status. Zo wacht een
+    aanvraag hooguit tot de lopende automatische opdracht klaar is."""
     if busy() or paused():
         return None
     queue.release_stale(who)
     for asset_id in queue.find(REQUESTED, 5):
         attempt = queue.claim(asset_id, who, sleep=sleep)
         if attempt:
-            with _beat_lock:
-                current.clear()
-                lost.discard(asset_id)
-                current.update(asset=asset_id, code=claim_code(queue.claimed_info), beat=time.time())
-            add_job(asset_id, remote=attempt)   # het nummer van de poging, voor het terugmelden
-            return asset_id
+            return _take(queue, asset_id, attempt, add_job)
+    settings = auto() if auto else None
+    if not settings:
+        return None
+    for asset_id in queue.candidates(settings.get("storages") or [], audio=bool(settings.get("audio")),
+                                     max_minutes=settings.get("max_minutes") or AUTO_MAX_MINUTES):
+        attempt = queue.claim(asset_id, who, sleep=sleep, auto=True)
+        if attempt:
+            state["last_auto"] = asset_id
+            return _take(queue, asset_id, attempt, add_job)
     return None
 
 
-def run(get_client, enabled, busy, add_job, stop, log=print, interval=POLL_SECONDS, languages=None, healthy=None):
+def _take(queue, asset_id, attempt, add_job):
+    """Het asset is van deze Mac: bijhouden voor de heartbeat en in de lijst zetten."""
+    with _beat_lock:
+        current.clear()
+        lost.discard(asset_id)
+        current.update(asset=asset_id, code=claim_code(queue.claimed_info), beat=time.time())
+    add_job(asset_id, remote=attempt)   # het nummer van de poging, voor het terugmelden
+    return asset_id
+
+
+def run(get_client, enabled, busy, add_job, stop, log=print, interval=POLL_SECONDS, languages=None, healthy=None, auto=None):
     """De lus van de werker. `enabled()` wordt elk rondje opnieuw gevraagd, zodat de schakelaar
     zonder herstart werkt. Fouten worden gelogd en het volgende rondje probeert het opnieuw."""
     view_id = None
@@ -555,7 +574,7 @@ def run(get_client, enabled, busy, add_job, stop, log=print, interval=POLL_SECON
                     if view_id is None:
                         view_id = queue.setup(create=True, language=iconik_language[0])
                     state["last_poll"] = stamp()
-                    taken = poll_once(queue, machine_name(), busy, add_job)
+                    taken = poll_once(queue, machine_name(), busy, add_job, auto=auto)
                     state["error"] = ""
                     if taken:
                         state["last_asset"] = taken
@@ -567,8 +586,8 @@ def run(get_client, enabled, busy, add_job, stop, log=print, interval=POLL_SECON
             wake.clear()
 
 
-def start(get_client, enabled, busy, add_job, log=print, languages=None, healthy=None):
+def start(get_client, enabled, busy, add_job, log=print, languages=None, healthy=None, auto=None):
     stop = threading.Event()
-    threading.Thread(target=run, args=(get_client, enabled, busy, add_job, stop, log, POLL_SECONDS, languages, healthy),
+    threading.Thread(target=run, args=(get_client, enabled, busy, add_job, stop, log, POLL_SECONDS, languages, healthy, auto),
                      daemon=True, name="werker").start()
     return stop
