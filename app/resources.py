@@ -19,7 +19,7 @@ import time
 SAMPLE_SECONDS = 10
 WINDOW_SECONDS = 180      # het gemiddelde gaat over hooguit zoveel seconden
 MIN_SECONDS = 60          # en vraagt minstens zoveel seconden aan metingen zonder eigen werk
-DEFAULTS = {"auto_min_free_gb": 12.0, "auto_max_cpu": 40.0, "auto_max_gpu": 20.0}
+DEFAULTS = {"auto_min_free_gb": 12.0, "auto_max_cpu": 40.0, "auto_max_gpu": 40.0}   # GPU: een browser en het eigen venster zitten al op 20 tot 25%
 PRESSURE_NORMAL = 1       # kern.memorystatus_vm_pressure_level: 1 normaal, 2 waarschuwing, 4 kritiek
 
 

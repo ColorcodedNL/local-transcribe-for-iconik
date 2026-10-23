@@ -43,7 +43,7 @@ for asset in ("a1", "a2", "a3", "a4"):
 a1, a2, a3, a4 = serve.jobs
 a1.update(status="klaar", message="63 regels", title="Clip een", duration=120.0, started=datetime.now(), finished=datetime.now(),
           result={"segments": 63, "speakers": 2}, language="nl", tracks=[{"n": 1, "db": -12.5, "note": "geluid", "used": True, "env": [0.1, 0.5]}])
-a2.update(status="fout", message="Geen internet", finished=datetime.now())
+a2.update(status="fout", message="Geen internet", finished=datetime.now(), auto=True)
 a3.update(status="bezig", started=datetime.now(), stage="transcriberen", fraction=0.4)
 serve.save_jobs()
 check("het bestand staat naast de voorkeuren", serve.jobs_path().is_file() and serve.jobs_path().parent == transcribe.CONFIG_PATH.parent)
@@ -57,6 +57,7 @@ check("klaar blijft klaar met resultaat, titel, taal en sporen", got["a1"]["stat
       and got["a1"]["result"] == {"segments": 63, "speakers": 2} and got["a1"]["language"] == "nl"
       and got["a1"]["tracks"][0]["env"] == [0.1, 0.5] and isinstance(got["a1"]["finished"], datetime))
 check("fout blijft fout met de melding", got["a2"]["status"] == "fout" and got["a2"]["message"] == "Geen internet")
+check("het label Auto blijft bewaard, en ontbreekt waar het niet hoort", got["a2"]["auto"] is True and got["a1"]["auto"] is False)
 check("wat bezig was is afgebroken, met een melding en een eindtijd", got["a3"]["status"] == "afgebroken"
       and got["a3"]["message"] and got["a3"]["finished"] is not None and got["a3"]["stage"] == "")
 check("wat wachtte is ook afgebroken", got["a4"]["status"] == "afgebroken")

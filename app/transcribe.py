@@ -201,6 +201,8 @@ MIN_SPEECH_SHARE = 0.5
 # Gemiddelde woordzekerheid waaronder een heel asset als onverstaanbaar geldt.
 # Gemeten: geroezemoes via cameramicrofoon 0.47, heldere spraak 0.96.
 MIN_CONFIDENCE = 0.65
+EXPECTED_LANGUAGES = ("nl", "en")   # standaard; in config.json: expected_languages
+MIN_WORDS_OTHER_LANGUAGE = 10       # minder woorden in een onverwachte taal: waarschijnlijk muziek die Whisper verkeerd hoort
 
 # Bekende verzinsels van Whisper bij stilte of muziek. Vergelijking is hoofdletterongevoelig.
 # Per taal, want een Nederlands patroon mag geen Engelse zin wegfilteren.
@@ -1418,6 +1420,22 @@ def prepare_asset(iconik, args, on_info=None, interactive=True):
             "samples": samples, "microphones": microphones, "model_path": model_path}
 
 
+def expected_languages():
+    """De talen die in dit archief te verwachten zijn (config.json: expected_languages)."""
+    value = load_config().get("expected_languages")
+    if isinstance(value, list) and value and all(isinstance(v, str) for v in value):
+        return tuple(v.lower() for v in value)
+    return EXPECTED_LANGUAGES
+
+
+def nothing_written(args, own):
+    """Eén slechte run (verkeerd spoor, kapotte audio, muziek) mag een eerder goed transcript niet kosten:
+    dat blijft staan. Tot 0.3.6 werd het bij te weinig zekerheid verwijderd."""
+    if args.push and args.replace and own:
+        return L("Het eerdere transcript is behouden.", "The earlier transcript was kept.")
+    return L("Er is niets naar Iconik geschreven.", "Nothing was written to Iconik.")
+
+
 def process_asset(iconik, args, hf_token, on_info=None, prepared=None):
     """Transcribeert een asset. `args` heeft de velden van de opties hierboven.
     Geeft een korte samenvatting terug; gooit Problem bij een fout.
@@ -1518,16 +1536,23 @@ def process_asset(iconik, args, hf_token, on_info=None, prepared=None):
         if sum(scores) / len(scores) < MIN_CONFIDENCE:
             for s in kept[:5]:
                 print(f"  [{s['start']:7.2f}s] {s['text'].strip()[:70]}")
-            # Eén slechte run (verkeerd spoor, kapotte audio) mag een eerder goed transcript niet kosten:
-            # dat blijft staan. Tot 0.3.6 werd het hier verwijderd.
-            note = L("Er is niets naar Iconik geschreven.", "Nothing was written to Iconik.")
-            if args.push and args.replace and own:
-                note = L("Het eerdere transcript is behouden.", "The earlier transcript was kept.")
+            note = nothing_written(args, own)
             mean = sum(scores) / len(scores)
             fail(L(f"Geen verstaanbare spraak (zekerheid {mean:.2f}, grens {MIN_CONFIDENCE}). {note}",
                    f"No intelligible speech (confidence {mean:.2f}, threshold {MIN_CONFIDENCE}). {note}"), skip=True)
     if not kept:
         fail(L("Geen spraak gevonden, er is niets om te pushen.", "No speech found, nothing to send."), skip=True)
+
+    # Muziek zonder spraak wordt soms als een andere taal herkend, met één verzonnen regel (gezien:
+    # Nederlandse spots met muziek als Russisch). Een paar woorden in een onverwachte taal: overslaan.
+    # Een echt anderstalig item heeft meer tekst. Een vast gekozen taal is een bewuste keuze: dan niet.
+    words = sum(len(s.get("words") or []) for s in kept)
+    expected = expected_languages()
+    if (not args.language or args.language == "auto") and language not in expected and words < MIN_WORDS_OTHER_LANGUAGE:
+        note = nothing_written(args, own)
+        fail(L(f"Geen verstaanbare spraak: {words} woorden herkend als {language}, verwacht {', '.join(expected)}. {note}",
+               f"No intelligible speech: {words} words recognised as {language}, expected {', '.join(expected)}. {note}"),
+             skip=True)
 
     # Stukken: (spreker van pyannote of None, woorden)
     if microphones and not args.no_speakers:

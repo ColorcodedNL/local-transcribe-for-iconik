@@ -162,12 +162,13 @@ class FakeIconik:
         return {}
 
 
-def run_push(iconik, still_ours=None, probability=0.99):
+def run_push(iconik, still_ours=None, probability=0.99, language="nl", detected="nl", words_count=2):
     deleted = []
     transcribe.delete_transcription = lambda i, a, v, t: (deleted.append(t), i.transcripts.__setitem__(
         slice(None), [x for x in i.transcripts if x["id"] != t]), 0)[2]
-    words = [{"word": " Hallo", "start": 0.0, "end": 0.5, "probability": probability},
-             {"word": " wereld.", "start": 0.5, "end": 1.0, "probability": probability}]
+    words = [{"word": f" woord{i}", "start": i * 0.5, "end": i * 0.5 + 0.5, "probability": probability}
+             for i in range(words_count)]
+    transcribe.detect_language = lambda samples, model: (detected, 0.9)
     mlx_whisper = types.ModuleType("mlx_whisper")
     mlx_whisper.transcribe = lambda *a, **k: {"segments": [{"text": "Hallo wereld.", "start": 0.0, "words": words}], "language": "nl"}
     sys.modules["mlx_whisper"] = mlx_whisper
@@ -179,7 +180,7 @@ def run_push(iconik, still_ours=None, probability=0.99):
     transcribe.pkg_version = lambda name: "0"
     sys.modules.pop("torch", None)   # de lege vervanger heeft geen torch.backends
     transcribe.memory_report = lambda stage: None
-    args = SimpleNamespace(asset_id="A", model="m", language="nl", push=True, replace=True, no_speakers=True,
+    args = SimpleNamespace(asset_id="A", model="m", language=language, push=True, replace=True, no_speakers=True,
                            speakers=None, no_voice_check=True, still_ours=still_ours)
     prepared = {"asset": {"title": "t"}, "version_id": "V", "own": [iconik.transcripts[0]],
                 "samples": np.zeros(16000, np.float32), "microphones": None, "model_path": "m"}
@@ -216,6 +217,27 @@ deleted, problem = run_push(iconik, probability=0.05)
 check("onder de drempel: overgeslagen, eerder transcript blijft staan", problem is not None and getattr(problem, "skip", False)
       and not deleted and [t["id"] for t in iconik.transcripts] == ["oud"]
       and ("behouden" in str(problem) or "kept" in str(problem)), (deleted, iconik.transcripts, problem))
+
+# 0.4: een paar woorden in een onverwachte taal (muziek die Whisper als Russisch hoort) wordt overgeslagen
+iconik = FakeIconik()
+deleted, problem = run_push(iconik, language="auto", detected="ru")
+check("2 woorden herkend als Russisch: overgeslagen, eerder transcript blijft", problem is not None
+      and getattr(problem, "skip", False) and not deleted and [t["id"] for t in iconik.transcripts] == ["oud"]
+      and "ru" in str(problem), (deleted, problem))
+iconik = FakeIconik()
+deleted, problem = run_push(iconik, language="auto", detected="ru", words_count=12)
+check("een echt Russisch item met meer tekst gaat door", problem is None and deleted == ["oud"], (deleted, problem))
+iconik = FakeIconik()
+deleted, problem = run_push(iconik, language="auto", detected="en")
+check("2 woorden Engels gaat door (verwachte taal)", problem is None, problem)
+iconik = FakeIconik()
+deleted, problem = run_push(iconik, language="ru", detected="ru")
+check("vast gekozen taal: geen controle", problem is None, problem)
+transcribe.save_config({**transcribe.load_config(), "expected_languages": ["nl", "en", "ru"]})
+iconik = FakeIconik()
+deleted, problem = run_push(iconik, language="auto", detected="ru")
+check("verwachte talen zijn instelbaar", problem is None, problem)
+transcribe.save_config({k: v for k, v in transcribe.load_config().items() if k != "expected_languages"})
 
 # --- 5. Sporenvergelijking op 1 kHz geeft dezelfde uitkomst als np.corrcoef
 rng = np.random.default_rng(1)

@@ -158,7 +158,8 @@ def load_jobs():
                    "added": _time(row.get("added")) or saved, "remote": 0,
                    "started": _time(row.get("started")), "finished": _time(row.get("finished")),
                    "stage": "", "fraction": None, "tracks": row.get("tracks") or [],
-                   "duration": row.get("duration"), "result": row.get("result"), "language": row.get("language")}
+                   "duration": row.get("duration"), "result": row.get("result"), "language": row.get("language"),
+                   "auto": bool(row.get("auto"))}
         except (KeyError, TypeError, ValueError, AttributeError):
             continue
         if job["status"] in ("wachtend", "bezig"):
