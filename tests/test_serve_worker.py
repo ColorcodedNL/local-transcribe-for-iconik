@@ -207,5 +207,24 @@ transcribe.save_config({**transcribe.load_config(), "worker_enabled": False})
 check("opdrachten op afstand uit: niet", not serve.want_awake())
 serve.busy, serve.resources.on_mains_power = real_busy, real_power
 
+# --- modellen: met auto aan pas vrijgeven als er even niets meer komt
+released = []
+real_release, real_busy = serve.release_models_now, serve.busy
+serve.release_models_now = lambda: released.append(1)
+serve.busy = lambda: False
+transcribe.save_config({**transcribe.load_config(), "worker_enabled": True, "auto_transcribe": True})
+check("auto actief als opdrachten op afstand en auto aan staan", serve.auto_active())
+serve.activity["done"] = 100.0
+serve.release_later(100.0, sleep=lambda s: None)
+check("niets meer gebeurd: modellen vrij", released == [1])
+serve.release_later(100.0, sleep=lambda s: serve.activity.__setitem__("done", 200.0))
+check("intussen een nieuwe opdracht klaar: deze draad doet niets", released == [1])
+serve.busy = lambda: True
+serve.release_later(200.0, sleep=lambda s: None)
+check("er loopt een opdracht: niets vrijgeven", released == [1])
+transcribe.save_config({**transcribe.load_config(), "auto_transcribe": False})
+check("auto uit: niet actief", not serve.auto_active())
+serve.release_models_now, serve.busy = real_release, real_busy
+
 print("\nALLES OK" if not fails else f"\n{fails} FOUT")
 sys.exit(1 if fails else 0)

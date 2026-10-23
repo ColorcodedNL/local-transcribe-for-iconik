@@ -817,6 +817,13 @@ def report_remote(job):
             time.sleep(5)
 
 
+def say(text):
+    """Een logregel in één schrijfactie. print() schrijft tekst en regeleinde apart, en dan kwam de
+    regel van een andere draad er soms tussen: "===== asset =====Werker: asset ... aangenomen"."""
+    sys.stdout.write(f"{text}\n")
+    sys.stdout.flush()
+
+
 def worker_enabled():
     return bool(transcribe.load_config().get("worker_enabled"))
 
@@ -843,6 +850,30 @@ def auto_status_text():
            "gpu": transcribe.L(f"GPU {n('gpu')}% bezet", f"GPU {n('gpu')}% in use"),
            "storage": transcribe.L("geen opslag (ISG) gekoppeld", "no storage (ISG) connected")}.get(a.get("reason"), a.get("reason") or "")
     return transcribe.L(f"Automatisch: wacht, {why}", f"Automatic: waiting, {why}")
+
+
+RELEASE_AFTER = 120   # met auto aan: modellen pas vrijgeven na zoveel seconden zonder opdracht
+
+
+def auto_active():
+    config = transcribe.load_config()
+    return bool(config.get("worker_enabled") and config.get("auto_transcribe"))
+
+
+def release_models_now():
+    try:
+        transcribe.release_models()
+        transcribe.memory_report("vrijgeven")
+    except Exception as error:
+        print(f"Modellen vrijgeven mislukte: {error}")
+
+
+def release_later(done_at, wait=RELEASE_AFTER, sleep=time.sleep):
+    """Geeft de modellen vrij als er sinds `done_at` geen opdracht meer is geweest. Is er intussen een
+    opdracht geweest (of loopt er een), dan doet deze draad niets: die opdracht regelt het zelf."""
+    sleep(wait)
+    if activity["done"] == done_at and not busy():
+        release_models_now()
 
 
 def want_awake():
@@ -1020,7 +1051,7 @@ def worker():
 
         def on_info(title, seconds, job=job):
             job["title"], job["duration"] = title or "", seconds
-        print(f"\n===== {job['asset_id']} =====")
+        say(f"\n===== {job['asset_id']} =====")
         options = make_options(job)
         prepared = None
         box = job.pop("prefetch", None)
@@ -1068,12 +1099,14 @@ def worker():
             report_remote(job)
         current[0] = None
         activity["done"] = time.time()
+        remote.wake.set()   # de werker kijkt meteen of er iets ligt, niet pas over een minuut
         if work.empty():
-            try:
-                transcribe.release_models()
-                transcribe.memory_report("vrijgeven")
-            except Exception as error:
-                print(f"Modellen vrijgeven mislukte: {error}")
+            if auto_active():
+                # Met auto aan komt de volgende opdracht meestal binnen een minuut: de modellen niet bij
+                # elke korte clip opnieuw laden. Staat de Mac daarna stil, dan alsnog vrijgeven.
+                threading.Thread(target=release_later, args=(activity["done"],), daemon=True).start()
+            else:
+                release_models_now()
 
 
 def start(model="mlx-community/whisper-large-v3-mlx", language=None, mount=None, port=PORT, idle_exit=False):
@@ -1101,7 +1134,8 @@ def start(model="mlx-community/whisper-large-v3-mlx", language=None, mount=None,
     threading.Thread(target=worker, daemon=True, name="werkrij").start()
     threading.Thread(target=watchdog, daemon=True, name="waker").start()
     threading.Thread(target=keep_awake, daemon=True, name="wakker").start()
-    remote.start(client, worker_enabled, busy, add_job, languages=worker_languages, healthy=progress_ok, auto=auto_settings)
+    remote.start(client, worker_enabled, busy, add_job, log=say, languages=worker_languages, healthy=progress_ok,
+                 auto=auto_settings)
     threading.Thread(target=check_update, daemon=True, name="update").start()
     return server
 
