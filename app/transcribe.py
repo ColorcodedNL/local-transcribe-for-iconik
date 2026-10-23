@@ -898,7 +898,7 @@ def analyse_tracks(data, mix_same_source=False):
 
     for i in range(count):
         extra = ""
-        if i in mics and len(mics) > 1:
+        if i in mics and len(mics) > 1 and dominant[mics.index(i)] >= 0.005:   # 0% zegt niets, en leest als een tegenspraak
             extra = f"  overheerst {dominant[mics.index(i)]:4.0%} van de tijd"
         level_text = f"{measured[i]['rms']:6.1f} dB" if measured[i] else "     leeg"
         print(f"  spoor {i + 1}: {level_text}  {notes[i]}{extra}")
@@ -1518,11 +1518,11 @@ def process_asset(iconik, args, hf_token, on_info=None, prepared=None):
         if sum(scores) / len(scores) < MIN_CONFIDENCE:
             for s in kept[:5]:
                 print(f"  [{s['start']:7.2f}s] {s['text'].strip()[:70]}")
+            # Eén slechte run (verkeerd spoor, kapotte audio) mag een eerder goed transcript niet kosten:
+            # dat blijft staan. Tot 0.3.6 werd het hier verwijderd.
             note = L("Er is niets naar Iconik geschreven.", "Nothing was written to Iconik.")
             if args.push and args.replace and own:
-                for old in own:
-                    delete_transcription(iconik, args.asset_id, version_id, old["id"])
-                note = L("Het eerdere transcript van deze app is verwijderd.", "The earlier transcript from this app was removed.")
+                note = L("Het eerdere transcript is behouden.", "The earlier transcript was kept.")
             mean = sum(scores) / len(scores)
             fail(L(f"Geen verstaanbare spraak (zekerheid {mean:.2f}, grens {MIN_CONFIDENCE}). {note}",
                    f"No intelligible speech (confidence {mean:.2f}, threshold {MIN_CONFIDENCE}). {note}"), skip=True)

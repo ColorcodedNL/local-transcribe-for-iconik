@@ -39,6 +39,11 @@ def prepare():
     log = open(LOGDIR / "serve.log", "a", buffering=1)
     os.dup2(log.fileno(), 1)
     os.dup2(log.fileno(), 2)
+
+
+def log_start():
+    """Kopregel in het log. Pas als vaststaat dat dit exemplaar de app wordt: een tweede start (een klik
+    in Iconik terwijl de app al draait) schreef hem anders midden in de regels van een lopende opdracht."""
     code = f"code-update {CODE_VERSION}" if CODE_VERSION else "code uit de bundel"
     print(f"\n===== app gestart {datetime.now():%Y-%m-%d %H:%M:%S} vanaf {RES.parent.parent} ({code}) =====")
 
@@ -115,7 +120,7 @@ def run_as_messenger():
     import AppKit
     from PyObjCTools import AppHelper
 
-    print("Er draait al een exemplaar; link en venster gaan daarheen.")
+    print(f"[{datetime.now():%H:%M:%S}] tweede start: doorgegeven aan de app die al draait")
     handled = {"link": False}
 
     def forward(urls):
@@ -309,8 +314,50 @@ def begin_start():
         STARTING.write_text(f"{CODE_VERSION} {os.getpid()}")
 
 
+def about_versions(code, bundle):
+    """De opties voor het About-venster van macOS: "Version 0.3.6 (bundle 0.3.4)" na een code-update,
+    gewoon "Version 0.3.6" als code en bundel gelijk zijn (macOS laat de haakjes dan weg)."""
+    return {"ApplicationVersion": code, "Version": code if not bundle or bundle == code else f"bundle {bundle}"}
+
+
+_about = []  # het doel van het menu-item, zodat Python het niet opruimt
+
+
+def fix_about_menu():
+    """Op de hoofddraad. macOS haalt de versie in About uit Info.plist, en een code-update raakt de bundel
+    nooit: na een update stond er dan de versie van de bundel. Het item krijgt een eigen doel."""
+    import objc
+    import AppKit
+
+    class AboutTarget(AppKit.NSObject):
+        @objc.typedSelector(b"v@:@")
+        def showAbout_(self, sender):
+            bundle = AppKit.NSBundle.mainBundle().infoDictionary().get("CFBundleShortVersionString")
+            AppKit.NSApp.activateIgnoringOtherApps_(True)
+            AppKit.NSApp.orderFrontStandardAboutPanelWithOptions_(about_versions(transcribe.APP_VERSION, bundle and str(bundle)))
+
+    try:
+        menu = AppKit.NSApp.mainMenu()
+        app_menu = menu.itemAtIndex_(0).submenu() if menu and menu.numberOfItems() else None
+        for item in (app_menu.itemArray() if app_menu else []):
+            if item.action() == "orderFrontStandardAboutPanel:":
+                target = AboutTarget.alloc().init()
+                _about.append(target)
+                item.setTarget_(target)
+                item.setAction_("showAbout:")
+                return
+        print("About: menu-item niet gevonden")
+    except Exception as error:
+        print(f"About: {error}")
+
+
 def mark_started():
     global hidden
+    try:
+        from PyObjCTools import AppHelper
+        AppHelper.callAfter(fix_about_menu)
+    except Exception as error:
+        print(f"About: {error}")
     try:
         STARTING.unlink()
     except FileNotFoundError:
@@ -328,6 +375,7 @@ def main():
     if our_receiver_running():
         run_as_messenger()
         return
+    log_start()
     begin_start()
     try:
         serve.start(idle_exit=False)

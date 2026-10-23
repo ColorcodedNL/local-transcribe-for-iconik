@@ -162,12 +162,12 @@ class FakeIconik:
         return {}
 
 
-def run_push(iconik, still_ours=None):
+def run_push(iconik, still_ours=None, probability=0.99):
     deleted = []
     transcribe.delete_transcription = lambda i, a, v, t: (deleted.append(t), i.transcripts.__setitem__(
         slice(None), [x for x in i.transcripts if x["id"] != t]), 0)[2]
-    words = [{"word": " Hallo", "start": 0.0, "end": 0.5, "probability": 0.99},
-             {"word": " wereld.", "start": 0.5, "end": 1.0, "probability": 0.99}]
+    words = [{"word": " Hallo", "start": 0.0, "end": 0.5, "probability": probability},
+             {"word": " wereld.", "start": 0.5, "end": 1.0, "probability": probability}]
     mlx_whisper = types.ModuleType("mlx_whisper")
     mlx_whisper.transcribe = lambda *a, **k: {"segments": [{"text": "Hallo wereld.", "start": 0.0, "words": words}], "language": "nl"}
     sys.modules["mlx_whisper"] = mlx_whisper
@@ -209,6 +209,13 @@ iconik = FakeIconik()
 deleted, problem = run_push(iconik, still_ours=lambda: False)
 check("overgenomen asset: niets geschreven", problem is not None and getattr(problem, "skip", False)
       and not [c for c in iconik.calls if c[0] == "POST"] and not deleted, iconik.calls)
+
+# 0.3.6: een run onder de zekerheidsdrempel laat het eerdere transcript staan
+iconik = FakeIconik()
+deleted, problem = run_push(iconik, probability=0.05)
+check("onder de drempel: overgeslagen, eerder transcript blijft staan", problem is not None and getattr(problem, "skip", False)
+      and not deleted and [t["id"] for t in iconik.transcripts] == ["oud"]
+      and ("behouden" in str(problem) or "kept" in str(problem)), (deleted, iconik.transcripts, problem))
 
 # --- 5. Sporenvergelijking op 1 kHz geeft dezelfde uitkomst als np.corrcoef
 rng = np.random.default_rng(1)

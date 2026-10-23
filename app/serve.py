@@ -457,6 +457,22 @@ def clear_finished():
     save_jobs()
 
 
+def next_number():
+    """Volgnummer voor een nieuwe regel in de lijst. Aanroepen met jobs_lock."""
+    return max(len(jobs) + cleared[0], max((j["n"] for j in jobs), default=0)) + 1
+
+
+def add_failed(title, message):
+    """Een rode regel in de lijst zonder opdracht erachter, bijvoorbeeld voor een collectie die niet
+    uit te pakken was. Zo ziet de gebruiker het ook als de klik in Iconik allang is afgehandeld."""
+    now = datetime.now()
+    with jobs_lock:
+        jobs.append({"n": next_number(), "asset_id": "", "title": title, "status": "fout",
+                     "message": message, "added": now, "remote": 0, "started": None, "finished": now,
+                     "stage": "", "fraction": None, "tracks": []})
+    touch_jobs()
+
+
 def add_job(asset_id, remote=0):
     """`remote`: de opdracht komt uit de rij in Iconik (werker-modus), het resultaat gaat daar terug.
     Het is het nummer van de poging (1, 2 of 3); 0 betekent een gewone opdracht."""
@@ -464,7 +480,7 @@ def add_job(asset_id, remote=0):
         for job in jobs:
             if job["asset_id"] == asset_id and job["status"] in ("wachtend", "bezig"):
                 return False
-        number = max(len(jobs) + cleared[0], max((j["n"] for j in jobs), default=0)) + 1
+        number = next_number()
         job = {"n": number, "asset_id": asset_id, "title": "",
                "status": "wachtend", "message": "", "added": datetime.now(), "remote": remote,
                "started": None, "finished": None, "stage": "", "fraction": None,
@@ -506,6 +522,44 @@ def collection_assets(iconik, collection_id, depth=0):
         if len(objects) < PAGE_SIZE:
             return found
         page += 1
+
+
+def queue_request(requests_waiting):
+    """Zet opdrachten in de rij; `requests_waiting` is een lijst (asset_ids, collection_ids).
+    Losse assets meteen. Collecties worden in een eigen draad uitgepakt: een grote collectie kost
+    vele pagina's bij Iconik, en binnen het verzoek liep dat tegen de 60 seconden van de klik aan."""
+    asset_ids, collection_ids = [], []
+    for assets, collections in requests_waiting:
+        asset_ids += assets
+        collection_ids += collections
+    if asset_ids:
+        enqueue(asset_ids)
+    if collection_ids:
+        threading.Thread(target=unpack_collections, args=(collection_ids,), daemon=True, name="collecties").start()
+
+
+def unpack_collections(collection_ids):
+    """Pakt collecties uit en zet de assets in de rij. Lukt dat niet, dan een rode regel in de lijst."""
+    for collection_id in collection_ids:
+        try:
+            connection = client()
+            if connection is None:
+                raise Problem(transcribe.L("Niet ingelogd bij Iconik.", "Not logged in to Iconik."))
+            found = collection_assets(connection, collection_id)
+        except Exception as error:
+            name = collection_id
+            try:
+                name = client().get(f"assets/v1/collections/{collection_id}/").get("title") or collection_id
+            except Exception:
+                pass
+            print(f"Collectie {collection_id} uitpakken mislukte: {error}")
+            add_failed(transcribe.L(f"Collectie {name}", f"Collection {name}"),
+                       transcribe.L(f"Uitpakken mislukte: {error}", f"Could not unpack: {error}")[:300])
+            continue
+        if found:
+            enqueue(found)
+        else:
+            print(f"Collectie {collection_id} bevat geen assets.")
 
 
 def split_ids(values):
@@ -699,14 +753,7 @@ class Handler(BaseHTTPRequestHandler):
         return self.redirect("/")
 
     def queue_request(self, requests_waiting):
-        """Zet opdrachten in de rij; `requests_waiting` is een lijst (asset_ids, collection_ids)."""
-        connection = client()
-        asset_ids = []
-        for assets, collections in requests_waiting:
-            asset_ids += assets
-            for collection_id in collections:
-                asset_ids += collection_assets(connection, collection_id)
-        enqueue(asset_ids)
+        queue_request(requests_waiting)
 
     def transcribe(self, url, query):
         # De sleutel staat in het pad: /transcribe/<sleutel>

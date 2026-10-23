@@ -87,6 +87,10 @@ The app connects to:
 
 Audio, transcripts and file names never leave your Mac except as the transcript written to your own Iconik environment. Usage telemetry of the bundled libraries (pyannote, Hugging Face) is switched off.
 
+### Links from other pages
+
+macOS does not tell an app which page opened an `iconiktranscribe://` link, so the app cannot tell a click in Iconik from the same link on another web page. A page that knows asset IDs from your Iconik environment could start jobs for them. The worst outcome is a new transcript replacing an earlier transcript from this app for the same asset. Transcripts from other sources are never touched, and a run without enough intelligible speech never replaces anything. Asset IDs are long random identifiers, and browsers ask before a site opens an app. The local receiver only answers on 127.0.0.1 and refuses requests without its own key.
+
 ## How it works
 
 ```

@@ -132,5 +132,54 @@ reset()
 serve.load_jobs()
 check("teruggezet blijft zo bewaard", serve.jobs and serve.jobs[0]["status"] in ("fout", "teruggezet"))
 
+# --- collecties: uitpakken buiten het verzoek, een fout wordt een rode regel in de lijst
+import threading  # noqa: E402
+
+
+def wait_for(cond, seconds=3):
+    end = time.time() + seconds
+    while time.time() < end and not cond():
+        time.sleep(0.02)
+    return cond()
+
+
+reset()
+gate = threading.Event()
+
+
+class FakeIconik:
+    def get(self, path):
+        if path.startswith("assets/v1/collections/col1/contents/"):
+            gate.wait(3)   # een trage collectie
+            return {"objects": [{"object_type": "assets", "id": "c1"}, {"object_type": "assets", "id": "c2"}]}
+        if path.startswith("assets/v1/collections/kapot/contents/"):
+            raise transcribe.Problem("GET assets/v1/collections/kapot/contents/ returned HTTP 500")
+        if path == "assets/v1/collections/kapot/":
+            return {"title": "Draaidag 3"}
+        return {"title": "Titel uit Iconik"}
+
+
+serve.client = lambda: FakeIconik()
+started = time.time()
+serve.queue_request([(["los1"], ["col1"])])
+check("losse assets staan meteen in de rij, ook als de collectie nog uitgepakt wordt",
+      [j["asset_id"] for j in serve.jobs] == ["los1"] and time.time() - started < 1, [j["asset_id"] for j in serve.jobs])
+gate.set()
+check("daarna volgen de assets uit de collectie", wait_for(lambda: [j["asset_id"] for j in serve.jobs] == ["los1", "c1", "c2"]),
+      [j["asset_id"] for j in serve.jobs])
+
+reset()
+serve.queue_request([([], ["kapot"])])
+check("een collectie die niet lukt wordt een rode regel met naam en melding",
+      wait_for(lambda: len(serve.jobs) == 1) and serve.jobs[0]["status"] == "fout"
+      and "Draaidag 3" in serve.jobs[0]["title"] and "HTTP 500" in serve.jobs[0]["message"], serve.jobs)
+check("die regel komt niet in de werkrij", serve.work.empty())
+serve.add_job("na")
+check("het volgnummer loopt door", serve.jobs[-1]["n"] == serve.jobs[0]["n"] + 1)
+serve.save_jobs()
+reset()
+serve.load_jobs()
+check("de rode regel blijft bewaard", serve.jobs and serve.jobs[0]["status"] == "fout" and "Draaidag 3" in serve.jobs[0]["title"])
+
 print("\nALLES OK" if not fails else f"\n{fails} FOUT")
 sys.exit(1 if fails else 0)

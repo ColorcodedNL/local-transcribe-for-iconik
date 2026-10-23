@@ -36,6 +36,12 @@ def check(label, ok, detail=""):
 
 
 SR = transcribe.SAMPLE_RATE
+
+
+def same(a, b):
+    """Gelijk op hooguit 1 na (de kleinste stap van 16-bit). ffmpeg op macOS zet bij het omzetten naar
+    16 kHz een beetje willekeurige ruis (dither): twee keer dezelfde opdracht verschilt daar al op 1."""
+    return a.shape == b.shape and (not a.size or int(np.abs(a.astype(np.int64) - b.astype(np.int64)).max()) <= 1)
 rng = np.random.default_rng(3)
 
 
@@ -75,7 +81,7 @@ if shutil.which("ffmpeg") and shutil.which("ffprobe"):
         reference = old_read_all(path, tracks)
         check("duur via ffprobe", abs((transcribe.media_seconds(path) or 0) - 70) < 0.1)
         new = transcribe.read_all_tracks(path, tracks)
-        check("alle sporen: gelijk aan de oude manier", new.shape == reference.shape and np.array_equal(new, reference),
+        check("alle sporen: gelijk aan de oude manier", same(new, reference),
               f"{new.shape} tegen {reference.shape}")
 
         # Onbekende duur en te kleine blokken: de tabel moet groeien zonder iets te verliezen.
@@ -83,10 +89,10 @@ if shutil.which("ffmpeg") and shutil.which("ffprobe"):
         transcribe.media_seconds = lambda p: None
         transcribe.PCM_BLOCK = 1_000_000
         new = transcribe.read_all_tracks(path, tracks)
-        check("onbekende duur, kleine blokken: gelijk", np.array_equal(new, reference))
+        check("onbekende duur, kleine blokken: gelijk", same(new, reference))
         transcribe.media_seconds = lambda p: 3.0   # veel te krap geschat
         new = transcribe.read_all_tracks(path, tracks)
-        check("te krappe schatting: gelijk", np.array_equal(new, reference))
+        check("te krappe schatting: gelijk", same(new, reference))
         transcribe.media_seconds, transcribe.PCM_BLOCK = saved_seconds, saved_block
 
         old_one = np.frombuffer(subprocess.run(
@@ -94,7 +100,7 @@ if shutil.which("ffmpeg") and shutil.which("ffprobe"):
              "-ac", "1", "-ar", str(SR), "-f", "s16le", "-"], capture_output=True).stdout, np.int16)
         one = transcribe.read_track(path, tracks[2])
         check("één spoor: gelijk aan de oude manier",
-              np.array_equal(one, old_one.astype(np.float32) / 32768.0) and one.dtype == np.float32)
+              one.dtype == np.float32 and same(np.round(one * 32768.0).astype(np.int16), old_one))
         part = transcribe.read_track(path, tracks[2], seconds=10)
         check("één spoor met seconden: 10 s", len(part) == 10 * SR, len(part))
 
