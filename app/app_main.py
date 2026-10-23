@@ -424,6 +424,10 @@ def main():
                 return AppKit.NSTerminateNow
             if answer == AppKit.NSAlertFirstButtonReturn:
                 serve.quit_after.set()
+                if serve.current[0] is None:
+                    # De opdracht werd klaar terwijl de vraag openstond: er is niets meer om op te wachten.
+                    print(f"[{datetime.now():%H:%M:%S}] opdracht was al klaar, de app sluit af")
+                    return AppKit.NSTerminateNow
                 print(f"[{datetime.now():%H:%M:%S}] sluit af na de lopende opdracht")
                 reconcile()
             return AppKit.NSTerminateCancel
