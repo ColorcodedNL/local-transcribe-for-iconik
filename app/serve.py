@@ -851,6 +851,22 @@ def auto_status_text():
     return transcribe.L(f"Automatisch: wacht, {why}", f"Automatic: waiting, {why}")
 
 
+quit_after = threading.Event()   # Cmd+Q met "Na deze opdracht": niets nieuws oppakken, daarna afsluiten
+quit_hook = None                 # het venster zet hier de functie die de app afsluit
+
+
+def request_quit():
+    """De lopende opdracht is klaar en de gebruiker wilde daarna afsluiten."""
+    print(f"[{datetime.now():%H:%M:%S}] opdracht klaar, de app sluit af zoals gevraagd")
+    if quit_hook is not None:
+        quit_hook()
+
+
+def worker_may_take():
+    """De werker mag opdrachten uit de rij (en automatische) oppakken: aan, en niet aan het afsluiten."""
+    return worker_enabled() and not quit_after.is_set()
+
+
 RELEASE_AFTER = 120   # met auto aan: modellen pas vrijgeven na zoveel seconden zonder opdracht
 
 
@@ -881,6 +897,8 @@ def want_awake():
     Het scherm mag wel uit. Op batterij tussen opdrachten niets extra."""
     if busy():
         return True
+    if quit_after.is_set():
+        return False
     config = transcribe.load_config()
     return bool(config.get("worker_enabled") and config.get("auto_transcribe")) and resources.on_mains_power() is True
 
@@ -1098,6 +1116,9 @@ def worker():
             report_remote(job)
         current[0] = None
         activity["done"] = time.time()
+        if quit_after.is_set():
+            request_quit()
+            continue
         remote.wake.set()   # de werker kijkt meteen of er iets ligt, niet pas over een minuut
         if work.empty():
             if auto_active():
@@ -1133,7 +1154,7 @@ def start(model="mlx-community/whisper-large-v3-mlx", language=None, mount=None,
     threading.Thread(target=worker, daemon=True, name="werkrij").start()
     threading.Thread(target=watchdog, daemon=True, name="waker").start()
     threading.Thread(target=keep_awake, daemon=True, name="wakker").start()
-    remote.start(client, worker_enabled, busy, add_job, log=say, languages=worker_languages, healthy=progress_ok,
+    remote.start(client, worker_may_take, busy, add_job, log=say, languages=worker_languages, healthy=progress_ok,
                  auto=auto_settings)
     threading.Thread(target=check_update, daemon=True, name="update").start()
     return server

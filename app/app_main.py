@@ -188,6 +188,8 @@ menubar = None  # (statusitem, doel), alleen zolang opdrachten op afstand aan st
 
 def status_text():
     import worker as remote
+    if serve.quit_after.is_set():
+        return transcribe.L("Sluit af na deze opdracht", "Quits after this job")
     if serve.busy():
         return transcribe.L("Bezig met een opdracht", "Working on a job")
     if remote.paused():
@@ -399,19 +401,27 @@ def main():
         """Delegate van pywebview, uitgebreid met links, het Dock-icoon en afsluiten."""
 
         def applicationShouldTerminate_(self, app):
-            if not serve.busy():
-                return AppKit.NSTerminateNow
+            if not serve.busy() or (serve.quit_after.is_set() and serve.current[0] is None):
+                return AppKit.NSTerminateNow   # niets bezig, of de opdracht na "Na deze opdracht" is klaar
             alert = AppKit.NSAlert.alloc().init()
             alert.setMessageText_(transcribe.L("Er loopt nog een opdracht", "A job is still running"))
             alert.setInformativeText_(transcribe.L(
-                "Afsluiten breekt de opdracht af. Je kunt hem later opnieuw starten vanuit Iconik.",
-                "Quitting stops the job. You can start it again from Iconik later."))
+                "Na deze opdracht: de app maakt de lopende opdracht af, pakt niets nieuws meer op en sluit dan "
+                "zelf af. Toch afsluiten breekt de opdracht af; je kunt hem later opnieuw starten vanuit Iconik.",
+                "After this job: the app finishes the running job, picks up nothing new and then quits by itself. "
+                "Quit anyway stops the job; you can start it again from Iconik later."))
+            alert.addButtonWithTitle_(transcribe.L("Na deze opdracht", "After this job"))
             alert.addButtonWithTitle_(transcribe.L("Annuleren", "Cancel"))
             alert.addButtonWithTitle_(transcribe.L("Toch afsluiten", "Quit anyway"))
             alert.setAlertStyle_(AppKit.NSAlertStyleWarning)
-            if alert.runModal() == AppKit.NSAlertSecondButtonReturn:
+            answer = alert.runModal()
+            if answer == AppKit.NSAlertThirdButtonReturn:
                 print(f"[{datetime.now():%H:%M:%S}] afgesloten tijdens een opdracht")
                 return AppKit.NSTerminateNow
+            if answer == AppKit.NSAlertFirstButtonReturn:
+                serve.quit_after.set()
+                print(f"[{datetime.now():%H:%M:%S}] sluit af na de lopende opdracht")
+                reconcile()
             return AppKit.NSTerminateCancel
 
         @objc.typedSelector(b"Z@:@Z")
@@ -427,6 +437,8 @@ def main():
     BrowserView.AppDelegate = LocalTranscribeDelegate
     serve.show_hook = show  # een tweede exemplaar kan zo het venster naar voren halen
     serve.restart_hook = restart  # na een code-update
+    from PyObjCTools import AppHelper
+    serve.quit_hook = lambda: AppHelper.callAfter(AppKit.NSApp.terminate_, None)   # "Na deze opdracht"
 
     storage = SUPPORT / "webview"
     storage.mkdir(parents=True, exist_ok=True)

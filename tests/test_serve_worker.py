@@ -226,5 +226,25 @@ transcribe.save_config({**transcribe.load_config(), "auto_transcribe": False})
 check("auto uit: niet actief", not serve.auto_active())
 serve.release_models_now, serve.busy = real_release, real_busy
 
+# --- Cmd+Q met "Na deze opdracht": niets nieuws, daarna afsluiten
+transcribe.save_config({**transcribe.load_config(), "worker_enabled": True, "auto_transcribe": True})
+check("normaal mag de werker oppakken", serve.worker_may_take())
+quits = []
+serve.quit_hook = lambda: quits.append(1)
+serve.quit_after.set()
+check("na deze opdracht: de werker pakt niets nieuws (ook geen auto)", not serve.worker_may_take())
+real_busy, real_power = serve.busy, serve.resources.on_mains_power
+serve.busy, serve.resources.on_mains_power = (lambda: False), (lambda: True)
+check("na deze opdracht: tussen opdrachten niet meer wakker houden", not serve.want_awake())
+serve.busy = lambda: True
+check("maar de lopende opdracht houdt de Mac nog wel wakker", serve.want_awake())
+serve.busy, serve.resources.on_mains_power = real_busy, real_power
+serve.request_quit()
+check("klaar: de app sluit af via de haak", quits == [1])
+check("de voorkeur voor opdrachten op afstand blijft staan", serve.worker_enabled())
+serve.quit_after.clear()
+serve.quit_hook = None
+transcribe.save_config({**transcribe.load_config(), "worker_enabled": False, "auto_transcribe": False})
+
 print("\nALLES OK" if not fails else f"\n{fails} FOUT")
 sys.exit(1 if fails else 0)
