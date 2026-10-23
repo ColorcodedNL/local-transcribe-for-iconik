@@ -220,6 +220,8 @@ with sync_playwright() as p:
         serve.remote.state["auto"] = {"ready": False, "reason": "gpu", "values": {"gpu": 63.0}}
         page.get_by_text("GPU 63% bezet").wait_for(timeout=5000)
         check("het venster zegt waarop auto wacht", True)
+        gap = page.locator(".autostate").evaluate("e => parseFloat(getComputedStyle(e).marginBottom)")
+        check("ruimte onder de statusregel, zodat het volgende onderdeel los staat", gap > 10, gap)
         serve.remote.state["auto"] = {"ready": True, "reason": None, "values": {}}
         page.get_by_text("Klaar: pakt een asset").wait_for(timeout=5000)
         check("en wanneer hij klaar is", True)

@@ -59,7 +59,7 @@ button.plain:disabled { color: var(--idle); cursor: default; }
 .title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 550;
          -webkit-user-select: text; user-select: text; }
 .state { color: var(--muted); white-space: nowrap; }
-.autostate { margin-bottom: 1.4em; }
+section.set p.autostate { margin-bottom: 1.4em; }   /* zo specifiek als section.set p, anders wint die */
 .tag { font-size: 11px; font-weight: 600; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; white-space: nowrap; }
 .state.bezig { color: var(--accent); } .state.klaar { color: var(--good); } .state.fout { color: var(--bad); } .state.afgebroken { color: var(--muted); } .state.teruggezet { color: var(--warn); }
 .msg { color: var(--muted); margin-top: 2px; -webkit-user-select: text; user-select: text; }

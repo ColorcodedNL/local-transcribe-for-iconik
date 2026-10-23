@@ -710,6 +710,15 @@ worker.poll_once(queue, "rocinante", lambda: False, add, sleep=lambda s: None,
                  auto=lambda: calls.append(2) or settings)
 check("de ruimte wordt pas gemeten als er geen aanvraag ligt", calls == [1], calls)
 worker.current.clear()
+fake.values["aanvraag-3"] = {worker.FIELD: worker.REQUESTED}
+fake.media["auto-3"] = {"type": "video", "storage": "opslag-1", "minutes": 5, "created": "2026-09-03", "transcript": False}
+answers = iter([True, False])   # mag aan het begin van de ronde, niet meer vlak voor de claim
+got = worker.poll_once(queue, "rocinante", lambda: False, add, sleep=lambda s: None, auto=lambda: settings,
+                       allowed=lambda: next(answers, False))
+check("mag het niet meer vlak voor de claim: niets geclaimd", got is None
+      and fake.values["aanvraag-3"][worker.FIELD] == worker.REQUESTED, fake.values["aanvraag-3"])
+check("en geen automatische claim", worker.FIELD not in fake.values.get("auto-3", {}))
+worker.current.clear()
 
 # Een gewone aanvraag blijft zich gedragen zoals voorheen
 fake.values["gewoon"] = {worker.FIELD: worker.REQUESTED}

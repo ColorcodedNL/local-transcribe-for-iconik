@@ -231,6 +231,10 @@ transcribe.save_config({**transcribe.load_config(), "worker_enabled": True, "aut
 check("normaal mag de werker oppakken", serve.worker_may_take())
 quits = []
 serve.quit_hook = lambda: quits.append(1)
+serve.quit_asking.set()
+check("zolang de vraag bij Cmd+Q openstaat: niets nieuws", not serve.worker_may_take())
+serve.quit_asking.clear()
+check("Annuleren: de werker mag weer", serve.worker_may_take())
 serve.quit_after.set()
 check("na deze opdracht: de werker pakt niets nieuws (ook geen auto)", not serve.worker_may_take())
 real_busy, real_power = serve.busy, serve.resources.on_mains_power

@@ -852,6 +852,7 @@ def auto_status_text():
 
 
 quit_after = threading.Event()   # Cmd+Q met "Na deze opdracht": niets nieuws oppakken, daarna afsluiten
+quit_asking = threading.Event()  # de vraag bij Cmd+Q staat open: ook dan niets nieuws, de keuze komt zo
 quit_hook = None                 # het venster zet hier de functie die de app afsluit
 
 
@@ -863,8 +864,10 @@ def request_quit():
 
 
 def worker_may_take():
-    """De werker mag opdrachten uit de rij (en automatische) oppakken: aan, en niet aan het afsluiten."""
-    return worker_enabled() and not quit_after.is_set()
+    """De werker mag opdrachten uit de rij (en automatische) oppakken: aan, en niet aan het afsluiten.
+    Ook niet zolang de vraag bij Cmd+Q openstaat: anders werd de lopende opdracht klaar terwijl de vraag
+    er stond, en claimde de werker alvast de volgende (gezien 23 oktober)."""
+    return worker_enabled() and not quit_after.is_set() and not quit_asking.is_set()
 
 
 RELEASE_AFTER = 120   # met auto aan: modellen pas vrijgeven na zoveel seconden zonder opdracht

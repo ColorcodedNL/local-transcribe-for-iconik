@@ -414,7 +414,11 @@ def main():
             alert.addButtonWithTitle_(transcribe.L("Annuleren", "Cancel"))
             alert.addButtonWithTitle_(transcribe.L("Toch afsluiten", "Quit anyway"))
             alert.setAlertStyle_(AppKit.NSAlertStyleWarning)
-            answer = alert.runModal()
+            serve.quit_asking.set()   # zolang de vraag openstaat niets nieuws oppakken
+            try:
+                answer = alert.runModal()
+            finally:
+                serve.quit_asking.clear()
             if answer == AppKit.NSAlertThirdButtonReturn:
                 print(f"[{datetime.now():%H:%M:%S}] afgesloten tijdens een opdracht")
                 return AppKit.NSTerminateNow

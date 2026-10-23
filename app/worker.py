@@ -512,16 +512,21 @@ def beat(queue, now=None, healthy=None):
         return True
 
 
-def poll_once(queue, who, busy, add_job, sleep=time.sleep, auto=None):
+def poll_once(queue, who, busy, add_job, sleep=time.sleep, auto=None, allowed=None):
     """Een rondje. Geeft het aangenomen asset-ID terug, of None.
 
     Eerst wat collega's hebben aangevraagd. Alleen als daar niets ligt en `auto()` instellingen geeft
     (auto transcribe staat aan en er is ruimte op deze Mac), één asset zonder status. Zo wacht een
-    aanvraag hooguit tot de lopende automatische opdracht klaar is."""
-    if busy() or paused():
+    aanvraag hooguit tot de lopende automatische opdracht klaar is.
+    `allowed()` wordt vlak voor elke claim opnieuw gevraagd: kiest iemand tijdens deze ronde "Na deze
+    opdracht", dan mag er niets meer bij komen, ook niet als de lopende opdracht net klaar is."""
+    may = allowed or (lambda: True)
+    if busy() or paused() or not may():
         return None
     queue.release_stale(who)
     for asset_id in queue.find(REQUESTED, 5):
+        if busy() or not may():
+            return None
         attempt = queue.claim(asset_id, who, sleep=sleep)
         if attempt:
             return _take(queue, asset_id, attempt, add_job)
@@ -530,6 +535,8 @@ def poll_once(queue, who, busy, add_job, sleep=time.sleep, auto=None):
         return None
     for asset_id in queue.candidates(settings.get("storages") or [], audio=bool(settings.get("audio")),
                                      max_minutes=settings.get("max_minutes") or AUTO_MAX_MINUTES):
+        if busy() or not may():
+            return None
         attempt = queue.claim(asset_id, who, sleep=sleep, auto=True)
         if attempt:
             state["last_auto"] = asset_id
@@ -577,7 +584,7 @@ def run(get_client, enabled, busy, add_job, stop, log=print, interval=POLL_SECON
                     if view_id is None:
                         view_id = queue.setup(create=True, language=iconik_language[0])
                     state["last_poll"] = stamp()
-                    taken = poll_once(queue, machine_name(), busy, add_job, auto=auto)
+                    taken = poll_once(queue, machine_name(), busy, add_job, auto=auto, allowed=enabled)
                     state["error"] = ""
                     if taken:
                         state["last_asset"] = taken
