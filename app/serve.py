@@ -87,7 +87,7 @@ cleared = [0]             # aantal opgeruimde opdrachten, zodat nummers uniek bl
 # komt terug als "afgebroken": de opdracht wordt niet hervat. Opdrachten uit de rij in Iconik komen
 # vanzelf terug, want die staan daar nog.
 MAX_KEPT_JOBS = 500
-_KEPT_FIELDS = ("n", "asset_id", "title", "status", "message", "duration", "result", "language", "tracks")
+_KEPT_FIELDS = ("n", "asset_id", "title", "status", "message", "duration", "result", "language", "tracks", "auto")
 _save_lock = threading.Lock()
 _dirty = threading.Event()
 
@@ -420,6 +420,7 @@ def app_state():
             "duration": job.get("duration"),
             "result": job.get("result"), "language": job.get("language"),
             "elapsed": (end - job["started"]).total_seconds() if job["started"] else None,
+            "auto": bool(job.get("auto")),
         })
     config = transcribe.load_config()
     connection = client()
@@ -446,7 +447,8 @@ def app_state():
         "speakers": "lokaal" if local else "huggingface" if settings.get("hf_token") else "uit",
         "worker": dict(remote.state, enabled=worker_enabled(), machine=remote.machine_name(),
                        login=login_item_on(), login_available=bundle_path() is not None,
-                       iconik_language=worker_languages()[1]),
+                       iconik_language=worker_languages()[1], auto_on=bool(config.get("auto_transcribe")),
+                       auto_audio=bool(config.get("auto_audio")), awake=awake["on"]),
     }
 
 
@@ -474,9 +476,10 @@ def add_failed(title, message):
     touch_jobs()
 
 
-def add_job(asset_id, remote=0):
+def add_job(asset_id, remote=0, auto=False):
     """`remote`: de opdracht komt uit de rij in Iconik (werker-modus), het resultaat gaat daar terug.
-    Het is het nummer van de poging (1, 2 of 3); 0 betekent een gewone opdracht."""
+    Het is het nummer van de poging (1, 2 of 3); 0 betekent een gewone opdracht.
+    `auto`: automatisch opgepakt door auto transcribe, niet aangevraagd (alleen voor de weergave)."""
     with jobs_lock:
         for job in jobs:
             if job["asset_id"] == asset_id and job["status"] in ("wachtend", "bezig"):
@@ -485,7 +488,7 @@ def add_job(asset_id, remote=0):
         job = {"n": number, "asset_id": asset_id, "title": "",
                "status": "wachtend", "message": "", "added": datetime.now(), "remote": remote,
                "started": None, "finished": None, "stage": "", "fraction": None,
-               "tracks": []}
+               "tracks": [], "auto": bool(auto)}
         jobs.append(job)
     touch_jobs()
     work.put(job)
@@ -589,7 +592,7 @@ def status_page(note=""):
 # Routes die iets veranderen: alleen met de header X-Local-Transcribe, die alleen het venster meestuurt.
 PROTECTED = {"/clear", "/mount/change", "/mount/remove", "/language", "/applang", "/actions/install",
              "/update/open", "/update/install", "/worker", "/iconik-language", "/login-item", "/settings",
-             "/logout", "/window/show"}
+             "/logout", "/window/show", "/auto"}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -665,6 +668,12 @@ class Handler(BaseHTTPRequestHandler):
                 transcribe.set_config("worker_enabled", first("value") == "on")
                 remote.resume()
                 remote.wake.set()
+            return self.reply_json({"ok": True})
+        if url.path == "/auto":
+            for key, name in (("value", "auto_transcribe"), ("audio", "auto_audio")):
+                if first(key) in ("on", "off"):
+                    transcribe.set_config(name, first(key) == "on")
+            remote.wake.set()   # meteen kijken, en de meter begint te meten
             return self.reply_json({"ok": True})
         if url.path == "/iconik-language":
             code = first("value")
@@ -812,6 +821,63 @@ def worker_enabled():
 
 
 meter = resources.Meter(lambda: busy())   # meet pas zodra auto transcribe aan staat
+awake = {"on": False, "process": None}
+
+
+def auto_status_text():
+    """Korte regel voor de menubalk over auto transcribe, of None als het uit staat."""
+    a = remote.state.get("auto")
+    if not a:
+        return None
+    if a.get("ready"):
+        return transcribe.L("Wacht op opdrachten, transcribeert automatisch", "Waiting for jobs, transcribing automatically")
+    v = a.get("values") or {}
+    def n(key):
+        return "?" if v.get(key) is None else f"{v[key]:.0f}"
+    why = {"power": transcribe.L("op batterij", "on battery"),
+           "memory": transcribe.L(f"te weinig geheugen vrij ({n('free_gb')} GB)", f"not enough memory free ({n('free_gb')} GB)"),
+           "pressure": transcribe.L("geheugendruk hoog", "memory pressure high"),
+           "measuring": transcribe.L("meet nog hoe druk de Mac is", "still measuring how busy the Mac is"),
+           "cpu": transcribe.L(f"CPU {n('cpu')}% bezet", f"CPU {n('cpu')}% in use"),
+           "gpu": transcribe.L(f"GPU {n('gpu')}% bezet", f"GPU {n('gpu')}% in use"),
+           "storage": transcribe.L("geen opslag (ISG) gekoppeld", "no storage (ISG) connected")}.get(a.get("reason"), a.get("reason") or "")
+    return transcribe.L(f"Automatisch: wacht, {why}", f"Automatic: waiting, {why}")
+
+
+def want_awake():
+    """Systeemslaap tegenhouden tijdens elke opdracht, en met auto transcribe aan op netstroom ook
+    tussen opdrachten: anders valt de Mac na zijn eigen slaaptimer in slaap voordat er ooit ruimte is.
+    Het scherm mag wel uit. Op batterij tussen opdrachten niets extra."""
+    if busy():
+        return True
+    config = transcribe.load_config()
+    return bool(config.get("worker_enabled") and config.get("auto_transcribe")) and resources.on_mains_power() is True
+
+
+def keep_awake(want=want_awake, interval=10, once=False):
+    """Start of stopt caffeinate. Met -w stopt caffeinate vanzelf als deze app wegvalt."""
+    while True:
+        try:
+            on = bool(want())
+            process = awake["process"]
+            if on and (process is None or process.poll() is not None):
+                awake["process"] = subprocess.Popen(["caffeinate", "-i", "-w", str(os.getpid())],
+                                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                print(f"[{datetime.now():%H:%M:%S}] Mac blijft wakker (caffeinate)")
+            elif not on and process is not None:
+                process.terminate()
+                process.wait(timeout=5)
+                awake["process"] = None
+                print(f"[{datetime.now():%H:%M:%S}] Mac mag weer slapen")
+            awake["on"] = awake["process"] is not None
+        except Exception as error:   # geen caffeinate (geen Mac) of iets anders: dan maar niet wakker houden
+            awake["on"] = False
+            print(f"Wakker houden: {error}")
+            if not once:
+                time.sleep(300)
+        if once:
+            return
+        time.sleep(interval)
 
 
 def number_setting(config, key, default):
@@ -1033,6 +1099,7 @@ def start(model="mlx-community/whisper-large-v3-mlx", language=None, mount=None,
         print("Let op: geen sprekermodel gevonden, sprekerherkenning staat uit.")
     threading.Thread(target=worker, daemon=True, name="werkrij").start()
     threading.Thread(target=watchdog, daemon=True, name="waker").start()
+    threading.Thread(target=keep_awake, daemon=True, name="wakker").start()
     remote.start(client, worker_enabled, busy, add_job, languages=worker_languages, healthy=progress_ok, auto=auto_settings)
     threading.Thread(target=check_update, daemon=True, name="update").start()
     return server

@@ -59,6 +59,7 @@ button.plain:disabled { color: var(--idle); cursor: default; }
 .title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 550;
          -webkit-user-select: text; user-select: text; }
 .state { color: var(--muted); white-space: nowrap; }
+.tag { font-size: 11px; font-weight: 600; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; white-space: nowrap; }
 .state.bezig { color: var(--accent); } .state.klaar { color: var(--good); } .state.fout { color: var(--bad); } .state.afgebroken { color: var(--muted); } .state.teruggezet { color: var(--warn); }
 .msg { color: var(--muted); margin-top: 2px; -webkit-user-select: text; user-select: text; }
 .msg.fout { color: var(--bad); }
@@ -131,6 +132,10 @@ const TEXT = {
     workerTitle: "Op afstand", workerOn: "Opdrachten op afstand toestaan",
     workerHelp: "Staat opdrachten uit Iconik toe vanaf elke locatie. Dit draait op de achtergrond. De opslag (ISG) moet op deze Mac gemount zijn.",
     loginOn: "Opstarten bij inloggen", loginHelp: "Opent de app bij het inloggen. Staat opdrachten op afstand aan, dan blijft hij in de menubalk.",
+    autoOn: "Automatisch transcriberen", autoHelp: "Transcribeert alles op de opslag (ISG) van deze Mac dat nog geen transcript heeft: nieuwste eerst, video tot een uur. Alleen als er ruimte is: op netstroom, genoeg geheugen vrij en weinig CPU en GPU in gebruik, ook als iemand op de Mac werkt. Aanvragen van collega's gaan altijd voor. Zolang dit aan staat en de Mac op netstroom is, gaat hij niet slapen (het scherm wel).",
+    autoAudio: "Ook audiobestanden", autoAudioHelp: "Bijvoorbeeld losse geluidsopnames van een draaidag. Muziek wordt pas na het transcriberen herkend en overgeslagen, en kost dus rekentijd.",
+    autoReady: "Klaar: pakt een asset zodra er niets is aangevraagd.", autoWait: "Wacht", autoAwake: "Deze Mac blijft wakker.", autoTag: "Auto",
+    autoWhy: {power: "op batterij", memory: v => `te weinig geheugen vrij (${v} GB)`, pressure: "geheugendruk hoog", measuring: "meet nog hoe druk de Mac is", cpu: v => `CPU ${v}% bezet`, gpu: v => `GPU ${v}% bezet`, storage: "geen opslag (ISG) gekoppeld"},
     fieldsLang: "Taal van de velden in Iconik",
     fieldsHelp: "Wat mensen in Iconik zien bij Transcriptie en de keuzes Aangevraagd, Bezig, Klaar en Fout. Geldt voor iedereen in deze Iconik-omgeving en vraagt beheerrechten. Een view die het veld al bevat, houdt zijn eigen kopie: voeg het veld daar opnieuw toe.",
     fieldsDone: "Bijgewerkt in Iconik.", fieldsFail: "Niet gelukt",
@@ -165,6 +170,10 @@ const TEXT = {
     workerTitle: "Remote", workerOn: "Allow remote jobs",
     workerHelp: "Allows jobs from Iconik from any location. This runs in the background. The storage (ISG) must be mounted on this Mac.",
     loginOn: "Open at login", loginHelp: "Opens the app when you log in. With remote jobs allowed it stays in the menu bar.",
+    autoOn: "Transcribe automatically", autoHelp: "Transcribes everything on the storage (ISG) of this Mac that has no transcript yet: newest first, video up to an hour. Only when there is room: on mains power, enough memory free and little CPU and GPU in use, also while someone works on the Mac. Requests from colleagues always come first. While this is on and the Mac is on mains power, it does not go to sleep (the display does).",
+    autoAudio: "Audio files too", autoAudioHelp: "For example separate sound recordings of a shoot. Music is only recognised and skipped after transcribing, so it does cost time.",
+    autoReady: "Ready: picks up an asset whenever nothing is requested.", autoWait: "Waiting", autoAwake: "This Mac stays awake.", autoTag: "Auto",
+    autoWhy: {power: "on battery", memory: v => `not enough memory free (${v} GB)`, pressure: "memory pressure high", measuring: "still measuring how busy the Mac is", cpu: v => `CPU ${v}% in use`, gpu: v => `GPU ${v}% in use`, storage: "no storage (ISG) connected"},
     fieldsLang: "Language of the fields in Iconik",
     fieldsHelp: "What people see in Iconik for Transcription and the choices Requested, In progress, Done and Failed. Applies to everyone in this Iconik environment and needs admin rights. A view that already contains the field keeps its own copy: add the field to it again.",
     fieldsDone: "Updated in Iconik.", fieldsFail: "Did not work",
@@ -228,6 +237,20 @@ $("spoken").onchange = e => { e.target.blur(); act("/language?value=" + e.target
 $("getUpdate").onclick = () => act("/update/install");
 $("openUpdate").onclick = () => act("/update/open");
 $("install").onclick = e => { e.target.disabled = true; act("/actions/install").then(tick).finally(() => e.target.disabled = false); };
+function autoHtml(w) {
+  const box = (id, on, label) => `<label><input type="checkbox" id="${id}" style="width:auto;margin:0 .5em 0 0;vertical-align:middle"${on ? " checked" : ""}> ${label}</label>`;
+  let html = `<p>${box("autoOn", w.auto_on, T.autoOn)}</p><p class="dim">${T.autoHelp}</p>`;
+  if (!w.auto_on) return html;
+  html += `<p>${box("autoAudio", w.auto_audio, T.autoAudio)}</p><p class="dim">${T.autoAudioHelp}</p>`;
+  const a = w.auto;
+  if (a) {
+    const v = a.values || {}, why = T.autoWhy[a.reason];
+    const value = { memory: v.free_gb, cpu: v.cpu, gpu: v.gpu }[a.reason];
+    const reason = typeof why === "function" ? why(value == null ? "?" : num(value, a.reason === "memory" ? 1 : 0)) : (why || a.reason || "");
+    html += `<p>${a.ready ? T.autoReady : `${T.autoWait}: ${esc(reason)}.`}${w.awake ? " " + T.autoAwake : ""}</p>`;
+  }
+  return html;
+}
 let fieldsMsg = "";
 function fieldsHtml(w) {
   const cur = w.iconik_language || "nl";
@@ -237,6 +260,8 @@ $("worker").onchange = e => {
   const h = { headers: { "X-Local-Transcribe": "1" } };
   if (e.target.id === "loginOn") { e.target.blur(); fetch("/login-item?value=" + (e.target.checked ? "on" : "off"), h).then(tick); return; }
   if (e.target.id === "workerOn") { e.target.blur(); fetch("/worker?value=" + (e.target.checked ? "on" : "off"), h).then(tick); return; }
+  if (e.target.id === "autoOn") { e.target.blur(); fetch("/auto?value=" + (e.target.checked ? "on" : "off"), h).then(tick); return; }
+  if (e.target.id === "autoAudio") { e.target.blur(); fetch("/auto?audio=" + (e.target.checked ? "on" : "off"), h).then(tick); return; }
   if (e.target.id === "fieldsLang") {
     const value = e.target.value; e.target.blur(); fieldsMsg = "";
     fetch("/iconik-language?value=" + value, h).then(r => r.json()).then(r => { fieldsMsg = r.ok ? T.fieldsDone : T.fieldsFail + ": " + (r.error || ""); tick(); }).catch(() => { fieldsMsg = T.fieldsFail; tick(); });
@@ -294,7 +319,7 @@ function row(job, isOpen) {
   } else if (job.status === "wachtend") state += " " + job.added;
   const tracks = job.tracks || [];
   const toggle = tracks.length ? `<button class="plain more" data-toggle="${job.n}" data-open="${isOpen ? 1 : 0}">${isOpen ? T.hide : T.tracks(tracks.length)}</button>` : "";
-  let html = `<div class="top"><div class="title">${esc(job.title || job.asset_id)}</div>${toggle}<div class="state ${job.status}">${esc(state)}<span class="el"></span></div></div>`;
+  let html = `<div class="top"><div class="title">${esc(job.title || job.asset_id)}</div>${job.auto ? `<span class="tag">${T.autoTag}</span>` : ""}${toggle}<div class="state ${job.status}">${esc(state)}<span class="el"></span></div></div>`;
   if (msg) html += `<div class="msg ${job.status === "fout" ? "fout" : ""}">${esc(msg)}</div>`;
   if (job.status === "bezig") html += stages(job);
   if (isOpen && tracks.length) html += '<div class="tracks">' + tracks.map(t =>
@@ -347,7 +372,7 @@ function settings(s) {
   const html = {
     account,
     mounts: mounts.length ? mounts.map(m => `<div class="mount"><div><strong>${esc(m.name || "ISG " + m.id)}</strong><br><code>${esc(m.path)}</code></div><button class="plain" data-mount="change" data-id="${esc(m.id)}">${T.change}</button><button class="plain" data-mount="remove" data-id="${esc(m.id)}">${T.remove}</button></div>`).join("") : `<p class="dim">${T.noMounts}</p>`,
-    worker: (w => `<p><label><input type="checkbox" id="workerOn" style="width:auto;margin:0 .5em 0 0;vertical-align:middle"${w.enabled ? " checked" : ""}> ${T.workerOn}</label></p><p class="dim">${T.workerHelp}</p>${w.login_available ? `<p><label><input type="checkbox" id="loginOn" style="width:auto;margin:0 .5em 0 0;vertical-align:middle"${w.login ? " checked" : ""}> ${T.loginOn}</label></p><p class="dim">${T.loginHelp}</p>` : ""}` + fieldsHtml(w) + (w.enabled ? `<p class="dim">${T.workerAs}: ${esc(w.machine || "")}${w.last_poll ? `. ${T.workerLast}: ${esc(w.last_poll)}` : ""}${w.last_asset ? `. ${T.workerAsset}: <code>${esc(w.last_asset)}</code>` : ""}</p>` + (w.paused_until ? `<p>${T.workerPaused} ${esc(w.paused_until)}${w.pause_reason ? ": " + esc(w.pause_reason) : ""}. <button class="plain" id="resumeNow">${T.resumeNow}</button></p>` : "") + (w.error ? `<p>${T.workerProblem}: ${esc(w.error)}</p>` : "") : ""))(s.worker || {}),
+    worker: (w => `<p><label><input type="checkbox" id="workerOn" style="width:auto;margin:0 .5em 0 0;vertical-align:middle"${w.enabled ? " checked" : ""}> ${T.workerOn}</label></p><p class="dim">${T.workerHelp}</p>${w.login_available ? `<p><label><input type="checkbox" id="loginOn" style="width:auto;margin:0 .5em 0 0;vertical-align:middle"${w.login ? " checked" : ""}> ${T.loginOn}</label></p><p class="dim">${T.loginHelp}</p>` : ""}` + fieldsHtml(w) + (w.enabled ? autoHtml(w) + `<p class="dim">${T.workerAs}: ${esc(w.machine || "")}${w.last_poll ? `. ${T.workerLast}: ${esc(w.last_poll)}` : ""}${w.last_asset ? `. ${T.workerAsset}: <code>${esc(w.last_asset)}</code>` : ""}</p>` + (w.paused_until ? `<p>${T.workerPaused} ${esc(w.paused_until)}${w.pause_reason ? ": " + esc(w.pause_reason) : ""}. <button class="plain" id="resumeNow">${T.resumeNow}</button></p>` : "") + (w.error ? `<p>${T.workerProblem}: ${esc(w.error)}</p>` : "") : ""))(s.worker || {}),
     models: `<p>${T.speech}: <code>${esc(s.model)}</code></p><p>${T.speakers}: ${{lokaal: T.spLocal, huggingface: T.spHub, uit: T.spOff}[s.speakers]}</p><p class="dim">${T.credit}</p><p class="dim">${T.version} ${esc(s.version)}</p>`,
   };
   for (const id in html) if (drawn["set-" + id] !== html[id] && !$(id).contains(document.activeElement)) { $(id).innerHTML = html[id]; drawn["set-" + id] = html[id]; }

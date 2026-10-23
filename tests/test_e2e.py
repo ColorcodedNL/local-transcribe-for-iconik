@@ -212,6 +212,33 @@ with sync_playwright() as p:
         page.locator("#workerOn").check()
         page.wait_for_timeout(500)
         check("opdrachten op afstand aan", transcribe.load_config().get("worker_enabled") is True)
+
+        # Auto transcribe: schakelaar en vinkje onder opdrachten op afstand, status van de meter
+        page.locator("#autoOn").check()
+        page.wait_for_timeout(500)
+        check("automatisch transcriberen aan", transcribe.load_config().get("auto_transcribe") is True)
+        serve.remote.state["auto"] = {"ready": False, "reason": "gpu", "values": {"gpu": 63.0}}
+        page.get_by_text("GPU 63% bezet").wait_for(timeout=5000)
+        check("het venster zegt waarop auto wacht", True)
+        serve.remote.state["auto"] = {"ready": True, "reason": None, "values": {}}
+        page.get_by_text("Klaar: pakt een asset").wait_for(timeout=5000)
+        check("en wanneer hij klaar is", True)
+        page.locator("#autoAudio").check()
+        page.wait_for_timeout(500)
+        check("ook audio aan", transcribe.load_config().get("auto_audio") is True)
+        page.locator("#autoOn").uncheck()
+        page.wait_for_timeout(500)
+        check("automatisch transcriberen uit, audio-keuze blijft bewaard",
+              transcribe.load_config().get("auto_transcribe") is False and transcribe.load_config().get("auto_audio") is True)
+        check("vinkje voor audio verdwijnt als auto uit staat", page.locator("#autoAudio").count() == 0)
+        serve.remote.state["auto"] = None
+        serve.jobs[0]["auto"] = True
+        page.locator('.nav[data-view="jobs"]').click()
+        page.locator(".tag", has_text="Auto").first.wait_for(timeout=5000)
+        check("automatisch opgepakte job heeft het label Auto", page.locator(".tag").count() == 1)
+        serve.jobs[0]["auto"] = False
+        settings.click()
+
         page.locator("#workerOn").uncheck()
         page.wait_for_timeout(500)
         check("opdrachten op afstand uit", transcribe.load_config().get("worker_enabled") is False)

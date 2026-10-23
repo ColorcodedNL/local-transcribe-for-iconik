@@ -683,7 +683,7 @@ fake, queue = ready()
 for asset, created in (("auto-1", "2026-09-02"), ("auto-2", "2026-09-01")):
     fake.media[asset] = {"type": "video", "storage": "opslag-1", "minutes": 5, "created": created, "transcript": False}
 taken = []
-add = lambda asset_id, remote=0: taken.append((asset_id, remote))
+add = lambda asset_id, remote=0, auto=False: taken.append((asset_id, remote, auto) if auto else (asset_id, remote))
 settings = {"storages": ["opslag-1"], "audio": False, "max_minutes": 60}
 worker.current.clear()
 worker._pause[0] = 0.0
@@ -696,7 +696,7 @@ got = worker.poll_once(queue, "rocinante", lambda: False, add, sleep=lambda s: N
 check("een aanvraag gaat voor, ook met auto aan", got == "aanvraag" and taken[-1] == ("aanvraag", 1)
       and not worker.is_auto(fake.values["aanvraag"][worker.INFO]), taken)
 got = worker.poll_once(queue, "rocinante", lambda: False, add, sleep=lambda s: None, auto=lambda: settings)
-check("geen aanvraag meer: het nieuwste asset zonder status", got == "auto-1" and taken[-1] == ("auto-1", 1)
+check("geen aanvraag meer: het nieuwste asset zonder status, met auto in de lijst", got == "auto-1" and taken[-1] == ("auto-1", 1, True)
       and worker.is_auto(fake.values["auto-1"][worker.INFO]) and worker.state["last_auto"] == "auto-1", taken)
 check("de heartbeat volgt het auto-asset", worker.current.get("asset") == "auto-1"
       and worker.current.get("code") == worker.claim_code(fake.values["auto-1"][worker.INFO]))

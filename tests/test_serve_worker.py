@@ -70,7 +70,7 @@ except transcribe.Problem as problem:
 
 state = serve.app_state()
 check("het venster krijgt de status mee", state["worker"]["enabled"] is True and state["worker"]["machine"], state.get("worker"))
-check("de status bevat geen geheimen", set(state["worker"]) <= {"enabled", "last_poll", "last_asset", "error", "machine", "paused_until", "pause_reason", "login", "login_available", "iconik_language", "last_auto", "auto"}, state["worker"])
+check("de status bevat geen geheimen", set(state["worker"]) <= {"enabled", "last_poll", "last_asset", "error", "machine", "paused_until", "pause_reason", "login", "login_available", "iconik_language", "last_auto", "auto", "auto_on", "auto_audio", "awake"}, state["worker"])
 get("/worker?value=off", header)
 check("uit staat ook zo in de status", serve.app_state()["worker"]["enabled"] is False)
 
@@ -105,6 +105,107 @@ get("/iconik-language?value=nl", header)
 check("  niet ingelogd: niets gewijzigd, keuze blijft", not calls and transcribe.load_config().get("iconik_language") == before)
 serve.remote.Queue, serve.client = real_queue, real_client
 check("  en het venster krijgt de gekozen taal mee", serve.app_state()["worker"]["iconik_language"] == "en")
+
+# --- auto transcribe: schakelaars, instellingen, wakker houden
+check("auto: zonder header 403 en niets veranderd", get("/auto?value=on") == 403
+      and not transcribe.load_config().get("auto_transcribe"))
+worker.wake.clear()
+check("auto aan met header", get("/auto?value=on", header) == 200 and transcribe.load_config().get("auto_transcribe") is True
+      and worker.wake.is_set())
+check("audio apart aan te zetten", get("/auto?audio=on", header) == 200 and transcribe.load_config().get("auto_audio") is True
+      and transcribe.load_config().get("auto_transcribe") is True)
+state = serve.app_state()["worker"]
+check("het venster krijgt auto en audio mee", state["auto_on"] is True and state["auto_audio"] is True and "awake" in state)
+get("/auto?audio=off", header)
+check("audio uit laat auto aan", transcribe.load_config().get("auto_audio") is False and transcribe.load_config().get("auto_transcribe") is True)
+
+
+class FakeMeter:
+    def __init__(self):
+        self.started, self.verdict, self.limits = False, (True, None, {"cpu": 9.6, "gpu": 8.0}), None
+
+    def start(self):
+        self.started = True
+
+    def check(self, limits=None):
+        self.limits = limits
+        return self.verdict
+
+
+real_meter = serve.meter
+serve.meter = FakeMeter()
+config = transcribe.load_config()
+transcribe.save_config({**config, "mounts": {}})
+check("auto zonder gekoppelde opslag: niets, met reden", serve.auto_settings() is None
+      and worker.state["auto"]["reason"] == "storage", worker.state["auto"])
+transcribe.save_config({**config, "mounts": {"opslag-1": "/Volumes/ISG"}, "auto_max_gpu": 50, "auto_max_minutes": 90,
+                        "auto_max_cpu": "veel"})
+got = serve.auto_settings()
+check("auto met ruimte: instellingen voor de werker", got == {"storages": ["opslag-1"], "audio": False, "max_minutes": 90.0}, got)
+check("de meter is gestart en krijgt de grenzen uit de voorkeuren, rare waarden worden de standaard",
+      serve.meter.started and serve.meter.limits == {"auto_min_free_gb": 12.0, "auto_max_cpu": 40.0, "auto_max_gpu": 50.0},
+      serve.meter.limits)
+check("de status voor het venster", worker.state["auto"] == {"ready": True, "reason": None, "values": {"cpu": 9.6, "gpu": 8.0}},
+      worker.state["auto"])
+check("menubalk: klaar", "automatisch" in (serve.auto_status_text() or "").lower()
+      or "automatically" in (serve.auto_status_text() or "").lower(), serve.auto_status_text())
+serve.meter.verdict = (False, "gpu", {"gpu": 63.0})
+check("geen ruimte: niets, met reden", serve.auto_settings() is None and worker.state["auto"]["reason"] == "gpu")
+check("menubalk: waarop hij wacht", "GPU 63%" in (serve.auto_status_text() or ""), serve.auto_status_text())
+get("/auto?value=off", header)
+check("auto uit: niets en geen status", serve.auto_settings() is None and worker.state["auto"] is None
+      and serve.auto_status_text() is None)
+serve.meter = real_meter
+
+
+class FakeProcess:
+    def __init__(self, args, **kw):
+        self.args, self.done = args, False
+        started.append(self)
+
+    def poll(self):
+        return 0 if self.done else None
+
+    def terminate(self):
+        self.done = True
+
+    def wait(self, timeout=None):
+        return 0
+
+
+started = []
+real_popen = serve.subprocess.Popen
+serve.subprocess.Popen = FakeProcess
+want = [True]
+serve.keep_awake(lambda: want[0], once=True)
+check("wakker houden: caffeinate -i -w met het eigen proces", len(started) == 1 and started[0].args[:3] == ["caffeinate", "-i", "-w"]
+      and started[0].args[3] == str(serve.os.getpid()) and serve.awake["on"], started and started[0].args)
+serve.keep_awake(lambda: want[0], once=True)
+check("blijft het er één", len(started) == 1)
+started[0].done = True
+serve.keep_awake(lambda: want[0], once=True)
+check("weggevallen caffeinate wordt opnieuw gestart", len(started) == 2)
+want[0] = False
+serve.keep_awake(lambda: want[0], once=True)
+check("niet meer nodig: gestopt", started[1].done and serve.awake["process"] is None and not serve.awake["on"])
+serve.subprocess.Popen = lambda *a, **k: (_ for _ in ()).throw(FileNotFoundError("caffeinate"))
+want[0] = True
+serve.keep_awake(lambda: want[0], once=True)
+check("zonder caffeinate: geen crash, niet wakker", not serve.awake["on"])
+serve.subprocess.Popen = real_popen
+
+real_busy, real_power = serve.busy, serve.resources.on_mains_power
+serve.busy = lambda: True
+check("tijdens een opdracht: wakker, ook op batterij", (setattr(serve.resources, "on_mains_power", lambda: False) or True)
+      and serve.want_awake())
+serve.busy = lambda: False
+transcribe.save_config({**transcribe.load_config(), "worker_enabled": True, "auto_transcribe": True})
+check("tussen opdrachten op batterij: niet", not serve.want_awake())
+serve.resources.on_mains_power = lambda: True
+check("tussen opdrachten met auto aan op netstroom: wakker", serve.want_awake())
+transcribe.save_config({**transcribe.load_config(), "worker_enabled": False})
+check("opdrachten op afstand uit: niet", not serve.want_awake())
+serve.busy, serve.resources.on_mains_power = real_busy, real_power
 
 print("\nALLES OK" if not fails else f"\n{fails} FOUT")
 sys.exit(1 if fails else 0)

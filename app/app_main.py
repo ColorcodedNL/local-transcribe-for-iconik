@@ -193,7 +193,7 @@ def status_text():
         until, why = remote.state["paused_until"], remote.state.get("pause_reason") or ""
         return transcribe.L(f"Gepauzeerd tot {until}" + (f": {why[:70]}" if why else ""),
                             f"Paused until {until}" + (f": {why[:70]}" if why else ""))
-    return transcribe.L("Wacht op opdrachten", "Waiting for jobs")
+    return serve.auto_status_text() or transcribe.L("Wacht op opdrachten", "Waiting for jobs")
 
 
 def reconcile():

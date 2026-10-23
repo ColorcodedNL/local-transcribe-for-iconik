@@ -533,17 +533,20 @@ def poll_once(queue, who, busy, add_job, sleep=time.sleep, auto=None):
         attempt = queue.claim(asset_id, who, sleep=sleep, auto=True)
         if attempt:
             state["last_auto"] = asset_id
-            return _take(queue, asset_id, attempt, add_job)
+            return _take(queue, asset_id, attempt, add_job, auto=True)
     return None
 
 
-def _take(queue, asset_id, attempt, add_job):
+def _take(queue, asset_id, attempt, add_job, auto=False):
     """Het asset is van deze Mac: bijhouden voor de heartbeat en in de lijst zetten."""
     with _beat_lock:
         current.clear()
         lost.discard(asset_id)
         current.update(asset=asset_id, code=claim_code(queue.claimed_info), beat=time.time())
-    add_job(asset_id, remote=attempt)   # het nummer van de poging, voor het terugmelden
+    if auto:
+        add_job(asset_id, remote=attempt, auto=True)
+    else:
+        add_job(asset_id, remote=attempt)   # het nummer van de poging, voor het terugmelden
     return asset_id
 
 
