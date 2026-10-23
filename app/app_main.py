@@ -373,6 +373,22 @@ def mark_started():
             reconcile()
 
 
+MENU_NL = {   # het app-menu bovenin maakt pywebview, standaard alleen in het Engels; woorden zoals macOS ze gebruikt
+    "global.quitConfirmation": "Weet je zeker dat je wilt stoppen?", "global.ok": "OK", "global.quit": "Stop",
+    "global.cancel": "Annuleer", "global.saveFile": "Bewaar bestand",
+    "cocoa.menu.about": "Over", "cocoa.menu.services": "Voorzieningen", "cocoa.menu.view": "Weergave",
+    "cocoa.menu.edit": "Wijzig", "cocoa.menu.hide": "Verberg", "cocoa.menu.hideOthers": "Verberg andere",
+    "cocoa.menu.showAll": "Toon alles", "cocoa.menu.quit": "Stop",
+    "cocoa.menu.fullscreen": "Activeer schermvullende weergave", "cocoa.menu.cut": "Knip",
+    "cocoa.menu.copy": "Kopieer", "cocoa.menu.paste": "Plak", "cocoa.menu.selectAll": "Selecteer alles",
+}
+
+
+def menu_texts():
+    """Teksten voor het app-menu in de taal van de app (bij de start; na een taalwissel bij de volgende)."""
+    return MENU_NL if transcribe.app_language() == "nl" else {}
+
+
 def main():
     global window
     if our_receiver_running():
@@ -454,7 +470,7 @@ def main():
     window.events.closing += on_closing
     # Niet in privemodus: zo blijft de inlog bij Iconik in dit venster bewaard.
     threading.Thread(target=watch_settings, daemon=True).start()
-    webview.start(mark_started, private_mode=False, storage_path=str(storage))  # de functie draait zodra het venster er is
+    webview.start(mark_started, private_mode=False, storage_path=str(storage), localization=menu_texts())  # de functie draait zodra het venster er is
 
 
 if __name__ == "__main__":
