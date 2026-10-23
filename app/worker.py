@@ -46,6 +46,9 @@ HEARTBEAT = 50            # een werker die bezig is ververst zo vaak zijn "laats
 STALE_AFTER = 4 * 60      # laatste teken zo oud (drie gemiste hartslagen): de werker is weg, het asset gaat terug de rij in
 STALE_LEGACY = 3 * 3600   # "bezig" van een oudere versie, zonder laatste teken: dan blijft het bij 3 uur
 RETRY_ELSEWHERE = 10 * 60  # een Mac waarop een asset mislukte, laat het zo lang aan een andere
+AUTO_TAG = "[auto]"       # in het detailveld: dit asset is automatisch opgepakt, niet door iemand aangevraagd
+CLEAR = ""                # als status: het veld leegmaken (een mislukte auto-job gaat terug naar "nog niet gedaan")
+AUTO_MAX_MINUTES = 60     # auto transcribe pakt geen langere assets: een aanvraag van een collega wacht nooit uren
 
 state = {"enabled": False, "last_poll": None, "last_asset": None, "error": "", "paused_until": None, "pause_reason": ""}
 _pause = [0.0]            # tijdstip (time.time) tot wanneer niets wordt opgepakt
@@ -190,11 +193,18 @@ def failed_on(info):
     return [n.strip() for n in match.group(1).split(";") if n.strip()] if match else []
 
 
-def busy_info(who, code, attempt, failed=(), now=None):
+def is_auto(info):
+    """Is dit asset automatisch opgepakt (auto transcribe), niet aangevraagd door iemand?"""
+    return AUTO_TAG in (info or "")
+
+
+def busy_info(who, code, attempt, failed=(), now=None, auto=False):
     text = tr(f"Bezig op {who} sinds {stamp(now)[-5:]} ({code})", f"Working on {who} since {stamp(now)[-5:]} ({code})")
     if attempt > 1:
         text += tr(f", poging {attempt} van {MAX_ATTEMPTS}", f", attempt {attempt} of {MAX_ATTEMPTS}")
     text += tr(", laatste teken ", ", last sign ") + utc_stamp(now)
+    if auto:
+        text += " " + AUTO_TAG
     if failed:
         text += tr(" [mislukt op: ", " [failed on: ") + "; ".join(failed) + "]"
     return text
@@ -285,6 +295,27 @@ class Queue:
     def _path(self, asset_id):
         return f"metadata/v1/assets/{asset_id}/assets/{asset_id}/views/{self.view_id}/"
 
+    def candidates(self, storage_ids, audio=False, max_minutes=AUTO_MAX_MINUTES, limit=5):
+        """Assets voor auto transcribe: zonder status en zonder transcript, op opslag die deze Mac kent,
+        video (en met `audio` ook audio), niet langer dan `max_minutes`, nieuwste eerst.
+
+        Getest tegen Iconik (23 oktober, scripts/probe_search.py): opslag en mediatype werken als filter,
+        opslag in de query draait de hele query om. De rest staat in de query, die op een spatie moet
+        eindigen. De zoekindex kan achterlopen; claim() leest de status daarom zelf nog eens na."""
+        query = (f"NOT _exists_:metadata.{FIELD} AND NOT _exists_:transcription_text "
+                 f"AND duration_milliseconds:[1 TO {int(max_minutes * 60000)}] ")
+        found = {}
+        for storage_id in storage_ids:
+            for kind in ("video", "audio") if audio else ("video",):
+                body = {"doc_types": ["assets"], "query": query,
+                        "filter": {"operator": "AND", "terms": [{"name": "media_type", "value": kind},
+                                                                {"name": "files.storage_id", "value": storage_id}]},
+                        "sort": [{"name": "date_created", "order": "desc"}]}
+                for item in self.iconik.post(f"search/v1/search/?per_page={limit}", body).get("objects", []):
+                    if item.get("id"):
+                        found.setdefault(item["id"], str(item.get("date_created") or ""))
+        return [asset_id for asset_id, _ in sorted(found.items(), key=lambda kv: kv[1], reverse=True)][:limit]
+
     def find(self, status, limit=5):
         """Assets met deze status, ook met de Nederlandse waarde van 0.3.1."""
         ids = []
@@ -296,7 +327,15 @@ class Queue:
         return ids[:limit]
 
     def read(self, asset_id):
-        values = self.iconik.get(self._path(asset_id)).get("metadata_values", {})
+        """(status, details, wanneer de status gezet is). Een asset waarvan in deze view nog nooit iets is
+        ingevuld geeft bij Iconik een 404 ("... doesn't exist") in plaats van lege waarden: dat is gewoon
+        "nog geen status". Bij auto transcribe is dat de normale situatie."""
+        try:
+            values = self.iconik.get(self._path(asset_id)).get("metadata_values", {})
+        except Exception as error:
+            if "404" in str(error) and "exist" in str(error):
+                return None, "", None
+            raise
 
         def first(name):
             items = (values.get(name) or {}).get("field_values") or []
@@ -305,28 +344,37 @@ class Queue:
         return norm(first(FIELD)), first(INFO) or "", since
 
     def write(self, asset_id, status=None, info=None):
+        """`status` None laat de status staan, CLEAR maakt hem leeg."""
         values = {}
-        if status is not None:
+        if status == CLEAR:
+            values[FIELD] = {"field_values": [], "mode": "overwrite"}
+        elif status is not None:
             values[FIELD] = {"field_values": [{"value": status}], "mode": "overwrite"}
         if info is not None:
             values[INFO] = {"field_values": [{"value": info}], "mode": "overwrite"}
         self.iconik._call("PUT", self._path(asset_id), json={"metadata_values": values})
 
-    def claim(self, asset_id, who, wait=CLAIM_WAIT, sleep=time.sleep):
+    def claim(self, asset_id, who, wait=CLAIM_WAIT, sleep=time.sleep, auto=False):
         """Probeert het asset te claimen. Iconik heeft geen atomaire handeling, dus:
         schrijf, wacht even, lees terug. Staat er dan nog onze eigen regel, dan is het van ons.
-        Een asset dat net op deze Mac mislukte laat hij even aan een andere Mac."""
+        Een asset dat net op deze Mac mislukte laat hij even aan een andere Mac.
+        Met `auto` alleen een asset zonder status (auto transcribe): wat iemand heeft aangevraagd gaat
+        via de gewone route, en een auto-asset dat op deze Mac mislukte laat deze Mac aan de andere."""
         status, previous, since = self.read(asset_id)
-        if status != REQUESTED:
-            return 0
         failed = failed_on(previous)
-        recent = age_seconds(since)
-        resumed_since = time.time() - _resumed_at[0] if _resumed_at[0] else None
-        if (clean_name(who) in failed and recent is not None and recent < RETRY_ELSEWHERE
-                and not (resumed_since is not None and resumed_since < recent)):   # zelf hervat na het zetten van de status: laten gaan
-            return 0
+        if auto:
+            if status or clean_name(who) in failed:
+                return 0
+        else:
+            if status != REQUESTED:
+                return 0
+            recent = age_seconds(since)
+            resumed_since = time.time() - _resumed_at[0] if _resumed_at[0] else None
+            if (clean_name(who) in failed and recent is not None and recent < RETRY_ELSEWHERE
+                    and not (resumed_since is not None and resumed_since < recent)):   # zelf hervat na het zetten van de status: laten gaan
+                return 0
         attempt = failed_attempts(previous) + 1
-        mine = busy_info(who, secrets.token_hex(3), attempt, failed)
+        mine = busy_info(who, secrets.token_hex(3), attempt, failed, auto=auto)
         self.write(asset_id, BUSY, mine)
         sleep(wait)
         status, info, _ = self.read(asset_id)
@@ -359,18 +407,28 @@ class Queue:
     def give_back(self, asset_id, who, reason, attempt, culprit=None):
         """Het ligt niet aan het asset maar aan de Mac: terug in de rij voor een andere werker,
         tot MAX_ATTEMPTS. De Mac waarop het misging komt in "[mislukt op: ...]". Geeft True als het
-        asset terug in de rij staat."""
+        asset terug in de rij staat.
+        Een auto-job (zie is_auto) gaat niet terug op Aangevraagd maar naar een lege status: anders kreeg
+        een mislukte auto-job ineens voorrang op wat collega's aanvragen."""
         reason = scrub(reason).rstrip(". ")[:250]
         _, previous, _ = self.read(asset_id)
+        auto = is_auto(previous)
         failed = failed_on(previous)
         name = clean_name(culprit or who)
         if name and name not in failed:
             failed.append(name)
         tag = (tr(" [mislukt op: ", " [failed on: ") + "; ".join(failed) + "]") if failed else ""
+        if auto:
+            tag += " " + AUTO_TAG
         if attempt >= MAX_ATTEMPTS:
             self.write(asset_id, FAILED, f"{who}, {stamp()}: {reason} "
                        + tr(f"(na {MAX_ATTEMPTS} pogingen opgegeven)", f"(gave up after {MAX_ATTEMPTS} attempts)") + tag)
             return False
+        if auto:
+            self.write(asset_id, CLEAR, f"{who}, {stamp()}: {reason}{'' if reason[-1:] in '?!' else '.'} "
+                       + tr(f"Mislukte poging {attempt} van {MAX_ATTEMPTS}, later opnieuw automatisch",
+                            f"Failed attempt {attempt} of {MAX_ATTEMPTS}, will be picked up again automatically") + tag)
+            return True
         self.write(asset_id, REQUESTED, f"{who}, {stamp()}: {reason}{'' if reason[-1:] in '?!' else '.'} "
                    + tr(f"Mislukte poging {attempt} van {MAX_ATTEMPTS}, terug in de rij",
                         f"Failed attempt {attempt} of {MAX_ATTEMPTS}, back in the queue") + tag)
@@ -385,6 +443,8 @@ class Queue:
             failed = failed_on(previous)
             if failed:
                 text += tr(f" Eerder: mislukt op {', '.join(failed)}.", f" Earlier: failed on {', '.join(failed)}.")
+            if is_auto(previous):
+                text += " " + AUTO_TAG
         except Exception:     # de geschiedenis is bijzaak: het resultaat gaat voor
             pass
         self.write(asset_id, DONE if ok else FAILED, text)

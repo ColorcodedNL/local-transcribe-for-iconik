@@ -30,6 +30,7 @@ class Fake:
         self.posts = []
         self.puts = []
         self.refuse_removal = False
+        self.media = {}       # asset -> {"type", "storage", "minutes", "created", "transcript"} voor auto transcribe
 
     def get(self, path):
         if path == "metadata/v1/views/":
@@ -41,6 +42,9 @@ class Fake:
             return dict(self.fields[m.group(1)])
         m = re.match(r"metadata/v1/assets/(.+?)/assets/.+?/views/(.+?)/$", path)
         if m:
+            if m.group(1) not in self.values:   # zoals Iconik: nog nooit iets ingevuld geeft een 404
+                raise RuntimeError(f"GET {path} returned HTTP 404: {{\"errors\":[\"Values for object_type <assets> "
+                                   f"and object_id <{m.group(1)}> and version_id <v> doesn't exist\"]}}")
             vals = self.values.get(m.group(1), {})
             out = {k: {"field_values": [{"value": v}]} for k, v in vals.items()}
             if worker.FIELD in out and m.group(1) in self.dates:
@@ -57,12 +61,31 @@ class Fake:
             view = dict(body, id="view-1")
             self.views.append(view)
             return view
+        if path.startswith("search/v1/search/") and body.get("query"):
+            return self.search_candidates(path, body)
         if path.startswith("search/v1/search/"):
             term = body["filter"]["terms"][0]
             assert term["name"] == "metadata." + worker.FIELD
             ids = [a for a, v in self.values.items() if v.get(worker.FIELD) == term["value"]]
             return {"objects": [{"id": i} for i in ids]}
         raise AssertionError("onbekende POST " + path)
+
+    def search_candidates(self, path, body):
+        """De zoekopdracht van auto transcribe, zoals die tegen het echte Iconik is getest."""
+        query = body["query"]
+        assert query.startswith(f"NOT _exists_:metadata.{worker.FIELD} AND NOT _exists_:transcription_text ")
+        assert query.endswith(" "), "een advanced query moet op een spatie eindigen"
+        assert "storage" not in query, "opslag in de query draait de hele query om"
+        top = int(re.search(r"duration_milliseconds:\[1 TO (\d+)\]", query).group(1))
+        terms = {term["name"]: term["value"] for term in body["filter"]["terms"]}
+        assert body["sort"] == [{"name": "date_created", "order": "desc"}]
+        per_page = int(re.search(r"per_page=(\d+)", path).group(1))
+        hits = [a for a, m in self.media.items()
+                if not self.values.get(a, {}).get(worker.FIELD) and not m["transcript"]
+                and m["type"] == terms["media_type"] and m["storage"] == terms["files.storage_id"]
+                and 0 < m["minutes"] * 60000 <= top]
+        hits.sort(key=lambda a: self.media[a]["created"], reverse=True)
+        return {"objects": [{"id": a, "date_created": self.media[a]["created"]} for a in hits[:per_page]]}
 
     def _call(self, method, path, json=None):
         self.puts.append((method, path, json))
@@ -84,7 +107,10 @@ class Fake:
         asset = self.values.setdefault(m.group(1), {})
         for name, item in json["metadata_values"].items():
             assert item["mode"] == "overwrite"
-            asset[name] = item["field_values"][0]["value"]
+            if item["field_values"]:
+                asset[name] = item["field_values"][0]["value"]
+            else:
+                asset.pop(name, None)   # leegmaken
         self.dates[m.group(1)] = datetime.now(timezone.utc).isoformat()
         return {}
 
@@ -575,6 +601,90 @@ check("machine_name is een leesbare naam", bool(name) and name.isprintable())
 fake.values["q"] = {worker.FIELD: worker.BUSY, worker.INFO: "Bezig op testmac sinds 13:00 (abc)"}
 queue.give_back("q", "testmac", "Is de opslag (ISG) gemount?", 1)
 check("geen punt na een vraagteken", "gemount? Mislukte poging 1 van 3" in fake.values["q"][worker.INFO], fake.values["q"][worker.INFO])
+
+# --- auto transcribe: kandidaten zoeken en claimen
+fake, queue = ready()
+media = {
+    "nieuw-video":   ("video", "opslag-1", 20, "2026-09-13T12:00:00"),
+    "oud-video":     ("video", "opslag-1", 30, "2025-09-20T11:00:00"),
+    "audio":         ("audio", "opslag-1", 10, "2026-09-01T10:00:00"),
+    "te-lang":       ("video", "opslag-1", 61, "2026-09-10T10:00:00"),
+    "andere-opslag": ("video", "opslag-2", 10, "2026-09-12T10:00:00"),
+    "met-transcript": ("video", "opslag-1", 10, "2026-09-11T10:00:00"),
+    "aangevraagd":   ("video", "opslag-1", 10, "2026-09-09T10:00:00"),
+    "klaar":         ("video", "opslag-1", 10, "2026-09-08T10:00:00"),
+}
+for asset, (kind, storage, minutes, created) in media.items():
+    fake.media[asset] = {"type": kind, "storage": storage, "minutes": minutes, "created": created,
+                         "transcript": asset == "met-transcript"}
+fake.values["aangevraagd"] = {worker.FIELD: worker.REQUESTED}
+fake.values["klaar"] = {worker.FIELD: worker.DONE}
+
+found = queue.candidates(["opslag-1"])
+check("kandidaten: video zonder status en transcript, binnen een uur, nieuwste eerst",
+      found == ["nieuw-video", "oud-video"], found)
+check("met audio aan komt audio erbij, op datum gesorteerd",
+      queue.candidates(["opslag-1"], audio=True) == ["nieuw-video", "audio", "oud-video"], queue.candidates(["opslag-1"], audio=True))
+check("andere opslag alleen als deze Mac die kent",
+      queue.candidates(["opslag-1", "opslag-2"]) == ["nieuw-video", "andere-opslag", "oud-video"])
+check("langere maximale duur laat het lange asset toe", "te-lang" in queue.candidates(["opslag-1"], max_minutes=90))
+check("limiet", queue.candidates(["opslag-1"], audio=True, limit=1) == ["nieuw-video"])
+check("geen opslag bekend: geen kandidaten, geen zoekopdracht", queue.candidates([]) == [])
+
+check("een asset zonder ingevulde metadata leest als geen status", queue.read("nieuw-video") == (None, "", None))
+real_get = fake.get
+fake.get = lambda path: (_ for _ in ()).throw(RuntimeError(f"GET {path} returned HTTP 500: server error"))
+try:
+    queue.read("nieuw-video")
+    check("een andere fout dan een 404 wordt doorgegeven", False)
+except RuntimeError:
+    check("een andere fout dan een 404 wordt doorgegeven", True)
+fake.get = real_get
+check("auto claimt een asset zonder status", queue.claim("nieuw-video", "rocinante", sleep=lambda s: None, auto=True) == 1)
+info = fake.values["nieuw-video"][worker.INFO]
+check("auto claim: bezig, met [auto] en een claimcode", fake.values["nieuw-video"][worker.FIELD] == worker.BUSY
+      and worker.is_auto(info) and worker.claim_code(info) and worker.busy_owner(info) == "rocinante", info)
+check("auto claimt geen aangevraagd asset", queue.claim("aangevraagd", "rocinante", sleep=lambda s: None, auto=True) == 0)
+check("auto claimt geen asset dat al klaar is", queue.claim("klaar", "rocinante", sleep=lambda s: None, auto=True) == 0)
+check("de gewone route claimt geen asset zonder status", queue.claim("oud-video", "rocinante", sleep=lambda s: None) == 0)
+check("na de claim is het geen kandidaat meer", "nieuw-video" not in queue.candidates(["opslag-1"]))
+
+# Mislukt door de Mac: terug naar leeg, niet naar Aangevraagd
+check("teruggeven van een auto-job", queue.give_back("nieuw-video", "rocinante", "Is de opslag (ISG) gemount?", 1))
+info = fake.values["nieuw-video"].get(worker.INFO, "")
+check("mislukte auto-job: status leeg, geen voorrang", worker.FIELD not in fake.values["nieuw-video"], fake.values["nieuw-video"])
+check("mislukte auto-job: poging, Mac en [auto] in de details", worker.failed_attempts(info) == 1
+      and worker.failed_on(info) == ["rocinante"] and worker.is_auto(info), info)
+check("weer een kandidaat", "nieuw-video" in queue.candidates(["opslag-1"]))
+check("de Mac waarop hij mislukte pakt hem niet zelf opnieuw",
+      queue.claim("nieuw-video", "rocinante", sleep=lambda s: None, auto=True) == 0)
+check("een andere Mac wel, als tweede poging", queue.claim("nieuw-video", "Ploefbook", sleep=lambda s: None, auto=True) == 2
+      and worker.failed_on(fake.values["nieuw-video"][worker.INFO]) == ["rocinante"])
+check("na drie pogingen definitief fout", not queue.give_back("nieuw-video", "Ploefbook", "opslag weg", 3)
+      and fake.values["nieuw-video"][worker.FIELD] == worker.FAILED)
+
+# Klaar: [auto] blijft zichtbaar in de details
+queue.claim("oud-video", "rocinante", sleep=lambda s: None, auto=True)
+queue.finish("oud-video", "rocinante", True, "31 regels, 2 sprekers")
+info = fake.values["oud-video"][worker.INFO]
+check("klaar na auto: Klaar met [auto] in de details", fake.values["oud-video"][worker.FIELD] == worker.DONE
+      and worker.is_auto(info) and "31 regels" in info, info)
+
+# Vastgelopen auto-job: een andere Mac zet hem terug op leeg, niet op Aangevraagd
+queue.claim("audio", "rocinante", sleep=lambda s: None, auto=True)
+fake.values["audio"][worker.INFO] = fake.values["audio"][worker.INFO].replace(
+    worker.utc_stamp(), "2026-10-01 10:00Z")
+released = queue.release_stale("Ploefbook")
+check("vastgelopen auto-job gaat terug naar leeg", released == ["audio"] and worker.FIELD not in fake.values["audio"]
+      and worker.failed_on(fake.values["audio"][worker.INFO]) == ["rocinante"], fake.values["audio"])
+
+# Een gewone aanvraag blijft zich gedragen zoals voorheen
+fake.values["gewoon"] = {worker.FIELD: worker.REQUESTED}
+queue.claim("gewoon", "rocinante", sleep=lambda s: None)
+check("gewone claim heeft geen [auto]", not worker.is_auto(fake.values["gewoon"][worker.INFO]))
+queue.give_back("gewoon", "rocinante", "opslag weg", 1)
+check("gewone job gaat terug op Aangevraagd", fake.values["gewoon"][worker.FIELD] == worker.REQUESTED
+      and not worker.is_auto(fake.values["gewoon"][worker.INFO]))
 
 print()
 print(f"{sum(results)} van {len(results)} goed")
