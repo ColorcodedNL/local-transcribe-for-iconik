@@ -295,13 +295,29 @@ def apply_menubar():
             app.activateIgnoringOtherApps_(True)
 
 
+def note_storage_seen():
+    """Op de hoofddraad. Staat het venster voor terwijl er opslag weg is, dan heeft de gebruiker de gele
+    balk gezien: de melding bij de bevestigende controle kan dan weg, ook als de app intussen naar de
+    achtergrond ging. Meestal werp je een schijf uit in de Finder, dus op het moment zelf staat de app
+    niet voor; daarom elke paar seconden kijken in plaats van alleen bij het wegvallen."""
+    import AppKit
+    offline = serve.storage.get("offline") or []
+    if not offline:
+        return
+    app = AppKit.NSApp
+    if app.isActive() and not hidden and window is not None and not app.isHidden():
+        storage_alert["seen"].update(serve.storage_labels(offline))
+
+
 def watch_settings():
     """Het vinkje in Voorkeuren kan elk moment veranderen: elke paar seconden bijwerken."""
     import time
+    from PyObjCTools import AppHelper
     while True:
         time.sleep(3)
         try:
             reconcile()
+            AppHelper.callAfter(note_storage_seen)
         except Exception as error:
             print(f"menubalk: {error}")
 
