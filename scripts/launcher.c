@@ -15,6 +15,7 @@ typedef int (*py_bytes_main_t)(int, char **);
 
 int main(int argc, char **argv) {
     (void)argc;
+    (void)argv;
     char exe[PATH_MAX], resolved[PATH_MAX];
     uint32_t size = sizeof(exe);
     if (_NSGetExecutablePath(exe, &size) != 0 || !realpath(exe, resolved)) {
@@ -22,17 +23,12 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    // macOS houdt vrijgegeven grote geheugenblokken in het proces vast voor hergebruik, in plaats van
-    // ze terug te geven: na de audiostap van een lang bestand bleef zo 1,3 GB onnodig bezet. Met
-    // MallocLargeCache=0 gaat het terug. De geheugenbeheerder leest dit bij de start van het proces,
-    // dus een setenv hier komt te laat: zet hem en start dit programma één keer opnieuw (zelfde
-    // proces-ID, nog voor Python of een venster bestaat). Gemeten 23 oktober 2026: piek 9,9 naar
-    // 9,1 GB, tijd binnen een paar procent.
-    if (!getenv("MallocLargeCache")) {
-        setenv("MallocLargeCache", "0", 1);
-        execv(resolved, argv);
-        // Lukt dat niet, dan gewoon verder zonder.
-    }
+    // MallocLargeCache=0 (grote vrijgegeven geheugenblokken teruggeven aan het systeem, gemeten 23 oktober
+    // 2026: piek 9,9 naar 9,1 GB) komt uit LSEnvironment in Info.plist: macOS zet hem bij het starten.
+    // Tot 0.4.0 zette dit programma hem zelf en startte het zich met execv opnieuw. Dan koppelt macOS het
+    // proces niet meer aan de app en laat het het menubalkicoon weg (gezien op macOS 27, 1 november
+    // 2026): daarom geen herstart meer. Zonder Info.plist (gestart vanuit de terminal) draait de app
+    // gewoon zonder de instelling.
     char copy[PATH_MAX], macos_dir[PATH_MAX];
     snprintf(copy, sizeof(copy), "%s", resolved);      // dirname mag zijn invoer aanpassen
     snprintf(macos_dir, sizeof(macos_dir), "%s", dirname(copy));  // .../Contents/MacOS

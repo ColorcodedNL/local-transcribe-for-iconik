@@ -45,7 +45,7 @@ def log_start():
     """Kopregel in het log. Pas als vaststaat dat dit exemplaar de app wordt: een tweede start (een klik
     in Iconik terwijl de app al draait) schreef hem anders midden in de regels van een lopende opdracht."""
     code = f"code-update {CODE_VERSION}" if CODE_VERSION else "code uit de bundel"
-    cache = "MallocLargeCache=" + os.environ.get("MallocLargeCache", "standaard")   # zet de launcher
+    cache = "MallocLargeCache=" + os.environ.get("MallocLargeCache", "standaard")   # uit LSEnvironment in Info.plist
     print(f"\n===== app gestart {datetime.now():%Y-%m-%d %H:%M:%S} vanaf {RES.parent.parent} ({code}, {cache}) =====")
 
 
@@ -281,8 +281,11 @@ def apply_menubar():
         item = AppKit.NSStatusBar.systemStatusBar().statusItemWithLength_(AppKit.NSVariableStatusItemLength)
         item.button().setImage_(glyph())
         item.setMenu_(menu)
+        item.setVisible_(True)
         menubar = (item, target, menu)
         print(f"[{datetime.now():%H:%M:%S}] menubalk: icoon geplaatst")
+        from PyObjCTools import AppHelper
+        AppHelper.callLater(3, report_menubar)
     elif not want and menubar is not None:
         AppKit.NSStatusBar.systemStatusBar().removeStatusItem_(menubar[0])
         menubar = None
@@ -307,6 +310,33 @@ def note_storage_seen():
     app = AppKit.NSApp
     if app.isActive() and not hidden and window is not None and not app.isHidden():
         storage_alert["seen"].update(serve.storage_labels(offline))
+
+
+menubar_tries = [0]
+
+
+def report_menubar():
+    """Op de hoofddraad, kort na het plaatsen: staat het icoon echt in de menubalk? Voor het log."""
+    global menubar
+    if menubar is None:
+        return
+    item = menubar[0]
+    window = item.button().window()
+    frame = window.frame() if window is not None else None
+    screen = window.screen() if window is not None else None
+    where = (f"x={frame.origin.x:.0f} y={frame.origin.y:.0f} breedte={frame.size.width:.0f}" if frame is not None else "geen venster")
+    print(f"[{datetime.now():%H:%M:%S}] menubalk: zichtbaar={item.isVisible()} {where} scherm={'ja' if screen is not None else 'nee'}"
+          f" venster zichtbaar={window.isVisible() if window is not None else '-'}")
+    # Een icoon dat echt in de menubalk staat, heeft een venster bovenaan het scherm. Op (0, 0) heeft macOS hem
+    # niet geplaatst (gezien op macOS 26 bij het opstarten van de app): weghalen en opnieuw aanmaken.
+    placed = frame is not None and screen is not None and frame.origin.y > 0
+    if not placed and menubar_tries[0] < 5:
+        import AppKit
+        menubar_tries[0] += 1
+        AppKit.NSStatusBar.systemStatusBar().removeStatusItem_(item)
+        menubar = None
+        print(f"[{datetime.now():%H:%M:%S}] menubalk: niet geplaatst, poging {menubar_tries[0] + 1}")
+        apply_menubar()
 
 
 def watch_settings():

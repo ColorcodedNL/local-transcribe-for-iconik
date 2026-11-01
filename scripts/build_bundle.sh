@@ -34,6 +34,10 @@ cat > "$PLIST" <<INFO
   <key>CFBundleVersion</key><string>$VERSION</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>NSHighResolutionCapable</key><true/>
+  <key>LSEnvironment</key>
+  <dict>
+    <key>MallocLargeCache</key><string>0</string>
+  </dict>
   <key>CFBundleURLTypes</key>
   <array>
     <dict>
