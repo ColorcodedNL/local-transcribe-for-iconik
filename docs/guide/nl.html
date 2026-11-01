@@ -161,6 +161,7 @@
 <li><b>Aanvragen gaan voor.</b> Een Mac kijkt altijd eerst naar Aangevraagd voordat hij automatisch werk zoekt. Komt er een aanvraag binnen terwijl alle Macs met een automatische opdracht bezig zijn, dan wacht die tot er een klaar is.</li>
 <li><b>Alleen als er ruimte is.</b> De Mac staat op netstroom, heeft minstens 12 GB geheugen vrij en gebruikt minder dan 40% CPU en GPU, gemeten over de laatste minuten. Dat werkt ook als iemand op de Mac werkt. Onder de schakelaar zegt de app of hij klaar staat of waar hij op wacht, bijvoorbeeld "op batterij" of "CPU 55% bezet".</li>
 <li><b>De Mac blijft wakker.</b> Zolang automatisch transcriberen aan staat en de Mac op netstroom is, gaat hij niet slapen. Het scherm wel.</li>
+<li><b>De opslag wordt bewaakt.</b> Elke 30 seconden kijkt de app of de opslag (ISG) nog gekoppeld is. Is hij weg, dan pakt hij er niets van op, verschijnt er een gele balk in het venster en krijgt het Dock-icoon een uitroepteken. Staat de app op de achtergrond of alleen in de menubalk, dan komt er ook een melding. Is de opslag terug, dan gaat de app vanzelf verder.</li>
 <li><b>Herkenbaar.</b> Een automatische opdracht heeft onder Opdrachten het label <b>Auto</b>, en <code>[auto]</code> in het veld Transcriptie details in Iconik.</li>
 <li><b>Nooit een berg Aangevraagd.</b> De Mac claimt één asset tegelijk, meteen op Bezig. Een automatische opdracht die mislukt gaat terug naar een lege status in plaats van Fout, en die Mac probeert hem niet zelf opnieuw.</li>
 </ul>
@@ -177,6 +178,8 @@
 <tr><td>Bestand niet gevonden</td><td>Het gekozen mount point past niet bij het asset</td><td>Wijzig het pad onder <b>ISG Mount Points</b></td></tr>
 <tr><td>Een asset blijft op Aangevraagd staan</td><td>Er draait geen Mac met <b>Opdrachten op afstand toestaan</b> aan, alle Macs zijn bezig, of de Macs die aan staan zijn gepauzeerd</td><td>Controleer dat er een Mac met opdrachten op afstand aan draait, ingelogd en met het archief gemount. Een aanvraag wacht op lopende opdrachten, ook automatische</td></tr>
 <tr><td>Een Mac meldt dat hij gepauzeerd is</td><td>Hij liep tegen een eigen probleem aan, bijvoorbeeld een archief dat niet gemount was</td><td>Los de oorzaak op die in Voorkeuren of de menubalk staat en klik op <b>Nu hervatten</b>. Anders stopt de pauze na tien minuten vanzelf</td></tr>
+<tr><td>Gele balk of melding: opslag (ISG) niet bereikbaar</td><td>De opslag is niet gekoppeld aan deze Mac, bijvoorbeeld na een herstart of omdat het archief uit staat</td><td>Koppel de opslag opnieuw, bijvoorbeeld in de Finder. De app gaat daarna vanzelf verder. Een netwerkschijf koppelt bij elke login als je hem toevoegt onder Systeeminstellingen &gt; Algemeen &gt; Inlogonderdelen</td></tr>
+<tr><td>Overgeslagen: geen audio of video op dit asset</td><td>Op het asset staan alleen plaatjes, fonts, documenten of een projectbestand</td><td>Niets. Het asset krijgt de status Klaar met deze opmerking, zodat het niet opnieuw wordt opgepakt</td></tr>
 <tr><td>Automatisch transcriberen staat op Wacht</td><td>De Mac heeft nu geen ruimte: op batterij, te weinig geheugen vrij, CPU of GPU te druk, of geen opslag gekoppeld</td><td>Niets, hij begint vanzelf zodra er ruimte is. Vlak na het aanzetten meet hij eerst ongeveer een minuut</td></tr>
 </table>
 

@@ -161,6 +161,7 @@
 <li><b>Requests come first.</b> A Mac always checks for Requested before it looks for automatic work. A request that comes in while every Mac is busy with an automatic job waits until one of them finishes.</li>
 <li><b>Only when there is room.</b> The Mac is on mains power, has at least 12 GB of memory free and uses less than 40% CPU and GPU, measured over the last minutes. This also works while someone is using the Mac. Under the switch the app says whether it is ready or what it is waiting for, for example "on battery" or "CPU 55% in use".</li>
 <li><b>The Mac stays awake.</b> While auto transcribe is on and the Mac is on mains power, it does not go to sleep. The display does.</li>
+<li><b>The storage is watched.</b> Every 30 seconds the app checks whether the storage (ISG) is still connected. If it is gone, nothing is picked up from it, a yellow bar appears in the window and the Dock icon gets an exclamation mark. When the app is in the background or only in the menu bar, a message pops up as well. Once the storage is back, the app carries on by itself.</li>
 <li><b>Recognisable.</b> An automatic job has the label <b>Auto</b> under Jobs, and <code>[auto]</code> in the Transcription details field in Iconik.</li>
 <li><b>Never a flood of Requested.</b> The Mac claims one asset at a time, straight on In progress. An automatic job that fails goes back to an empty status instead of Failed, and that Mac does not try it again by itself.</li>
 </ul>
@@ -177,6 +178,8 @@
 <tr><td>File not found</td><td>The chosen mount point does not fit the asset</td><td>Choose another folder under <b>ISG Mount Points</b></td></tr>
 <tr><td>An asset stays on Requested</td><td>No Mac with <b>Allow remote jobs</b> on is running, every Mac is busy, or the Macs that are on are paused</td><td>Check that a Mac with remote jobs on is running and logged in, with the archive mounted. A request waits for running jobs, including automatic ones</td></tr>
 <tr><td>A Mac says it is paused</td><td>It ran into a problem of its own, for example the archive was not mounted</td><td>Fix the cause named in Preferences or the menu bar and click <b>Resume now</b>. Otherwise the pause ends by itself after ten minutes</td></tr>
+<tr><td>Yellow bar or message: storage (ISG) not reachable</td><td>The storage is not connected to this Mac, for example after a restart or because the archive is switched off</td><td>Connect the storage again, for example in the Finder. The app carries on by itself. To connect a network share at every login, add it under System Settings &gt; General &gt; Login Items</td></tr>
+<tr><td>Skipped: no audio or video on this asset</td><td>The asset only holds images, fonts, documents or a project file</td><td>Nothing. The asset gets the status Done with this note, so it is not picked up again</td></tr>
 <tr><td>Auto transcribe says Waiting</td><td>The Mac has no room right now: on battery, not enough memory free, CPU or GPU too busy, or no storage linked</td><td>Nothing, it starts by itself once there is room. Right after switching on it measures for about a minute first</td></tr>
 </table>
 <p>The screenshots show the Dutch version of the app. In English the labels read as in this text.</p>
