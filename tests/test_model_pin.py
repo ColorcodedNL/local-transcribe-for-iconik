@@ -8,7 +8,7 @@ import tempfile
 import types
 from pathlib import Path
 
-cache = Path(tempfile.mkdtemp())
+cache = Path(tempfile.mkdtemp()).resolve()   # macOS: /var is een link naar /private/var
 os.environ["HF_HUB_CACHE"] = str(cache)      # voor het importeren van huggingface_hub: een lege, eigen cache
 os.environ["HF_HUB_OFFLINE"] = "1"           # nooit het netwerk op
 
