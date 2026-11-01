@@ -140,6 +140,14 @@ check("auto zonder gekoppelde opslag: niets, met reden", serve.auto_settings() i
       and worker.state["auto"]["reason"] == "storage", worker.state["auto"])
 transcribe.save_config({**config, "mounts": {"opslag-1": "/Volumes/ISG"}, "auto_max_gpu": 50, "auto_max_minutes": 90,
                         "auto_max_cpu": "veel"})
+serve.storage.update(checked=0.0, offline=[])
+check("opslag nog niet bekeken: niets, met reden", serve.auto_settings() is None
+      and worker.state["auto"]["reason"] == "checking", worker.state["auto"])
+serve.storage.update(checked=1.0, offline=["opslag-1"])
+check("opslag weg: niets, met reden en naam", serve.auto_settings() is None
+      and worker.state["auto"]["reason"] == "offline" and worker.state["auto"]["offline"] == ["/Volumes/ISG"], worker.state["auto"])
+check("menubalk: opslag weg", "/Volumes/ISG" in (serve.auto_status_text() or ""), serve.auto_status_text())
+serve.storage.update(checked=1.0, offline=[])
 got = serve.auto_settings()
 check("auto met ruimte: instellingen voor de werker", got == {"storages": ["opslag-1"], "audio": False, "max_minutes": 90.0}, got)
 check("de meter is gestart en krijgt de grenzen uit de voorkeuren, rare waarden worden de standaard",

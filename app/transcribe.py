@@ -569,6 +569,40 @@ def find_moved_mount(known, relative, volumes=Path("/Volumes")):
     return None
 
 
+def mount_reachable(path, volumes=Path("/Volumes")):
+    """Is het mount point van een ISG nu bereikbaar? Alleen kijken, nooit iets onthouden of wijzigen.
+
+    Een netwerkvolume onder /Volumes telt alleen als het echt gekoppeld is: na een verbroken koppeling
+    blijft er soms een lege map /Volumes/Opslag achter, en die bestaat wel maar is niet de opslag.
+    Koppelde macOS de opslag opnieuw als /Volumes/Opslag-1 (zie find_moved_mount), dan is hij ook
+    bereikbaar: de opdracht zelf vindt hem daar en onthoudt dat.
+    Kan blijven hangen op een netwerkkoppeling die niet meer reageert: roep dit aan met een tijdslimiet.
+    """
+    path = Path(path)
+    try:
+        inner = path.relative_to(volumes)
+    except ValueError:
+        return path.is_dir()          # een map op een eigen schijf: bestaat hij, dan is hij er
+    if not inner.parts:
+        return False
+    volume, rest = inner.parts[0], Path(*inner.parts[1:])
+    if os.path.ismount(volumes / volume) and (volumes / volume / rest).is_dir():
+        return True
+    base = re.sub(r"-\d+$", "", volume)
+    try:
+        entries = sorted(volumes.iterdir())
+    except OSError:
+        return False
+    for entry in entries:
+        if entry.name != volume and re.sub(r"-\d+$", "", entry.name) == base:
+            try:
+                if os.path.ismount(entry) and (entry / rest).is_dir():
+                    return True
+            except OSError:
+                continue
+    return False
+
+
 def find_media_file(iconik, asset_id, mount_override=None, ask_mount=False, interactive=True):
     """Zoekt het mediabestand van een asset op deze Mac.
 

@@ -306,6 +306,46 @@ def watch_settings():
             print(f"menubalk: {error}")
 
 
+storage_alert = {"open": False}
+
+
+def on_storage(kind, names):
+    """Van de bewaking in serve.py, vanaf elke draad."""
+    from PyObjCTools import AppHelper
+    AppHelper.callAfter(show_storage_warning, kind, names)
+
+
+def show_storage_warning(kind, names):
+    """Op de hoofddraad. Een uitroepteken op het Dock-icoon zolang er opslag weg is, en een melding als
+    hij wegvalt of bij opstarten niet bereikbaar is. Er staat nooit meer dan een melding tegelijk open."""
+    import AppKit
+    tile = AppKit.NSApp.dockTile()
+    if kind == "back":
+        if not serve.storage["warned"]:
+            tile.setBadgeLabel_(None)
+        return
+    tile.setBadgeLabel_("!")
+    if storage_alert["open"]:
+        return
+    which = ", ".join(names)
+    alert = AppKit.NSAlert.alloc().init()
+    alert.setMessageText_(transcribe.L("Opslag (ISG) niet bereikbaar", "Storage (ISG) not reachable") if kind == "startup"
+                          else transcribe.L("Verbinding met de opslag (ISG) verbroken", "Connection to the storage (ISG) lost"))
+    alert.setInformativeText_(transcribe.L(
+        f"{which}\n\nAutomatisch transcriberen pakt van deze opslag niets op tot hij weer gekoppeld is. "
+        "Koppel de opslag opnieuw, bijvoorbeeld in de Finder; de app gaat daarna vanzelf verder.",
+        f"{which}\n\nAutomatic transcription picks up nothing from this storage until it is connected again. "
+        "Connect the storage again, for example in the Finder; the app then carries on by itself."))
+    alert.addButtonWithTitle_("OK")
+    alert.setAlertStyle_(AppKit.NSAlertStyleWarning)
+    AppKit.NSApp.activateIgnoringOtherApps_(True)   # ook als alleen het menubalkicoon er is
+    storage_alert["open"] = True
+    try:
+        alert.runModal()
+    finally:
+        storage_alert["open"] = False
+
+
 STARTING = SUPPORT / "code" / "starting"
 
 
@@ -365,6 +405,9 @@ def mark_started():
         STARTING.unlink()
     except FileNotFoundError:
         pass
+    serve.storage_hook = on_storage   # pas nu: het venster en de hoofdlus zijn er
+    while serve.storage_pending:
+        on_storage(*serve.storage_pending.pop(0))
     if serve.LOGIN_MARKER.exists():  # gestart door inloggen: met opdrachten op afstand aan meteen naar de menubalk
         serve.LOGIN_MARKER.unlink(missing_ok=True)
         if serve.worker_enabled() and window is not None:

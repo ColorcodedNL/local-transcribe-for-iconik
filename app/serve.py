@@ -673,6 +673,7 @@ class Handler(BaseHTTPRequestHandler):
             for key, name in (("value", "auto_transcribe"), ("audio", "auto_audio")):
                 if first(key) in ("on", "off"):
                     transcribe.set_config(name, first(key) == "on")
+            storage_wake.set()  # meteen kijken of de opslag er is
             remote.wake.set()   # meteen kijken, en de meter begint te meten
             return self.reply_json({"ok": True})
         if url.path == "/iconik-language":
@@ -836,7 +837,11 @@ def auto_status_text():
     a = remote.state.get("auto")
     if not a:
         return None
+    offline = ", ".join(a.get("offline") or [])
     if a.get("ready"):
+        if offline:
+            return transcribe.L(f"Transcribeert automatisch, niet bereikbaar: {offline}",
+                                f"Transcribing automatically, not reachable: {offline}")
         return transcribe.L("Wacht op opdrachten, transcribeert automatisch", "Waiting for jobs, transcribing automatically")
     v = a.get("values") or {}
     def n(key):
@@ -847,7 +852,9 @@ def auto_status_text():
            "measuring": transcribe.L("meet nog hoe druk de Mac is", "still measuring how busy the Mac is"),
            "cpu": transcribe.L(f"CPU {n('cpu')}% bezet", f"CPU {n('cpu')}% in use"),
            "gpu": transcribe.L(f"GPU {n('gpu')}% bezet", f"GPU {n('gpu')}% in use"),
-           "storage": transcribe.L("geen opslag (ISG) gekoppeld", "no storage (ISG) connected")}.get(a.get("reason"), a.get("reason") or "")
+           "storage": transcribe.L("geen opslag (ISG) gekoppeld", "no storage (ISG) connected"),
+           "checking": transcribe.L("kijkt of de opslag (ISG) bereikbaar is", "checking whether the storage (ISG) is reachable"),
+           "offline": transcribe.L(f"opslag (ISG) niet bereikbaar ({offline})", f"storage (ISG) not reachable ({offline})")}.get(a.get("reason"), a.get("reason") or "")
     return transcribe.L(f"Automatisch: wacht, {why}", f"Automatic: waiting, {why}")
 
 
@@ -932,6 +939,99 @@ def keep_awake(want=want_awake, interval=10, once=False):
         time.sleep(interval)
 
 
+STORAGE_CHECK = 30     # met auto aan: zo vaak kijken of de opslag (ISG) nog gekoppeld is
+STORAGE_TIMEOUT = 5    # een netwerkkoppeling die zo lang niet antwoordt telt als weg
+STORAGE_RECHECK = 15   # bij opstarten: zo snel nog eens kijken voordat er een waarschuwing komt
+storage = {"offline": [], "checked": 0.0, "warned": []}   # storage-ID's; "warned": waarvoor de waarschuwing al kwam
+storage_wake = threading.Event()
+storage_hook = None    # het venster zet hier een functie(soort, namen): "startup", "lost" of "back"
+storage_pending = []   # waarschuwingen van voor het venster er was
+_storage_checks = {}   # pad -> draad van een controle die nog hangt
+
+
+def storage_labels(storage_ids):
+    """Namen voor in een melding: de naam van de ISG in Iconik, anders het mount point."""
+    mounts = transcribe.load_config().get("mounts") or {}
+    return [storage_names.get(storage_id) or mounts.get(storage_id) or storage_id for storage_id in storage_ids]
+
+
+def path_reachable(path, timeout=STORAGE_TIMEOUT):
+    """mount_reachable met een tijdslimiet. Een stat op een netwerkkoppeling die niet meer antwoordt kan
+    minuten hangen; die draad laten we lopen en zolang hij hangt telt het pad als weg (geen stapel draden)."""
+    hanging = _storage_checks.get(path)
+    if hanging is not None and hanging.is_alive():
+        return False
+    box = {}
+
+    def look():
+        try:
+            box["ok"] = transcribe.mount_reachable(path)
+        except OSError:
+            box["ok"] = False
+    thread = threading.Thread(target=look, daemon=True, name="opslag-check")
+    thread.start()
+    thread.join(timeout)
+    if thread.is_alive():
+        _storage_checks[path] = thread
+        return False
+    _storage_checks.pop(path, None)
+    return bool(box.get("ok"))
+
+
+def warn_storage(kind, storage_ids):
+    names = storage_labels(storage_ids)
+    say(f"[{datetime.now():%H:%M:%S}] opslag (ISG) " + {"startup": "niet bereikbaar bij opstarten",
+        "lost": "verbinding kwijt", "back": "weer bereikbaar"}[kind] + ": " + ", ".join(names))
+    if storage_hook is not None:
+        storage_hook(kind, names)
+    else:
+        storage_pending.append((kind, names))
+
+
+def check_storage(state):
+    """Een keer kijken. `state` houdt bij wat de vorige keer weg was en hoeveelste ronde dit is.
+    De lijst voor de werker (storage["offline"]) gaat meteen mee: een opslag die weg is, pakt hij niet.
+    De waarschuwing pas als hij twee keer achter elkaar weg is: een korte hapering geeft geen melding,
+    en bij inloggen koppelt macOS netwerkschijven vaak pas na een paar seconden.
+    Geeft het aantal seconden tot de volgende ronde."""
+    mounts = transcribe.load_config().get("mounts") or {}
+    offline = [storage_id for storage_id, path in mounts.items() if not path_reachable(path)]
+    storage["offline"] = offline
+    storage["checked"] = time.time()
+    warned = [storage_id for storage_id in storage["warned"] if storage_id in mounts]
+    new = [storage_id for storage_id in offline if storage_id in state["suspect"] and storage_id not in warned]
+    back = [storage_id for storage_id in warned if storage_id not in offline]
+    starting = state["round"] < 2      # opstarten, of auto ging net aan
+    state["round"] += 1
+    state["suspect"] = offline
+    storage["warned"] = [storage_id for storage_id in warned if storage_id not in back] + new
+    if new:
+        warn_storage("startup" if starting else "lost", new)
+    if back:
+        warn_storage("back", back)
+        remote.wake.set()   # er is weer opslag: de werker kijkt meteen
+    return STORAGE_RECHECK if offline and state["round"] < 2 else STORAGE_CHECK
+
+
+def watch_storage():
+    """Draait altijd, kijkt alleen met auto transcribe aan."""
+    state = {"round": 0, "suspect": []}
+    while True:
+        wait = STORAGE_CHECK
+        try:
+            if auto_active():
+                wait = check_storage(state)
+            else:
+                if storage["warned"] and storage_hook is not None:
+                    storage_hook("back", [])   # auto staat uit: waarschuwing weghalen
+                storage.update(offline=[], checked=0.0, warned=[])
+                state.update(round=0, suspect=[])
+        except Exception as error:
+            print(f"Opslag bewaken: {error}")
+        storage_wake.wait(wait)
+        storage_wake.clear()
+
+
 def number_setting(config, key, default):
     value = config.get(key)
     return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0 else default
@@ -946,15 +1046,24 @@ def auto_settings():
     if not config.get("auto_transcribe"):
         remote.state["auto"] = None
         return None
-    storages = list((config.get("mounts") or {}).keys())
+    mounts = config.get("mounts") or {}
+    offline = [storage_id for storage_id in storage["offline"] if storage_id in mounts]
+    storages = [storage_id for storage_id in mounts if storage_id not in offline]
     meter.start()
-    if storages:
+    if not mounts:
+        ready, reason, values = False, "storage", {}
+    elif not storage["checked"]:
+        ready, reason, values = False, "checking", {}   # nog niet gekeken of de opslag er is: niets oppakken
+        storage_wake.set()
+    elif not storages:
+        ready, reason, values = False, "offline", {}
+    else:
         limits = {key: number_setting(config, key, default) for key, default in resources.DEFAULTS.items()}
         ready, reason, values = meter.check(limits)
-    else:
-        ready, reason, values = False, "storage", {}
     remote.state["auto"] = {"ready": ready, "reason": reason,
                             "values": {k: round(v, 1) if isinstance(v, float) else v for k, v in values.items()}}
+    if offline and storage["checked"]:
+        remote.state["auto"]["offline"] = storage_labels(offline)
     if not ready:
         return None
     return {"storages": storages, "audio": bool(config.get("auto_audio")),
@@ -1157,6 +1266,7 @@ def start(model="mlx-community/whisper-large-v3-mlx", language=None, mount=None,
     threading.Thread(target=worker, daemon=True, name="werkrij").start()
     threading.Thread(target=watchdog, daemon=True, name="waker").start()
     threading.Thread(target=keep_awake, daemon=True, name="wakker").start()
+    threading.Thread(target=watch_storage, daemon=True, name="opslag").start()
     remote.start(client, worker_may_take, busy, add_job, log=say, languages=worker_languages, healthy=progress_ok,
                  auto=auto_settings)
     threading.Thread(target=check_update, daemon=True, name="update").start()
