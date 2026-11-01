@@ -962,7 +962,7 @@ def keep_awake(want=want_awake, interval=10, once=False):
 
 STORAGE_CHECK = 30     # met auto aan: zo vaak kijken of de opslag (ISG) nog gekoppeld is
 STORAGE_TIMEOUT = 5    # een netwerkkoppeling die zo lang niet antwoordt telt als weg
-STORAGE_RECHECK = 15   # bij opstarten: zo snel nog eens kijken voordat er een waarschuwing komt
+STORAGE_RECHECK = 15   # net weg (of opstarten): zo snel nog eens kijken voordat er een waarschuwing komt
 storage = {"offline": [], "checked": 0.0, "warned": []}   # storage-ID's; "warned": waarvoor de waarschuwing al kwam
 storage_wake = threading.Event()
 storage_hook = None    # het venster zet hier een functie(soort, namen): "startup", "lost" of "back"
@@ -1039,7 +1039,9 @@ def check_storage(state):
         except Exception as error:
             print(f"Opslag bewaken (venster bijwerken): {error}")
         state["shown"] = offline
-    return STORAGE_RECHECK if offline and state["round"] < 2 else STORAGE_CHECK
+    # Net weg en nog geen melding: snel nog eens kijken, zodat de melding kort na de balk komt.
+    pending = [storage_id for storage_id in offline if storage_id not in storage["warned"]]
+    return STORAGE_RECHECK if pending else STORAGE_CHECK
 
 
 def watch_storage():

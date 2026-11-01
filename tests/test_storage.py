@@ -79,7 +79,8 @@ check("opstarten, B weg: werker pakt B meteen niet, nog geen melding (macOS kopp
 serve.check_storage(state)
 check("tweede keer nog weg: melding bij opstarten", warnings == [("startup", ["/Volumes/B"])], warnings)
 serve.check_storage(state)
-check("blijft weg: geen tweede melding", len(warnings) == 1, warnings)
+wait = serve.check_storage(state)
+check("blijft weg: geen tweede melding, gewoon tempo", len(warnings) == 1 and wait == serve.STORAGE_CHECK, (warnings, wait))
 online["/Volumes/B"] = True
 serve.check_storage(state)
 check("terug: melding weer bereikbaar, werker mag weer", warnings[-1] == ("back", ["/Volumes/B"])
@@ -87,8 +88,8 @@ check("terug: melding weer bereikbaar, werker mag weer", warnings[-1] == ("back"
 warnings.clear()
 online["/Volumes/A"] = False
 wait = serve.check_storage(state)
-check("tijdens gebruik even weg: nog geen melding", not warnings and serve.storage["offline"] == ["a"]
-      and wait == serve.STORAGE_CHECK, (warnings, wait))
+check("tijdens gebruik even weg: nog geen melding, wel snel nog eens kijken", not warnings
+      and serve.storage["offline"] == ["a"] and wait == serve.STORAGE_RECHECK, (warnings, wait))
 online["/Volumes/A"] = True
 serve.check_storage(state)
 check("hapering voorbij: nooit een melding", not warnings, warnings)
