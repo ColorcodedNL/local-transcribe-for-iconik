@@ -106,6 +106,19 @@ def models():
             "description": "Speaker model, bundled",
             "licenses": [{"expression": "CC-BY-4.0"}],
         })
+    # Het Whisper-model zit niet in de bundel: de app haalt het bij het eerste gebruik op, op de vaste
+    # revisie uit MODEL_REVISIONS in transcribe.py. Die revisie hoort er dus wel in.
+    source = (RES / "app" / "transcribe.py").read_text()
+    for repo, revision in re.findall(r'"([\w.-]+/[\w.-]+)":\s*"([0-9a-f]{40})"', source):
+        found.append({
+            "type": "machine-learning-model",
+            "bom-ref": f"model:{repo}@{revision}",
+            "name": repo,
+            "version": revision,
+            "description": "Speech model, downloaded from Hugging Face on first use at this pinned revision",
+            "licenses": [{"expression": "MIT"}],
+            "externalReferences": [{"type": "distribution", "url": f"https://huggingface.co/{repo}/tree/{revision}"}],
+        })
     return found
 
 
