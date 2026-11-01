@@ -9,6 +9,12 @@ import types
 from pathlib import Path
 
 sys.path.insert(0, "app")
+# Nooit de echte sleutelhanger: een nep-keyring zonder inlog (anders vraagt macOS om het wachtwoord).
+_kr = types.ModuleType("keyring")
+_kr.get_password = lambda *a: None
+_kr.set_password = lambda *a: None
+_kr.delete_password = lambda *a: None
+sys.modules["keyring"] = _kr
 for name in ("keyring", "numpy", "mlx", "mlx_whisper", "torch", "webview"):
     if name not in sys.modules:
         try:
