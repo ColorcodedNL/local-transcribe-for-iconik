@@ -7,7 +7,9 @@
 > - **Less memory:** a full job peaks at about 9 GB instead of up to 20 GB, and memory goes back to the system after a job.
 > - **After this job:** quitting during a job can wait until that job is done.
 >
-> 0.4 needs the new `.dmg` from the [latest release](../../releases/latest); the banner in older versions links to it.
+> **0.4.1** brings the menu bar icon back on recent macOS versions, watches the storage (ISG) during auto transcribe, skips assets without audio or video, and pins the Whisper model to a tested version.
+>
+> 0.4.1 needs the new `.dmg` from the [latest release](../../releases/latest); the banner in older versions links to it.
 
 A Mac app that transcribes assets from [Iconik](https://www.iconik.io) on your own machine and writes the result back to Iconik as native transcriptions, with word timing and speaker labels.
 
@@ -24,7 +26,7 @@ You start it from Iconik itself: pick an asset, a collection or a selection, and
 - **Language per asset.** Detected from the loudest parts of the recording, not just the first 30 seconds. Tested with Dutch and English.
 - **Filters.** Removes Whisper hallucinations and repetition loops, and skips files without intelligible speech instead of writing nonsense. A few words in a language you do not expect (music that Whisper hears as speech) are skipped as well.
 - **Safe replacement.** Running it again replaces only the transcript this app made earlier. Transcripts from other sources are never touched, and the old transcript is only removed once the new one succeeded.
-- **Efficient on collections.** While one asset is being transcribed, the audio of the next one is already read from the network storage.
+- **Efficient on collections.** While one asset is being transcribed, the audio of the next one is already read from the network storage, when the Mac has enough memory free.
 - **Remote jobs (optional).** Request a transcript from the Iconik browser and let a Mac that is on in the background do it, without an extra Iconik login. Off by default. See [Remote jobs](#remote-jobs).
 - **Auto transcribe (optional).** Works through everything on the storage that has no transcript yet, only when the Mac has room, and keeps the Mac awake for it. Off by default. See [Auto transcribe](#auto-transcribe).
 - **Updates from inside the app.** A banner offers new versions; most are a one-click install of a few dozen KB, signed and verified before anything is written.
@@ -86,6 +88,8 @@ The stored values and field names are always English, so Iconik support can read
 With **Transcribe automatically** (under Allow remote jobs) a Mac also works through assets nobody requested: everything on the storage it knows that has no status and no transcript yet, newest first, video up to an hour, and audio files when you tick **Audio files too**. It checks requests first, every time, so a request never waits longer than the automatic job that is running. Several Macs can do this together; each claims its own asset.
 
 It only starts a job when the Mac has room: on mains power, at least 12 GB of memory available with normal memory pressure, and CPU and GPU each below 40% on average over the last minutes. Only measurements while the app itself is idle count, so its own previous job does not hold it back. This means it can run while someone works on the Mac, but steps aside during heavy work such as editing or rendering. Preferences and the menu bar say what it is waiting for.
+
+It also watches the storage (ISG) every 30 seconds. A storage that is gone is not picked up from; the window shows a yellow bar, the Dock icon a badge, and when the app is in the background a message pops up. Once the storage is back, the app carries on by itself.
 
 While auto transcribe is on and the Mac is on mains power, the Mac does not go to sleep (the display does). During a job it never sleeps. Assets picked up automatically carry `[auto]` in the details field in Iconik and an Auto label in the app. One that fails because of the Mac goes back to an empty status, not to Requested, so it never gets ahead of a request.
 
@@ -159,7 +163,9 @@ Logs: `~/Library/Logs/Local Transcribe for Iconik/serve.log`. Each job logs time
 
 - Test the shared queue and auto transcribe with more than two Macs and with separate Iconik accounts
 - Assets with separate audio files (OP-Atom, P2, Avid media)
-- Tune results per language and dialect with manual corrections as reference
+- A transcript editor in the app (Refine): video, a timeline with every audio track, and fixing text and speakers, saved next to the original transcript
+- A standalone app with Iconik as an integration, so it also works on local files
+- Tune results per language and dialect from the corrections made in the editor
 - A one-click button in Iconik for remote jobs (needs an endpoint Iconik can reach)
 - Sign and notarize the app, which would allow fully automatic updates (Sparkle)
 - Native Mac interface in Swift
