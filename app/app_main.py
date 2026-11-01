@@ -306,7 +306,7 @@ def watch_settings():
             print(f"menubalk: {error}")
 
 
-storage_alert = {"open": False}
+storage_alert = {"open": False, "seen": set()}   # "seen": opslag waarvan de gele balk al in beeld was
 
 
 def on_storage(kind, names):
@@ -320,17 +320,25 @@ def show_storage_warning(kind, names):
     hij wegvalt of bij opstarten niet bereikbaar is, maar alleen als het venster niet voor in beeld staat:
     dan toont de gele balk het al. Er staat nooit meer dan een melding tegelijk open."""
     import AppKit
-    tile = AppKit.NSApp.dockTile()
+    app = AppKit.NSApp
+    in_front = app.isActive() and not hidden and window is not None and not app.isHidden()
+    if kind == "gone":
+        # Net weg, de melding volgt pas bij de volgende controle. Staat het venster nu voor, dan heeft de
+        # gebruiker de balk gezien, ook als hij de app daarna naar de achtergrond haalt.
+        if in_front:
+            storage_alert["seen"].update(names)
+        return
+    tile = app.dockTile()
     if kind == "back":
+        storage_alert["seen"].clear()
         if not serve.storage["warned"]:
             tile.setBadgeLabel_(None)
         return
     tile.setBadgeLabel_("!")
     if storage_alert["open"]:
         return
-    app = AppKit.NSApp
-    if app.isActive() and not hidden and window is not None and not app.isHidden():
-        return   # het venster is in beeld en heeft al de gele balk: een melding erbovenop is dubbel
+    if in_front or set(names) <= storage_alert["seen"]:
+        return   # de gele balk was of is in beeld: een melding erbovenop is dubbel
     which = ", ".join(names)
     alert = AppKit.NSAlert.alloc().init()
     alert.setMessageText_(transcribe.L("Opslag (ISG) niet bereikbaar", "Storage (ISG) not reachable") if kind == "startup"

@@ -1022,10 +1022,13 @@ def check_storage(state):
     warned = [storage_id for storage_id in storage["warned"] if storage_id in mounts]
     new = [storage_id for storage_id in offline if storage_id in state["suspect"] and storage_id not in warned]
     back = [storage_id for storage_id in warned if storage_id not in offline]
+    gone = [storage_id for storage_id in offline if storage_id not in state["suspect"] and storage_id not in warned]
     starting = state["round"] < 2      # opstarten, of auto ging net aan
     state["round"] += 1
     state["suspect"] = offline
     storage["warned"] = [storage_id for storage_id in warned if storage_id not in back] + new
+    if gone and storage_hook is not None:
+        storage_hook("gone", storage_labels(gone))   # alleen voor het venster: de gele balk staat er nu, nog geen melding
     if new:
         warn_storage("startup" if starting else "lost", new)
     if back:

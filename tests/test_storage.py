@@ -68,7 +68,8 @@ online = {"/Volumes/A": True, "/Volumes/B": True}
 transcribe.mount_reachable = lambda p: online[p]
 transcribe.save_config({"mounts": {"a": "/Volumes/A", "b": "/Volumes/B"}})
 warnings = []
-serve.storage_hook = lambda kind, names: warnings.append((kind, names))
+gone_seen = []   # seintjes voor het venster (de gele balk), los van de meldingen
+serve.storage_hook = lambda kind, names: (gone_seen if kind == "gone" else warnings).append((kind, names))
 serve.storage.update(offline=[], checked=0.0, warned=[])
 state = {"round": 0, "suspect": []}
 
@@ -77,7 +78,10 @@ wait = serve.check_storage(state)
 check("opstarten, B weg: werker pakt B meteen niet, nog geen melding (macOS koppelt misschien nog)",
       serve.storage["offline"] == ["b"] and not warnings and wait == serve.STORAGE_RECHECK, (serve.storage, warnings, wait))
 serve.check_storage(state)
-check("tweede keer nog weg: melding bij opstarten", warnings == [("startup", ["/Volumes/B"])], warnings)
+check("eerste keer weg: een seintje voor het venster", gone_seen == [("gone", ["/Volumes/B"])], gone_seen)
+serve.check_storage(state)
+check("tweede keer nog weg: melding bij opstarten, geen tweede seintje",
+      warnings == [("startup", ["/Volumes/B"])] and len(gone_seen) == 1, (warnings, gone_seen))
 serve.check_storage(state)
 wait = serve.check_storage(state)
 check("blijft weg: geen tweede melding, gewoon tempo", len(warnings) == 1 and wait == serve.STORAGE_CHECK, (warnings, wait))
