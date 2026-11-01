@@ -104,6 +104,25 @@ serve.check_storage(state)
 serve.check_storage(state)
 check("zonder venster: melding bewaard tot het venster er is", serve.storage_pending == [("startup", ["/Volumes/A"])],
       serve.storage_pending)
+
+# --- het venster ziet het meteen, niet pas bij de volgende ronde van de werker ---
+serve.storage_pending.clear()
+serve.storage_hook = lambda kind, names: None
+serve.meter = types.SimpleNamespace(start=lambda: None, check=lambda limits: (True, "", {}))
+transcribe.save_config({"mounts": {"a": "/Volumes/A", "b": "/Volumes/B"}, "auto_transcribe": True})
+online.update({"/Volumes/A": True, "/Volumes/B": True})
+serve.storage.update(offline=[], checked=0.0, warned=[])
+serve.remote.state["auto"] = None
+state = {"round": 0, "suspect": []}
+serve.check_storage(state)
+online["/Volumes/B"] = False
+serve.check_storage(state)
+check("opslag weg: venster weet het na deze ronde", (serve.remote.state.get("auto") or {}).get("offline") == ["/Volumes/B"],
+      serve.remote.state.get("auto"))
+online["/Volumes/B"] = True
+serve.check_storage(state)
+check("opslag terug: balk weg na deze ronde", not (serve.remote.state.get("auto") or {}).get("offline"),
+      serve.remote.state.get("auto"))
 transcribe.mount_reachable = real_reach
 
 print("\nAlles goed." if not fails else f"\n{fails} fout(en).")

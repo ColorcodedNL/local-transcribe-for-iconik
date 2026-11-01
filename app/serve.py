@@ -1031,6 +1031,14 @@ def check_storage(state):
     if back:
         warn_storage("back", back)
         remote.wake.set()   # er is weer opslag: de werker kijkt meteen
+    if new or back or offline != state.get("shown"):
+        # Het venster leest remote.state["auto"], dat de werker anders pas bij zijn volgende ronde bijwerkt
+        # (tot een halve minuut later dan de melding): nu meteen.
+        try:
+            auto_settings()
+        except Exception as error:
+            print(f"Opslag bewaken (venster bijwerken): {error}")
+        state["shown"] = offline
     return STORAGE_RECHECK if offline and state["round"] < 2 else STORAGE_CHECK
 
 
@@ -1046,7 +1054,7 @@ def watch_storage():
                 if storage["warned"] and storage_hook is not None:
                     storage_hook("back", [])   # auto staat uit: waarschuwing weghalen
                 storage.update(offline=[], checked=0.0, warned=[])
-                state.update(round=0, suspect=[])
+                state.update(round=0, suspect=[], shown=[])
         except Exception as error:
             print(f"Opslag bewaken: {error}")
         storage_wake.wait(wait)
