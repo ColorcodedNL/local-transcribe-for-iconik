@@ -193,15 +193,36 @@ def make_options(job):
         no_speakers=not transcribe.speaker_model_available(settings["hf_token"]), no_voice_check=False, out="/tmp/whisper-test")
 
 
+PREFETCH_MIN_FREE_GB = 6.0   # vooruit lezen piekt rond 3,8 GB bovenop de lopende opdracht (config: prefetch_min_free_gb)
+
+
+def prefetch_room():
+    """(mag vooruit lezen, reden). Vooruit lezen loopt tijdens de lopende opdracht, dus beide pieken tellen
+    op (in het slechtste geval ongeveer 9,9 + 3,8 GB). Op een Mac met weinig geheugen wacht het daarom tot er
+    genoeg vrij is; is dat er niet, dan leest de volgende opdracht straks zelf, zonder swappen."""
+    need = number_setting(transcribe.load_config(), "prefetch_min_free_gb", PREFETCH_MIN_FREE_GB)
+    available, level = resources.memory()
+    if level is not None and level > resources.PRESSURE_NORMAL:
+        return False, "geheugendruk hoog"
+    if available is not None and available < need * 1e9:
+        return False, f"{available / 1e9:.1f} GB vrij, minstens {need:g} GB nodig"
+    return True, ""
+
+
 def start_prefetch():
     """Leest de audio van de volgende opdracht alvast in, terwijl de GPU met deze bezig is.
 
     Bij een netwerkvolume kost het lezen van een groot bestand tientallen seconden.
-    Lukt het vooruit lezen niet (of is er een mapkeuze nodig), dan doet de opdracht het later zelf.
+    Lukt het vooruit lezen niet (of is er een mapkeuze nodig, of te weinig geheugen vrij), dan doet de
+    opdracht het later zelf.
     """
     with work.mutex:
         upcoming = work.queue[0] if work.queue else None
     if upcoming is None or "prefetch" in upcoming:
+        return
+    room, reason = prefetch_room()
+    if not room:
+        print(f"Vooruit lezen overgeslagen ({reason}): {upcoming['asset_id']} leest straks zelf.")
         return
     box = {"events": [], "lines": [], "result": None}
 
