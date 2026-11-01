@@ -193,6 +193,14 @@ CLUSTER_DISTANCE = 0.75     # groepen samenvoegen tot de gemiddelde afstand hier
 # Bestanden op een asset die geen media zijn.
 SIDECAR_EXTENSIONS = {".srt", ".vtt", ".json", ".xml", ".txt", ".csv", ".edl"}
 
+# Alleen deze bestanden gaan naar ffmpeg. Op een asset staan ook plaatjes, fonts, pdf's, indexbestanden
+# (.lvix) en Premiere-projecten met projectbestanden zonder extensie (archiefproef van 26 oktober).
+MEDIA_EXTENSIONS = {
+    ".mxf", ".mov", ".mp4", ".m4v", ".mts", ".m2ts", ".ts", ".mpg", ".mpeg", ".m2v", ".vob", ".avi",
+    ".mkv", ".webm", ".wmv", ".dv", ".3gp", ".flv",
+    ".wav", ".bwf", ".aif", ".aiff", ".mp3", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".wma",
+}
+
 # Verzonnen tekst begint met een eerste woord waar Whisper nauwelijks in gelooft,
 # op een plek waar het sprekermodel weinig of geen spraak hoort. Beide moeten gelden.
 FIRST_WORD_MIN_PROBABILITY = 0.05
@@ -610,40 +618,56 @@ def find_media_file(iconik, asset_id, mount_override=None, ask_mount=False, inte
     bekend en klopt het pad uit Iconik hier niet, dan vraagt een venster erom.
     """
     files = iconik.get(f"files/v1/assets/{asset_id}/files/").get("objects", [])
-    media = [
-        f for f in files
-        if f.get("type") == "FILE"
-        and Path(f.get("name", "")).suffix.lower() not in SIDECAR_EXTENSIONS
-    ]
+    stored = [f for f in files if f.get("type") == "FILE"]
+    media = [f for f in stored if Path(f.get("name", "")).suffix.lower() in MEDIA_EXTENSIONS]
     if not media:
-        fail(L("Geen mediabestand gevonden op dit asset.", "No media file found on this asset."))
+        other = sorted({Path(f.get("name", "")).suffix.lower() or L("zonder extensie", "no extension")
+                        for f in stored if Path(f.get("name", "")).suffix.lower() not in SIDECAR_EXTENSIONS})
+        if other:
+            fail(L(f"Geen audio of video op dit asset ({', '.join(other)}).",
+                   f"No audio or video on this asset ({', '.join(other)})."), skip=True)
+        fail(L("Geen mediabestand op dit asset.", "No media file on this asset."), skip=True)
+
+    def relative_of(item):
+        return Path(item.get("directory_path", "")) / item["name"]
+
     if len(media) > 1:
-        print(f"Let op: {len(media)} mediabestanden gevonden, het eerste wordt gebruikt.")
-    chosen = media[0]
-    relative = Path(chosen.get("directory_path", "")) / chosen["name"]
+        print(f"Let op: {len(media)} kopieën van het mediabestand, de eerste die op deze Mac te vinden is wordt gebruikt.")
 
     if mount_override:
-        path = Path(mount_override) / relative
-        if not path.is_file():
-            fail(L(f"Bestand niet gevonden: {path}", f"File not found: {path}"))
-        return path
+        for item in media:
+            path = Path(mount_override) / relative_of(item)
+            if path.is_file():
+                return path
+        fail(L(f"Bestand niet gevonden: {Path(mount_override) / relative_of(media[0])}",
+               f"File not found: {Path(mount_override) / relative_of(media[0])}"))
 
+    mounts = load_config().get("mounts") or {}
+    chosen = media[0]
+    if not ask_mount:
+        # Iconik koppelt identieke bestanden op verschillende plekken aan een asset. Elke kopie op een
+        # opslag waarvan het mount point bekend is, mag: de eerste die hier echt staat wint.
+        known_copies = [item for item in media if mounts.get(item.get("storage_id"))]
+        for item in known_copies:
+            known, relative = mounts[item["storage_id"]], relative_of(item)
+            if (Path(known) / relative).is_file():
+                return Path(known) / relative
+            moved = find_moved_mount(known, relative)
+            if moved is not None:
+                set_mount(item["storage_id"], moved)
+                print(f"Opslag staat nu op {moved} (was {known}), dat is onthouden.")
+                return moved / relative
+        unknown = [item for item in media if not mounts.get(item.get("storage_id"))]
+        if known_copies and not unknown:
+            known, relative = mounts[known_copies[0]["storage_id"]], relative_of(known_copies[0])
+            if not Path(known).is_dir():
+                fail(L(f"De map {known} is niet bereikbaar. Is de opslag (ISG) gemount?",
+                       f"The folder {known} cannot be reached. Is the storage (ISG) mounted?"), local=True)
+            fail(L(f"Bestand niet gevonden: {Path(known) / relative}", f"File not found: {Path(known) / relative}"))
+        if unknown:
+            chosen = unknown[0]   # een kopie op een opslag waarvan deze Mac het mount point nog niet weet
+    relative = relative_of(chosen)
     storage_id = chosen["storage_id"]
-    known = (load_config().get("mounts") or {}).get(storage_id)
-
-    if known and not ask_mount:
-        path = Path(known) / relative
-        if path.is_file():
-            return path
-        moved = find_moved_mount(known, relative)
-        if moved is not None:
-            set_mount(storage_id, moved)
-            print(f"Opslag staat nu op {moved} (was {known}), dat is onthouden.")
-            return moved / relative
-        if not Path(known).is_dir():
-            fail(L(f"De map {known} is niet bereikbaar. Is de opslag (ISG) gemount?",
-                   f"The folder {known} cannot be reached. Is the storage (ISG) mounted?"), local=True)
-        fail(L(f"Bestand niet gevonden: {path}", f"File not found: {path}"))
 
     try:
         storage = iconik.get(f"files/v1/storages/{storage_id}/")

@@ -21,7 +21,7 @@ hub = types.ModuleType("huggingface_hub")
 cache = {"cached": True, "calls": []}
 
 
-def snapshot_download(repo, local_files_only=False):
+def snapshot_download(repo, revision=None, local_files_only=False):
     cache["calls"].append((repo, local_files_only))
     if local_files_only and not cache["cached"]:
         raise OSError("niet in de cache")
