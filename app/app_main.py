@@ -317,7 +317,8 @@ def on_storage(kind, names):
 
 def show_storage_warning(kind, names):
     """Op de hoofddraad. Een uitroepteken op het Dock-icoon zolang er opslag weg is, en een melding als
-    hij wegvalt of bij opstarten niet bereikbaar is. Er staat nooit meer dan een melding tegelijk open."""
+    hij wegvalt of bij opstarten niet bereikbaar is, maar alleen als het venster niet voor in beeld staat:
+    dan toont de gele balk het al. Er staat nooit meer dan een melding tegelijk open."""
     import AppKit
     tile = AppKit.NSApp.dockTile()
     if kind == "back":
@@ -327,6 +328,9 @@ def show_storage_warning(kind, names):
     tile.setBadgeLabel_("!")
     if storage_alert["open"]:
         return
+    app = AppKit.NSApp
+    if app.isActive() and not hidden and window is not None and not app.isHidden():
+        return   # het venster is in beeld en heeft al de gele balk: een melding erbovenop is dubbel
     which = ", ".join(names)
     alert = AppKit.NSAlert.alloc().init()
     alert.setMessageText_(transcribe.L("Opslag (ISG) niet bereikbaar", "Storage (ISG) not reachable") if kind == "startup"
