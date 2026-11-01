@@ -1243,20 +1243,29 @@ def speech_share(start, end, turns):
     return min(overlap / (end - start), 1.0)
 
 
+# Vaste revisie per model: elke Mac draait dezelfde, geteste versie, en een wijziging op Hugging Face
+# komt pas mee na een test (zie docs/RELEASING.md). Een model dat hier niet staat volgt de nieuwste.
+MODEL_REVISIONS = {
+    "mlx-community/whisper-large-v3-mlx": "49e6aa286ad60c14352c404340ded53710378a11",
+}
+
+
 def ensure_model(repo):
     """Haalt het Whisper-model eenmalig binnen als het er nog niet is, met voortgang voor het venster.
 
     Geeft het lokale pad van het model terug. Met een repo-naam raadpleegt mlx_whisper bij elke
     load eerst Hugging Face; een Mac die net uit de slaapstand komt en nog geen verbinding heeft,
-    bleef daar hangen. Met een pad gebeurt er niets met het netwerk."""
+    bleef daar hangen. Met een pad gebeurt er niets met het netwerk.
+    Met een vaste revisie (een commit-hash) zoekt de cache direct die map op, ook zonder internet."""
     import os
     import threading
     from huggingface_hub import HfApi, constants, snapshot_download
 
     if os.path.isdir(repo):
         return repo
+    revision = MODEL_REVISIONS.get(repo)
     try:
-        return snapshot_download(repo, local_files_only=True)  # staat al in de cache
+        return snapshot_download(repo, revision=revision, local_files_only=True)  # staat al in de cache
     except Exception:
         pass
 
@@ -1265,7 +1274,7 @@ def ensure_model(repo):
     tell("stage", name="model")
     total = 0
     try:
-        info = HfApi().model_info(repo, files_metadata=True)
+        info = HfApi().model_info(repo, revision=revision, files_metadata=True)
         total = sum(item.size or 0 for item in info.siblings)
     except Exception:
         pass  # zonder totaal laat het venster een lopende balk zien
@@ -1284,7 +1293,7 @@ def ensure_model(repo):
 
     threading.Thread(target=watch, daemon=True).start()
     try:
-        return snapshot_download(repo)
+        return snapshot_download(repo, revision=revision)
     except Exception as error:
         fail(L(f"Het Whisper-model kon niet worden gedownload ({type(error).__name__}). Dat is eenmalig nodig, "
                "controleer de internetverbinding en probeer het opnieuw.",

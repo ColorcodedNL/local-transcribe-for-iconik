@@ -4,7 +4,7 @@
 # Eenmalig voor de browsertest: uv run --no-project --with playwright playwright install chromium
 set -u
 cd "$(dirname "$0")/.."
-WITH=(--no-project --with pynacl --with requests --with numpy --with playwright)
+WITH=(--no-project --with pynacl --with requests --with numpy --with huggingface_hub --with playwright)
 failed=0
 for t in tests/test_*.py; do
   out="$(uv run "${WITH[@]}" python -B "$t" 2>&1)"

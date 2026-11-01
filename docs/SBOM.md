@@ -28,7 +28,7 @@ Found something we missed? Open an issue, or for anything sensitive use a privat
 | Model | Revision | How | Notes |
 | --- | --- | --- | --- |
 | pyannote/speaker-diarization-community-1 | bundled | `Resources/models/`, loaded locally | |
-| mlx-community/whisper-large-v3-mlx | not pinned | downloaded from Hugging Face on first use | |
+| mlx-community/whisper-large-v3-mlx | `49e6aa286ad60c14352c404340ded53710378a11` | downloaded from Hugging Face on first use, at this revision (`MODEL_REVISIONS` in `app/transcribe.py`) | pinned from 0.4.1 |
 
 ## Python packages (104)
 
@@ -167,7 +167,7 @@ Vulnerabilities in distributed training, CUDA, server use of torch, lightning or
 | 2026-10-23 | CVE-2026-107676 | FFmpeg 9.0.2, HDR10+ serializer | Low | Applies to remuxing HDR metadata. The app only extracts audio |
 | 2026-10-23 | CVE-2026-107696 | FFmpeg 9.0.2, RTSP/RTP | Not affected | Built with `--disable-network` |
 | 2026-10-23 | CVE-2026-107675 | FFmpeg 9.0.2, libssh | Not affected | libssh not linked |
-| 2026-10-23 | Supply chain | Whisper model | Planned | Not pinned to a revision yet. From the next release it is pinned, and every release checks for a newer revision and ships it after testing |
+| 2026-10-23 | Supply chain | Whisper model | Fixed in 0.4.1 | Pinned to revision `49e6aa2` (`MODEL_REVISIONS` in `app/transcribe.py`). Every release checks for a newer revision and ships it after testing |
 
 ## Updating this file
 
