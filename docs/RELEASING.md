@@ -4,7 +4,7 @@ Two kinds of release, depending on what changed.
 
 ## Code release (most of them)
 
-Changes in `app/app_main.py`, `serve.py`, `transcribe.py`, `updater.py`, `worker.py`, `ui.html` or `setup_actions.py` (all in `app/`).
+Changes in the files listed in `CODE_FILES` in `tools/make_manifest.py` (all in `app/`): `app_main.py`, `transcribe.py`, `transcript.py`, `iconik.py`, `refine.py`, `refine.html`, `serve.py`, `updater.py`, `worker.py`, `resources.py`, `ui.html`, `setup_actions.py`. A new file in `app/` that the app needs goes into `CODE_FILES` too, or the code update leaves it out.
 
 1. Raise `APP_VERSION` in `app/transcribe.py`, and describe the changes in the release notes. The highlight block at the top of `README.md` only changes when a release changes what it says.
 2. Do the checks below.

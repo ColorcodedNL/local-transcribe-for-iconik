@@ -71,8 +71,8 @@
 <p>Iconik then asks whether Local Transcribe may have access. Check that it is Local Transcribe asking and click <b>Allow access</b>. The status at the bottom left then says <b>Logged in to Iconik</b>.</p>
 <figure class="half"><img src="images/iconik-allow-access.jpg" alt=""></figure>
 
-<h2>Step 4: add the button to Iconik</h2>
-<p>After logging in the app checks whether the <b>Local Transcribe</b> button already exists in this Iconik environment. If not, a yellow notice appears at the top of <b>Jobs</b>. Click <b>Add the button to Iconik</b>. This is needed only once, for all users at the same time, and requires the right to create Custom Actions.</p>
+<h2>Step 4: add the buttons to Iconik</h2>
+<p>After logging in the app checks whether the <b>Local Transcribe</b> and <b>Refine transcript</b> buttons already exist in this Iconik environment. If not, a yellow notice appears at the top of <b>Jobs</b>. Click <b>Add the buttons to Iconik</b>. This is needed only once, for all users at the same time, and requires the right to create Custom Actions.</p>
 <figure><img src="images/app-button-missing.jpg" alt=""></figure>
 <p>Then pick an asset or collection in Iconik and click <b>Local Transcribe</b>. The transcription runs on the computer where you click, and progress shows in the window under <b>Jobs</b>.</p>
 <p>An asset without a transcript looks like this in Iconik. The <b>Transcribe</b> button in this panel is Iconik's own, not this app's.</p>
@@ -167,13 +167,40 @@
 </ul>
 <p>The limits are in <code>config.json</code> (<code>auto_min_free_gb</code>, <code>auto_max_cpu</code>, <code>auto_max_gpu</code>) for anyone who wants to change them.</p>
 
+<h2 class="new">Refine: checking a transcript</h2>
+<p>Refine lets you check a transcript next to the original. The video plays on the left, the text blocks are on the right, and below is a timeline with the text blocks, the speakers and every audio track as a waveform.</p>
+<h3>Opening it</h3>
+<ul>
+<li>In the app: click <b>Refine</b> on a finished job.</li>
+<li>In Iconik: choose <b>Refine transcript</b> in the menu of an asset. The app adds that button to Iconik together with Local Transcribe (step 4). The asset must be reachable on this Mac: the storage (ISG) must be connected.</li>
+</ul>
+<figure class="small"><img src="images/iconik-refine-menu.png" alt=""></figure>
+<h3>Playback</h3>
+<p>The original plays straight from the storage. Click a block or the timeline to jump there. Space plays and pauses, the arrow keys jump a second (five with Shift), Option with an arrow jumps a block, and J, K and L work as in an editing program. The headphone button on a track plays only that track; by default you hear the mix of the tracks the app used.</p>
+<h3>Editing text</h3>
+<ul>
+<li>Double-click a block (or press Enter) to type. Words that stay the same keep their timing. A changed word takes the time of the word it replaces and counts as checked: Iconik shows it without the red underline.</li>
+<li><b>Enter</b> splits the block at the cursor, <b>Backspace</b> at the start merges it with the previous block, <b>Delete</b> at the end with the next one. <b>Cmd+Enter</b> or clicking elsewhere keeps the edit, <b>Esc</b> cancels.</li>
+<li>On the timeline: <b>S</b> splits the block under the playhead, <b>M</b> merges with the next block, <b>N</b> adds a block in an empty spot. Drag the edges of the picked block to adjust its timing.</li>
+</ul>
+<h3>Speakers</h3>
+<ul>
+<li>Click a name in the speaker bar to change it, or add a speaker with <b>+ Speaker</b>.</li>
+<li>Select words in a block and right-click to give them to another or a new speaker. The block is split at the word boundaries.</li>
+<li>Right-click a block without a selection, or a block on the timeline, to give the whole block to another speaker.</li>
+</ul>
+<h3>Saving</h3>
+<p>Every change is kept as a draft on this Mac right away. You can leave Refine and carry on later; undo and redo with Cmd+Z and Shift+Cmd+Z. The job list then shows <b>Draft</b>.</p>
+<p><b>Save to Iconik</b> replaces the transcript in Iconik with the correction, and the app asks Iconik to reindex the asset. Iconik shows only the newest transcript but searches all of them; keeping the original next to it would leave corrected words findable. So the original stays on this Mac, and <b>Put original back</b> restores it. The job list then shows <b>Refined</b>. Under Preferences, at Refine, you see how many originals are kept and can clear them; after that no original can be put back.</p>
+<p>A new transcription skips a corrected asset and says why. To transcribe it again, put the original back in Refine first.</p>
+
 <h2 class="new">If something does not work</h2>
 <table>
 <tr><th>What you see</th><th>What is going on</th><th>What to do</th></tr>
 <tr><td>Window on Preferences, status Not connected</td><td>No Client ID entered yet</td><td>Step 2</td></tr>
 <tr><td>Status Not logged in</td><td>You are logged out</td><td>Click <b>Log in to Iconik</b>. If the Client ID is wrong, expand <b>Use another Client ID</b> and enter the right one</td></tr>
 <tr><td>Iconik says the app is not configured as an OAuth2 client</td><td>The Client ID is wrong or incomplete</td><td>Check the ID from step 1 and enter it again</td></tr>
-<tr><td>Yellow notice that the button is missing</td><td>The button is not in Iconik yet, or was removed</td><td>Click <b>Add the button to Iconik</b>. If that is refused, ask an Iconik admin to log in to this app once and add it</td></tr>
+<tr><td>Yellow notice that the button is missing</td><td>The button is not in Iconik yet, or was removed</td><td>Click <b>Add the buttons to Iconik</b>. If that is refused, ask an Iconik admin to log in to this app once and add it</td></tr>
 <tr><td>The folder cannot be reached, is the storage mounted?</td><td>The archive is not on this Mac</td><td>Mount the archive and start the job again</td></tr>
 <tr><td>File not found</td><td>The chosen mount point does not fit the asset</td><td>Choose another folder under <b>ISG Mount Points</b></td></tr>
 <tr><td>An asset stays on Requested</td><td>No Mac with <b>Allow remote jobs</b> on is running, every Mac is busy, or the Macs that are on are paused</td><td>Check that a Mac with remote jobs on is running and logged in, with the archive mounted. A request waits for running jobs, including automatic ones</td></tr>

@@ -71,8 +71,8 @@
 <p>Daarna vraagt Iconik of Local Transcribe toegang mag krijgen. Controleer dat het Local Transcribe is dat erom vraagt en klik op <b>Allow access</b>. Daarna staat linksonder <b>Ingelogd bij Iconik</b>.</p>
 <figure class="half"><img src="images/iconik-allow-access.jpg" alt=""></figure>
 
-<h2>Stap 4: de knop in Iconik zetten</h2>
-<p>Na het inloggen controleert de app of de knop <b>Local Transcribe</b> al in deze Iconik-omgeving staat. Zo niet, dan verschijnt bovenaan <b>Opdrachten</b> een gele melding. Klik op <b>Zet de knop in Iconik</b>. Dit hoeft maar één keer, voor alle gebruikers tegelijk, en vraagt rechten om knoppen aan te maken.</p>
+<h2>Stap 4: de knoppen in Iconik zetten</h2>
+<p>Na het inloggen controleert de app of de knoppen <b>Local Transcribe</b> en <b>Refine transcript</b> al in deze Iconik-omgeving staan. Zo niet, dan verschijnt bovenaan <b>Opdrachten</b> een gele melding. Klik op <b>Zet de knoppen in Iconik</b>. Dit hoeft maar één keer, voor alle gebruikers tegelijk, en vraagt rechten om knoppen aan te maken.</p>
 <figure><img src="images/app-button-missing.jpg" alt=""></figure>
 <p>Daarna kies je in Iconik een asset of collectie en klik je op <b>Local Transcribe</b>. De transcriptie draait op de computer waarop je klikt, en de voortgang staat in het venster onder <b>Opdrachten</b>.</p>
 <p>Een asset zonder transcriptie ziet er in Iconik zo uit. De knop <b>Transcribe</b> in dit paneel is die van Iconik zelf, niet van deze app.</p>
@@ -167,13 +167,40 @@
 </ul>
 <p>De grenzen staan in <code>config.json</code> (<code>auto_min_free_gb</code>, <code>auto_max_cpu</code>, <code>auto_max_gpu</code>) voor wie ze wil aanpassen.</p>
 
+<h2 class="new">Refine: een transcript nakijken</h2>
+<p>Met Refine kijk je een transcript na naast het origineel. Links speelt de video, rechts staan de blokken tekst, en onderin staat een tijdlijn met de tekstblokken, de sprekers en elk audiospoor als golfvorm.</p>
+<h3>Openen</h3>
+<ul>
+<li>In de app: klik op <b>Refine</b> bij een afgeronde opdracht.</li>
+<li>In Iconik: kies <b>Refine transcript</b> in het menu van een asset. Die knop zet de app samen met Local Transcribe in Iconik (stap 4). Het asset moet op deze Mac bereikbaar zijn: de opslag (ISG) moet gekoppeld zijn.</li>
+</ul>
+<figure class="small"><img src="images/iconik-refine-menu.png" alt=""></figure>
+<h3>Afspelen</h3>
+<p>Het origineel speelt rechtstreeks van de opslag. Klik op een blok of in de tijdlijn om ernaartoe te springen. Spatie speelt af en pauzeert, de pijltjes springen een seconde (met Shift vijf), Option met een pijltje springt een blok, en J, K en L werken zoals in een montageprogramma. Met het koptelefoontje bij een spoor hoor je alleen dat spoor; standaard hoor je de mix van de sporen die de app gebruikte.</p>
+<h3>Tekst bewerken</h3>
+<ul>
+<li>Dubbelklik op een blok (of druk op Enter) om te typen. Woorden die gelijk blijven houden hun timing. Een veranderd woord krijgt de tijd van het woord dat het vervangt en telt als nagekeken: Iconik toont het daarna zonder rode streep.</li>
+<li><b>Enter</b> splitst het blok op de cursor, <b>Backspace</b> aan het begin voegt het samen met het vorige blok, <b>Delete</b> aan het eind met het volgende. <b>Cmd+Enter</b> of ergens anders klikken bewaart, <b>Esc</b> annuleert.</li>
+<li>Op de tijdlijn: <b>S</b> splitst het blok onder de afspeelkop, <b>M</b> voegt samen met het volgende blok, <b>N</b> maakt een blok op een lege plek. Sleep de randen van het gekozen blok om de timing aan te passen.</li>
+</ul>
+<h3>Sprekers</h3>
+<ul>
+<li>Klik op een naam in de sprekerbalk om die te wijzigen, of voeg een spreker toe met <b>+ Spreker</b>.</li>
+<li>Selecteer woorden in een blok en klik met rechts om ze aan een andere of een nieuwe spreker te geven. Het blok wordt dan op de woordgrenzen gesplitst.</li>
+<li>Klik met rechts op een blok zonder selectie, of op een blok in de tijdlijn, om het hele blok aan een andere spreker te geven.</li>
+</ul>
+<h3>Opslaan</h3>
+<p>Elke wijziging wordt meteen als concept op deze Mac bewaard. Je kunt Refine verlaten en later verder gaan; ongedaan maken en opnieuw kan met Cmd+Z en Shift+Cmd+Z. Onder Opdrachten staat dan het label <b>Concept</b>.</p>
+<p>Met <b>Opslaan in Iconik</b> vervangt de correctie het transcript in Iconik, en laat de app Iconik het asset opnieuw indexeren. Iconik toont alleen het nieuwste transcript maar doorzoekt ze allemaal; een origineel ernaast zou weggecorrigeerde woorden vindbaar houden. Het origineel blijft daarom op deze Mac, en met <b>Origineel terugzetten</b> zet je het terug. Onder Opdrachten staat daarna <b>Gecorrigeerd</b>. Onder Voorkeuren, bij Refine, zie je hoeveel originelen er bewaard zijn en kun je ze weggooien; daarna kan geen origineel meer terug.</p>
+<p>Een nieuwe transcriptie slaat een gecorrigeerd asset over, met de reden erbij. Wil je toch opnieuw transcriberen, zet dan eerst in Refine het origineel terug.</p>
+
 <h2 class="new">Als het niet werkt</h2>
 <table>
 <tr><th>Wat je ziet</th><th>Wat er speelt</th><th>Wat je doet</th></tr>
 <tr><td>Venster op Voorkeuren, status Niet verbonden</td><td>Er is nog geen Client ID ingevuld</td><td>Stap 2</td></tr>
 <tr><td>Status Niet ingelogd</td><td>Je bent uitgelogd</td><td>Klik op <b>Log in bij Iconik</b>. Is het Client ID fout, klap dan <b>Andere Client ID gebruiken</b> open en vul het juiste in</td></tr>
 <tr><td>Iconik meldt dat de app niet is geconfigureerd als OAuth2-client</td><td>Het Client ID klopt niet of is niet volledig</td><td>Controleer het ID uit stap 1 en vul het opnieuw in</td></tr>
-<tr><td>Gele melding dat de knop ontbreekt</td><td>De knop staat nog niet in Iconik, of is verwijderd</td><td>Klik op <b>Zet de knop in Iconik</b>. Lukt dat niet, vraag dan een beheerder om één keer in te loggen in deze app en de knop toe te voegen</td></tr>
+<tr><td>Gele melding dat de knop ontbreekt</td><td>De knop staat nog niet in Iconik, of is verwijderd</td><td>Klik op <b>Zet de knoppen in Iconik</b>. Lukt dat niet, vraag dan een beheerder om één keer in te loggen in deze app en de knop toe te voegen</td></tr>
 <tr><td>De map is niet bereikbaar, is het archief gemount?</td><td>Het archief staat niet op de Mac</td><td>Mount het archief en start de opdracht opnieuw</td></tr>
 <tr><td>Bestand niet gevonden</td><td>Het gekozen mount point past niet bij het asset</td><td>Wijzig het pad onder <b>ISG Mount Points</b></td></tr>
 <tr><td>Een asset blijft op Aangevraagd staan</td><td>Er draait geen Mac met <b>Opdrachten op afstand toestaan</b> aan, alle Macs zijn bezig, of de Macs die aan staan zijn gepauzeerd</td><td>Controleer dat er een Mac met opdrachten op afstand aan draait, ingelogd en met het archief gemount. Een aanvraag wacht op lopende opdrachten, ook automatische</td></tr>

@@ -1,15 +1,14 @@
 # Local Transcribe for Iconik
 
 > [!IMPORTANT]
-> **New in 0.4: transcribe the whole archive automatically.** A Mac can work through everything on its storage that has no transcript yet, whenever it has room, also while someone works on it. Requests from colleagues always come first.
+> **New in 0.5: Refine, a transcript editor in the app.** Watch the original, see every audio track on a timeline, and fix text and speakers. The correction goes back to Iconik as a native transcript.
 >
-> - **Auto transcribe:** an extra switch under Allow remote jobs. Newest first, video up to an hour, audio optional. Several Macs share the work without doing anything twice.
-> - **Less memory:** a full job peaks at about 9 GB instead of up to 20 GB, and memory goes back to the system after a job.
-> - **After this job:** quitting during a job can wait until that job is done.
+> - **Edit like text:** double-click a block to type. Enter splits it at the cursor, Backspace at the start merges it with the previous one. Word timing is kept.
+> - **Speakers:** rename them, or move selected words or a whole block to another speaker with a right-click.
+> - **Safe:** the original stays on your Mac and can be put back; a later transcription never overwrites a correction.
+> - **Two ways in:** a Refine button on every finished job, and a Refine transcript button in Iconik.
 >
-> **0.4.1** brings the menu bar icon back on recent macOS versions, watches the storage (ISG) during auto transcribe, skips assets without audio or video, and pins the Whisper model to a tested version.
->
-> 0.4.1 needs the new `.dmg` from the [latest release](../../releases/latest); the banner in older versions links to it.
+> 0.5.0 is a code update: installed apps offer it with one click. New users take the `.dmg` from the [latest release](../../releases/latest).
 
 A Mac app that transcribes assets from [Iconik](https://www.iconik.io) on your own machine and writes the result back to Iconik as native transcriptions, with word timing and speaker labels.
 
@@ -28,6 +27,7 @@ You start it from Iconik itself: pick an asset, a collection or a selection, and
 - **Safe replacement.** Running it again replaces only the transcript this app made earlier. Transcripts from other sources are never touched, and the old transcript is only removed once the new one succeeded.
 - **Efficient on collections.** While one asset is being transcribed, the audio of the next one is already read from the network storage, when the Mac has enough memory free.
 - **Remote jobs (optional).** Request a transcript from the Iconik browser and let a Mac that is on in the background do it, without an extra Iconik login. Off by default. See [Remote jobs](#remote-jobs).
+- **Refine (transcript editor).** Open a finished transcript next to the original video and every audio track, fix words, split and merge blocks, rename and reassign speakers, and save the correction to Iconik. See [Refine](#refine).
 - **Auto transcribe (optional).** Works through everything on the storage that has no transcript yet, only when the Mac has room, and keeps the Mac awake for it. Off by default. See [Auto transcribe](#auto-transcribe).
 - **Updates from inside the app.** A banner offers new versions; most are a one-click install of a few dozen KB, signed and verified before anything is written.
 
@@ -94,6 +94,20 @@ It also watches the storage (ISG) every 30 seconds. A storage that is gone is no
 While auto transcribe is on and the Mac is on mains power, the Mac does not go to sleep (the display does). During a job it never sleeps. Assets picked up automatically carry `[auto]` in the details field in Iconik and an Auto label in the app. One that fails because of the Mac goes back to an empty status, not to Requested, so it never gets ahead of a request.
 
 The limits can be changed in `config.json` (`~/Library/Application Support/Local Transcribe for Iconik/`): `auto_min_free_gb`, `auto_max_cpu`, `auto_max_gpu`, `auto_max_minutes` and `expected_languages`.
+
+## Refine
+
+Refine opens a transcript in the app window: the original on the left, the blocks on the right, and a timeline below with the text blocks, the speakers and every audio track as a waveform. Open it with **Refine** on a finished job, or with **Refine transcript** in the menu of an asset in Iconik (the app adds that button together with Local Transcribe).
+
+- **Playback.** The original plays straight from the storage (ISG). WebKit cannot play most camera formats, so the app converts short pieces with its own ffmpeg while you watch. Clicking a block or the timeline jumps there; space, the arrow keys and J K L work as in an editor. The headphone button on a track plays only that track; by default you hear the mix of the tracks the app used.
+- **Text.** Double-click a block (or press Enter) to type. Words that stay the same keep their timing; changed or new words take the time of what they replace and count as checked, so Iconik shows them without the red underline. Enter splits at the cursor, Backspace at the start merges with the previous block, Delete at the end with the next, cmd+Enter keeps, Esc cancels.
+- **Timeline.** S splits the block under the playhead, M merges with the next block, N adds a block in an empty spot. Drag the edges of the picked block to adjust its timing.
+- **Speakers.** Click a name in the speaker bar to rename it. Select words and right-click to move them to another or a new speaker (the block is split at the word boundaries); right-click a block without a selection, or on the timeline, to move the whole block.
+- **Draft.** Every change is kept as a draft on this Mac, so you can leave and come back. Undo and redo with cmd+Z and shift+cmd+Z.
+- **Save to Iconik.** The correction replaces the transcript in Iconik and the asset is reindexed. Iconik shows only the newest transcript but searches all of them, so leaving the original next to it would keep corrected words findable. The original stays on this Mac and **Put original back** restores it. Preferences show how many originals are kept, with a button to clear them.
+- **Protected.** A corrected asset is skipped by a new transcription, with the reason; put the original back first if you want to transcribe again. A transcript from another source still blocks saving, as it blocks transcribing.
+
+The job list shows **Refined** when the correction is in Iconik and **Draft** when there are unsaved changes on this Mac.
 
 ## Privacy
 
@@ -163,7 +177,6 @@ Logs: `~/Library/Logs/Local Transcribe for Iconik/serve.log`. Each job logs time
 
 - Test the shared queue and auto transcribe with more than two Macs and with separate Iconik accounts
 - Assets with separate audio files (OP-Atom, P2, Avid media)
-- A transcript editor in the app (Refine): video, a timeline with every audio track, and fixing text and speakers, saved next to the original transcript
 - A standalone app with Iconik as an integration, so it also works on local files
 - Tune results per language and dialect from the corrections made in the editor
 - A one-click button in Iconik for remote jobs (needs an endpoint Iconik can reach)
