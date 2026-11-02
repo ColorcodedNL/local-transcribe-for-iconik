@@ -1451,28 +1451,11 @@ def main():
 def prepare_asset(iconik, args, on_info=None, interactive=True):
     """Alles voor de GPU: controles bij Iconik, het bestand vinden en de audio lezen.
     Kan vooruit draaien terwijl een andere opdracht transcribeert."""
-    asset = iconik.get(f"assets/v1/assets/{args.asset_id}/")
-    version_id = find_version(asset)
-    print(f"Asset:   {asset.get('title')}")
-
-    existing = iconik.get(
-        f"assets/v1/assets/{args.asset_id}/versions/{version_id}/transcriptions/properties/"
-    ).get("objects", [])
-    own = [t for t in existing if (t.get("engine_info") or {}).get("name") == ENGINE_NAME]
-    foreign = [t for t in existing if t not in own]
-    if foreign:
-        message = f"Dit asset heeft {len(foreign)} transcript(en) uit een andere bron."
-        if args.push:
-            fail(L(message + " Die worden nooit overschreven.",
-                   f"This asset has {len(foreign)} transcript(s) from another source. Those are never overwritten."), skip=True)
-        print(f"Let op: {message} Een proefrun kan, pushen niet.")
-    if own:
-        message = f"Dit asset heeft al {len(own)} transcript(en) van dit script."
-        if args.push and not args.replace:
-            fail(message + " Gebruik --push --replace om te vervangen.")
-        print(f"Let op: {message}" + (" Wordt vervangen." if args.push else ""))
-
-    path = find_media_file(iconik, args.asset_id, args.mount, getattr(args, "ask_mount", False), interactive)
+    import iconik as connectors   # hier pas: iconik.py importeert deze module
+    connector = connectors.IconikConnector(iconik)
+    info = connector.open(args.asset_id, args.push, args.replace)
+    asset, version_id, own = info["asset"], info["version_id"], info["own"]
+    path = connector.find_media(info, args.mount, getattr(args, "ask_mount", False), interactive)[0]
     print(f"Bestand: {path}")
 
     print(f"Model:   {args.model}")
@@ -1486,7 +1469,7 @@ def prepare_asset(iconik, args, on_info=None, interactive=True):
     memory_report("audio")
     if on_info:
         on_info(asset.get("title"), len(samples) / SAMPLE_RATE)
-    return {"asset": asset, "version_id": version_id, "own": own, "media_path": str(path), "tracks": tracks,
+    return {"asset": asset, "version_id": version_id, "own": own, "info": info, "media_path": str(path), "tracks": tracks,
             "samples": samples, "microphones": microphones, "model_path": model_path}
 
 
@@ -1719,44 +1702,15 @@ def process_asset(iconik, args, hf_token, on_info=None, prepared=None):
                 "speakers": len(numbers), "pushed": False, "language": language}
 
     tell("stage", name="schrijven")
-    still_ours = getattr(args, "still_ours", None)
-    if still_ours is not None and not still_ours():
-        fail(L("Een andere Mac heeft dit asset overgenomen; er is niets naar Iconik geschreven.",
-               "Another Mac took over this asset; nothing was written to Iconik."), skip=True)
-
-    # Eerst het nieuwe transcript helemaal neerzetten, pas daarna het oude weghalen. Mislukt het
-    # schrijven halverwege, dan blijft het oude staan en gaat het halve nieuwe weer weg.
-    transcriptions = f"assets/v1/assets/{args.asset_id}/versions/{version_id}/transcriptions/properties/"
-    transcription_id = iconik.post(transcriptions, properties)["id"]
-    segments = tmodel.to_iconik(doc, transcription_id, version_id)[1]
-    segments = [s for s in segments if s["segment_text"]]   # alleen witruimte: geen regel
-    try:
-        for offset in range(0, len(segments), BULK_LIMIT):
-            batch = segments[offset:offset + BULK_LIMIT]
-            iconik.post(f"assets/v1/assets/{args.asset_id}/segments/bulk/", {"objects": batch})
-            print(f"Gepusht: segment {offset + 1} tot en met {offset + len(batch)}")
-    except BaseException:
-        try:
-            delete_transcription(iconik, args.asset_id, version_id, transcription_id)
-            print(f"Schrijven mislukte; het halve transcript {transcription_id} is weer weggehaald.")
-        except Exception as error:
-            print(f"Schrijven mislukte en het halve transcript {transcription_id} weghalen ook: {error}")
-        raise
-
-    # Opnieuw opvragen in plaats van de lijst van het begin: zo gaan ook transcripten weg die een
-    # andere Mac intussen op dit asset zette, en blijft er precies een van deze app over.
-    try:
-        existing = iconik.get(transcriptions).get("objects", [])
-    except Problem:
-        existing = own
-    for old in existing:
-        if (old.get("engine_info") or {}).get("name") == ENGINE_NAME and old["id"] != transcription_id:
-            removed = delete_transcription(iconik, args.asset_id, version_id, old["id"])
-            print(f"Oud transcript {old['id']} verwijderd ({removed} segmenten).")
+    import iconik as connectors
+    info = prepared.get("info") or {"asset_id": args.asset_id, "version_id": version_id,
+                                    "title": asset.get("title") or "", "own": own}
+    transcription_id, written = connectors.IconikConnector(iconik).write(
+        info, doc, engine_info, getattr(args, "still_ours", None))
     print(f"\nKlaar. Transcript {transcription_id} staat op het asset.")
     doc.source["transcription_id"] = transcription_id
     save_transcript(doc)
-    return {"title": asset.get("title"), "segments": len(segments),
+    return {"title": asset.get("title"), "segments": written,
             "speakers": len(numbers), "pushed": True, "language": language}
 
 
