@@ -30,6 +30,7 @@ from urllib.parse import parse_qs, urlparse
 import requests
 
 import app_shell
+import refine
 import resources
 import transcribe
 import updater
@@ -182,6 +183,7 @@ STALL_SECONDS = int(os.environ.get("LOCALTRANSCRIBE_STALL", "900"))
 STALL_GRACE = 20          # seconden die de app krijgt om zelf af te sluiten voor we het afdwingen
 last_progress = [time.monotonic()]
 UI_FILE = Path(__file__).with_name("ui.html")
+REFINE_FILE = Path(__file__).with_name("refine.html")
 
 
 def make_options(job):
@@ -636,6 +638,34 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def reply_bytes(self, body, kind):
+        self.send_response(200)
+        self.send_header("Content-Type", kind)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def refine_route(self, path, first):
+        """De editor: alleen lezen in deel 1, dus geen PROTECTED-routes."""
+        asset_id = first("asset")
+        if path == "/refine":
+            return self.reply(200, REFINE_FILE.read_text())
+        try:
+            if path == "/refine/view":
+                return self.reply_json(refine.view(asset_id))
+            if path == "/refine/chunk":
+                body = refine.chunk(asset_id, first("t") or 0, first("d") or refine.CHUNK_SECONDS, int(first("solo") or 0))
+                return self.reply_bytes(body, "video/mp4")
+            if path == "/refine/waves":
+                body, fraction = refine.waves(asset_id)
+                if body is None:
+                    return self.reply_json({"fraction": fraction})
+                return self.reply_bytes(body, "application/octet-stream")
+        except (refine.RefineError, Problem) as error:
+            return self.reply_json({"error": str(error)})
+        return self.send_error(404)
+
     def redirect(self, location):
         self.send_response(303)
         self.send_header("Location", location)
@@ -672,6 +702,8 @@ class Handler(BaseHTTPRequestHandler):
         first = lambda name: query.get(name, [""])[0]
         if url.path == "/":
             return self.reply(200, status_page())
+        if url.path == "/refine" or url.path.startswith("/refine/"):
+            return self.refine_route(url.path, first)
         if url.path == "/state":
             activity["poll"] = time.time()
             return self.reply_json(app_state())

@@ -170,7 +170,60 @@ def envelope(x, buckets=160):
     return [round(float(v), 2) for v in np.clip((db + 60) / 60, 0, 1)]
 
 
+WAVE_RATE = 50   # punten per seconde in de golfvorm voor de tijdlijn van Refine
+WAVES_FORMAT = "local-transcribe-waves"
+
+
+def wave_peaks(x, rate=SAMPLE_RATE):
+    """De golfvorm van een spoor voor de tijdlijn: per 1/50 s de piek, als 0 tot 255 (-60 tot 0 dB).
+    `x` als float (-1 tot 1) of int16. Zonder kopie van het hele spoor: alleen max en min per stuk."""
+    size = rate // WAVE_RATE
+    count = len(x) // size
+    if not count:
+        return b""
+    rows = x[: count * size].reshape(count, size)
+    peak = np.maximum(rows.max(axis=1), -rows.min(axis=1)).astype(np.float64)
+    if np.issubdtype(x.dtype, np.integer):
+        peak /= 32768.0
+    db = 20 * np.log10(np.maximum(peak, 1e-6))
+    return np.clip((db + 60) / 60 * 255, 0, 255).astype(np.uint8).tobytes()
+
+
+def write_waves(path, peaks):
+    """Golfvormen per spoor naar een bestand: een regel JSON met de opbouw, daarna de bytes achter elkaar."""
+    numbers = sorted(peaks)
+    head = {"format": WAVES_FORMAT, "version": 1, "rate": WAVE_RATE,
+            "tracks": [{"n": n, "length": len(peaks[n])} for n in numbers]}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_name(path.name + ".tmp")
+    with open(temp, "wb") as f:
+        f.write(json.dumps(head).encode() + b"\n")
+        for n in numbers:
+            f.write(peaks[n])
+    os.replace(temp, path)
+
+
+def read_waves(path):
+    """Terug uit write_waves: {spoornummer: bytes}, of None als het bestand er niet (goed) is."""
+    try:
+        raw = path.read_bytes()
+        line, _, body = raw.partition(b"\n")
+        head = json.loads(line)
+        if head.get("format") != WAVES_FORMAT or head.get("rate") != WAVE_RATE:
+            return None
+        peaks, at = {}, 0
+        for track in head["tracks"]:
+            peaks[int(track["n"])] = body[at: at + int(track["length"])]
+            at += int(track["length"])
+        return peaks
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
 def track_info(number, x, note, used):
+    # De golfvorm voor Refine meteen meenemen: de audio is hier toch al gelezen.
+    if getattr(_local, "peaks", None) is not None:
+        _local.peaks[number] = wave_peaks(x)
     rms = float(np.sqrt((x.astype(np.float64) ** 2).mean())) if len(x) else 0.0
     return {"n": number, "db": round(20 * np.log10(max(rms, 1e-6)), 1),
             "note": note, "used": used, "env": envelope(x)}
@@ -1462,18 +1515,22 @@ def prepare_asset(iconik, args, on_info=None, interactive=True):
     model_path = ensure_model(args.model)
     memory_report("begin")
     tell("stage", name="audio")
-    _local.tracks = None
-    samples, microphones = load_audio_tracks(path, getattr(args, "track", None))
-    tracks = getattr(_local, "tracks", None) or []
+    _local.tracks, _local.peaks = None, {}
+    try:
+        samples, microphones = load_audio_tracks(path, getattr(args, "track", None))
+        tracks, peaks = getattr(_local, "tracks", None) or [], _local.peaks
+    finally:
+        _local.peaks = None
     print(f"Audio:   {len(samples) / SAMPLE_RATE:.0f} seconden")
     memory_report("audio")
     if on_info:
         on_info(asset.get("title"), len(samples) / SAMPLE_RATE)
-    return {"asset": asset, "version_id": version_id, "own": own, "info": info, "media_path": str(path), "tracks": tracks,
+    return {"asset": asset, "version_id": version_id, "own": own, "info": info, "media_path": str(path), "tracks": tracks, "peaks": peaks,
             "samples": samples, "microphones": microphones, "model_path": model_path}
 
 
 TRANSCRIPTS_DIR = SUPPORT_DIR / "transcripts"
+WAVES_DIR = SUPPORT_DIR / "waves"
 
 
 def save_transcript(doc):
@@ -1489,6 +1546,20 @@ def save_transcript(doc):
         os.replace(temp, target)
     except Exception as error:
         print(f"Kopie van het transcript bewaren lukte niet: {error}")
+
+
+def safe_name(asset_id, suffix):
+    return re.sub(r"[^A-Za-z0-9_.-]", "_", f"{asset_id or 'zonder-id'}{suffix}")
+
+
+def save_waves(asset_id, peaks):
+    """Bewaart de golfvormen van de sporen voor de tijdlijn van Refine. Mag nooit een opdracht laten mislukken."""
+    if not peaks:
+        return
+    try:
+        write_waves(WAVES_DIR / safe_name(asset_id, ".waves"), peaks)
+    except Exception as error:
+        print(f"Golfvormen bewaren lukte niet: {error}")
 
 
 def expected_languages():
@@ -1710,6 +1781,7 @@ def process_asset(iconik, args, hf_token, on_info=None, prepared=None):
     print(f"\nKlaar. Transcript {transcription_id} staat op het asset.")
     doc.source["transcription_id"] = transcription_id
     save_transcript(doc)
+    save_waves(args.asset_id, prepared.get("peaks"))
     return {"title": asset.get("title"), "segments": written,
             "speakers": len(numbers), "pushed": True, "language": language}
 

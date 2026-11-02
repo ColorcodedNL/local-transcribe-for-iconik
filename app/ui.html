@@ -235,7 +235,10 @@ document.querySelectorAll(".nav").forEach(b => b.onclick = () => {
   $("jobs").hidden = view !== "jobs"; $("settings").hidden = view !== "settings";
 });
 $("clear").onclick = () => act("/clear").then(tick);
-$("list").onclick = e => { const b = e.target.closest("[data-toggle]"); if (b) { open[b.dataset.toggle] = b.dataset.open !== "1"; tick(); } };
+$("list").onclick = e => {
+  const r = e.target.closest("[data-refine]"); if (r) { location.href = "/refine?asset=" + encodeURIComponent(r.dataset.refine); return; }
+  const b = e.target.closest("[data-toggle]"); if (b) { open[b.dataset.toggle] = b.dataset.open !== "1"; tick(); }
+};
 $("mounts").onclick = e => { const b = e.target.closest("[data-mount]"); if (b) { b.blur(); act(`/mount/${b.dataset.mount}?id=${encodeURIComponent(b.dataset.id)}`).then(tick); } };
 $("spoken").onchange = e => { e.target.blur(); act("/language?value=" + e.target.value).then(tick); };
 $("getUpdate").onclick = () => act("/update/install");
@@ -323,7 +326,8 @@ function row(job, isOpen) {
   } else if (job.status === "wachtend") state += " " + job.added;
   const tracks = job.tracks || [];
   const toggle = tracks.length ? `<button class="plain more" data-toggle="${job.n}" data-open="${isOpen ? 1 : 0}">${isOpen ? T.hide : T.tracks(tracks.length)}</button>` : "";
-  let html = `<div class="top"><div class="title">${esc(job.title || job.asset_id)}</div>${job.auto ? `<span class="tag">${T.autoTag}</span>` : ""}${toggle}<div class="state ${job.status}">${esc(state)}<span class="el"></span></div></div>`;
+  const refine = job.status === "klaar" ? `<button class="plain more" data-refine="${esc(job.asset_id)}">Refine</button>` : "";
+  let html = `<div class="top"><div class="title">${esc(job.title || job.asset_id)}</div>${job.auto ? `<span class="tag">${T.autoTag}</span>` : ""}${refine}${toggle}<div class="state ${job.status}">${esc(state)}<span class="el"></span></div></div>`;
   if (msg) html += `<div class="msg ${job.status === "fout" ? "fout" : ""}">${esc(msg)}</div>`;
   if (job.status === "bezig") html += stages(job);
   if (isOpen && tracks.length) html += '<div class="tracks">' + tracks.map(t =>
