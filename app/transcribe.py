@@ -347,8 +347,16 @@ def api_host():
     return (load_config().get("host") or DEFAULT_HOST).rstrip("/")
 
 
-def load_login():
-    """De bewaarde inlog uit de sleutelhanger van macOS, of None."""
+# De inlog in het geheugen: de sleutelhanger één keer lezen in plaats van bij elke aanroep naar Iconik. Bij
+# een testbuild die macOS niet herkent scheelt dat een rij wachtwoordvragen. Deze app werkt het geheugen zelf
+# bij als hij ververst (save_login); ververst iets anders het token, dan leest _authorize opnieuw (fresh).
+_login_cache = [False, None]   # [gelezen, inlog]
+
+
+def load_login(fresh=False):
+    """De bewaarde inlog (uit het geheugen, of met `fresh` uit de sleutelhanger van macOS), of None."""
+    if _login_cache[0] and not fresh:
+        return dict(_login_cache[1]) if _login_cache[1] else None
     import keyring
     raw = keyring.get_password(KEYCHAIN_SERVICE, "login")
     if not raw:
@@ -361,19 +369,23 @@ def load_login():
             except Exception:
                 pass
     try:
-        return json.loads(raw) if raw else None
+        login = json.loads(raw) if raw else None
     except ValueError:
-        return None
+        login = None
+    _login_cache[:] = [True, login]
+    return dict(login) if login else None
 
 
 def save_login(login):
     import keyring
     keyring.set_password(KEYCHAIN_SERVICE, "login", json.dumps(login))
+    _login_cache[:] = [True, dict(login)]
     _has_login[:] = [True, time.monotonic()]
 
 
 def clear_login():
     import keyring
+    _login_cache[:] = [True, None]
     _has_login[:] = [False, time.monotonic()]
     try:
         keyring.delete_password(KEYCHAIN_SERVICE, "login")
@@ -382,8 +394,7 @@ def clear_login():
 
 
 # Is er een inlog? Het venster vraagt dat elke seconde; de sleutelhanger hoeft dan niet elke keer.
-# Alleen voor die vraag: het token zelf komt altijd vers uit de sleutelhanger (zie Iconik._authorize),
-# want een ververstoken mag maar een keer gebruikt worden.
+# (Sinds de inlog in het geheugen staat, is dit vooral nog voor de eerste keer lezen.)
 HAS_LOGIN_SECONDS = 5
 _has_login = [None, 0.0]   # [uitkomst, wanneer gekeken]
 
@@ -474,6 +485,14 @@ class Iconik:
                         "refresh_token": login["refresh_token"],
                     })
                 except Problem:
+                    # Misschien heeft iets anders (het script op de opdrachtregel) intussen ververst: dan
+                    # staat er een nieuwere inlog in de sleutelhanger dan in het geheugen.
+                    latest = load_login(fresh=True)
+                    if latest and latest.get("refresh_token") != login.get("refresh_token") \
+                            and latest["expires_at"] - time.time() >= 120:
+                        login = latest
+                        self.session.headers["Authorization"] = f"Bearer {login['access_token']}"
+                        return
                     clear_login()
                     fail(L("De inlog bij Iconik is verlopen. Log opnieuw in.", "The Iconik login has expired. Log in again."), local=True)
             self.session.headers["Authorization"] = f"Bearer {login['access_token']}"
