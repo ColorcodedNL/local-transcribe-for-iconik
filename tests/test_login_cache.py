@@ -74,5 +74,17 @@ transcribe.save_login({"access_token": "OUD", "refresh_token": "R-OUD", "expires
 c2 = transcribe.Iconik(); c2._authorize()
 check("gewoon verversen werkt nog", c2.session.headers["Authorization"] == "Bearer VERS" and transcribe.load_login()["access_token"] == "VERS")
 
+# Twee draden tegelijk bij het opstarten (venster en achtergrond), terwijl macOS op het wachtwoord wacht.
+import threading  # noqa: E402
+transcribe._login_cache[:] = [False, None]
+store[key] = json.dumps(fresh)
+reads.clear()
+slow = _kr.get_password
+_kr.get_password = lambda service, user: (time.sleep(0.3), slow(service, user))[1]
+threads = [threading.Thread(target=transcribe.load_login) for _ in range(3)]
+[t.start() for t in threads]; [t.join() for t in threads]
+_kr.get_password = slow
+check("drie draden tegelijk: één keer de sleutelhanger", reads.count(key) == 1, reads)
+
 print("ALLES OK" if not fails else f"{fails} FOUT")
 sys.exit(1 if fails else 0)

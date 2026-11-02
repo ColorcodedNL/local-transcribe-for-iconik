@@ -351,12 +351,20 @@ def api_host():
 # een testbuild die macOS niet herkent scheelt dat een rij wachtwoordvragen. Deze app werkt het geheugen zelf
 # bij als hij ververst (save_login); ververst iets anders het token, dan leest _authorize opnieuw (fresh).
 _login_cache = [False, None]   # [gelezen, inlog]
+# Bij het opstarten vragen het venster en de achtergrondtaak tegelijk om de inlog. Zonder slot lazen ze allebei
+# de sleutelhanger terwijl macOS nog op het wachtwoord wachtte: twee vragen. Nu wacht de tweede op de eerste.
+_login_read = threading.Lock()
 
 
 def load_login(fresh=False):
     """De bewaarde inlog (uit het geheugen, of met `fresh` uit de sleutelhanger van macOS), of None."""
-    if _login_cache[0] and not fresh:
-        return dict(_login_cache[1]) if _login_cache[1] else None
+    with _login_read:
+        if _login_cache[0] and not fresh:
+            return dict(_login_cache[1]) if _login_cache[1] else None
+        return _read_login()
+
+
+def _read_login():
     import keyring
     raw = keyring.get_password(KEYCHAIN_SERVICE, "login")
     if not raw:
