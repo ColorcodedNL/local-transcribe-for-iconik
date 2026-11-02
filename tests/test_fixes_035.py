@@ -193,8 +193,9 @@ def run_push(iconik, still_ours=None, probability=0.99, language="nl", detected=
 
 iconik = FakeIconik()
 deleted, problem = run_push(iconik)
-order = [c for c in iconik.calls if c[0] == "POST"]
+order = [c for c in iconik.calls if c[0] == "POST" and not c[1].endswith("/reindex/")]
 check("push gelukt: oud pas weg na het nieuwe", problem is None and deleted == ["oud"] and len(order) == 2, (deleted, problem))
+check("na vervangen wordt de zoekindex bijgewerkt", iconik.calls[-1][1].endswith("/reindex/"), iconik.calls[-1:])
 check("precies een transcript van de app over", [t["id"] for t in iconik.transcripts] == ["nieuw"], iconik.transcripts)
 import json as _json  # noqa: E402
 _files = sorted(transcribe.TRANSCRIPTS_DIR.glob("*.json"))

@@ -17,6 +17,7 @@ import transcribe as core
 import transcript as tmodel
 
 NAME = "iconik"
+REINDEX_REALMS = ["TRANSCRIPTIONS", "SEGMENTS"]   # de namen die Iconik voor transcripten gebruikt
 
 
 class IconikConnector:
@@ -91,11 +92,29 @@ class IconikConnector:
             existing = self.client.get(transcriptions).get("objects", [])
         except core.Problem:
             existing = info.get("own") or []
+        replaced = False
         for old in existing:
             if (old.get("engine_info") or {}).get("name") == core.ENGINE_NAME and old["id"] != transcription_id:
                 removed = core.delete_transcription(self.client, asset_id, version_id, old["id"])
                 print_(f"Oud transcript {old['id']} verwijderd ({removed} segmenten).")
+                replaced = True
+        if replaced:
+            self.reindex(info)
         return transcription_id, len(segments)
+
+    # --- zoekindex ---
+
+    def reindex(self, info):
+        """Laat Iconik de transcripten van het asset opnieuw indexeren. Nodig na verwijderen: Iconik haalt een
+        verwijderd transcript niet vanzelf uit de zoekindex, en het blijft dan vindbaar (getest 2 november).
+        Lukt het niet (bijvoorbeeld zonder het recht can_reindex_assets), dan alleen een logregel."""
+        try:
+            self.client.post(f"assets/v1/assets/{info['asset_id']}/reindex/", {"realms": REINDEX_REALMS})
+            core.print("Zoekindex van het asset wordt bijgewerkt.")
+            return True
+        except Exception as error:
+            core.print(f"Zoekindex bijwerken lukte niet ({error}); oude woorden kunnen vindbaar blijven tot een herindexering.")
+            return False
 
     # --- lezen ---
 

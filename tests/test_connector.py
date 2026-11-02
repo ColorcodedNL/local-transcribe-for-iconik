@@ -34,10 +34,12 @@ def check(name, cond, detail=""):
 
 class FakeIconik:
     """Genoeg van Iconik voor de connector: transcripten met segmenten, in pagina's."""
-    def __init__(self, transcriptions=(), fail_bulk=False):
+    def __init__(self, transcriptions=(), fail_bulk=False, fail_reindex=False):
         self.transcriptions = [dict(t) for t in transcriptions]
         self.segments = []
         self.fail_bulk = fail_bulk
+        self.fail_reindex = fail_reindex
+        self.reindexed = []
         self.calls = []
         self.next = 1
 
@@ -66,6 +68,11 @@ class FakeIconik:
             if self.fail_bulk:
                 raise transcribe.Problem("netwerk weg")
             self.segments += body["objects"]
+            return {}
+        if path == "assets/v1/assets/A/reindex/":
+            if self.fail_reindex:
+                raise transcribe.Problem("HTTP 403")
+            self.reindexed.append(body["realms"])
             return {}
         raise AssertionError(path)
 
@@ -119,6 +126,18 @@ check("write: oud eigen transcript daarna weg", [t["id"] for t in client.transcr
 first_delete = next(i for i, c in enumerate(client.calls) if c[0] == "DELETE")
 last_bulk = max(i for i, c in enumerate(client.calls) if c[1].endswith("/segments/bulk/"))
 check("write: eerst schrijven, dan weghalen", last_bulk < first_delete)
+check("write: na vervangen wordt de zoekindex bijgewerkt", client.reindexed == [["TRANSCRIPTIONS", "SEGMENTS"]]
+      and [c for c in client.calls if c[1].endswith("/reindex/")] == client.calls[-1:], client.reindexed)
+
+client = FakeIconik(fail_reindex=True)
+connector = iconik.IconikConnector(client)
+info = connector.open("A", push=True)
+tid, _ = connector.write(info, doc_with(1), {"name": transcribe.ENGINE_NAME})
+check("write: zonder iets te vervangen geen herindexering", not any(c[1].endswith("/reindex/") for c in client.calls))
+client.transcriptions.append(dict(OWN, id="NOG-EEN"))
+tid2, _ = connector.write(info, doc_with(1), {"name": transcribe.ENGINE_NAME})
+check("write: mislukte herindexering laat de opdracht niet mislukken",
+      [t["id"] for t in client.transcriptions] == [tid2])
 
 client = FakeIconik([dict(OWN, id="OUD")], fail_bulk=True)
 connector = iconik.IconikConnector(client)
