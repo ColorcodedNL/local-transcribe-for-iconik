@@ -28,30 +28,38 @@ class IconikConnector:
 
     # --- open ---
 
-    def open(self, asset_id, push=True, replace=True):
+    def open(self, asset_id, push=True, replace=True, allow_refined=False):
         """Het asset en zijn transcripten. Weigert (fail) wat de app niet mag doen: nooit een transcript uit
-        een andere bron overschrijven, en zonder `replace` ook het eigen eerdere transcript niet."""
+        een andere bron overschrijven, zonder `replace` ook het eigen eerdere transcript niet, en een correctie
+        uit Refine alleen als dat de bedoeling is (`allow_refined`: Refine zelf)."""
         L, fail, print_ = core.L, core.fail, core.print
         asset = self.client.get(f"assets/v1/assets/{asset_id}/")
         version_id = core.find_version(asset)
         print_(f"Asset:   {asset.get('title')}")
         existing = self.client.get(
             f"assets/v1/assets/{asset_id}/versions/{version_id}/transcriptions/properties/").get("objects", [])
-        own = [t for t in existing if (t.get("engine_info") or {}).get("name") == core.ENGINE_NAME]
-        foreign = [t for t in existing if t not in own]
+        name = lambda t: (t.get("engine_info") or {}).get("name")
+        own = [t for t in existing if name(t) == core.ENGINE_NAME]
+        refined = [t for t in existing if name(t) == core.REFINED_ENGINE]
+        foreign = [t for t in existing if t not in own and t not in refined]
         if foreign:
             message = f"Dit asset heeft {len(foreign)} transcript(en) uit een andere bron."
             if push:
                 fail(L(message + " Die worden nooit overschreven.",
                        f"This asset has {len(foreign)} transcript(s) from another source. Those are never overwritten."), skip=True)
             print_(f"Let op: {message} Een proefrun kan, pushen niet.")
+        if refined and push and not allow_refined:
+            fail(L("Dit asset heeft een in Refine gecorrigeerd transcript. Dat wordt niet overschreven; "
+                   "zet in Refine eerst het origineel terug als je opnieuw wilt transcriberen.",
+                   "This asset has a transcript corrected in Refine. It is never overwritten; "
+                   "put the original back in Refine first if you want to transcribe again."), skip=True)
         if own:
             message = f"Dit asset heeft al {len(own)} transcript(en) van dit script."
             if push and not replace:
                 fail(message + " Gebruik --push --replace om te vervangen.")
             print_(f"Let op: {message}" + (" Wordt vervangen." if push else ""))
         return {"connector": NAME, "asset_id": asset_id, "version_id": version_id,
-                "title": asset.get("title") or "", "asset": asset, "own": own, "foreign": foreign}
+                "title": asset.get("title") or "", "asset": asset, "own": own, "refined": refined, "foreign": foreign}
 
     # --- media ---
 
@@ -61,12 +69,13 @@ class IconikConnector:
 
     # --- schrijven ---
 
-    def write(self, info, doc, engine_info, still_ours=None):
+    def write(self, info, doc, engine_info, still_ours=None, replaces=(core.ENGINE_NAME,)):
         """Schrijft het transcript naar Iconik en geeft het id van het nieuwe transcript.
 
         Eerst het nieuwe helemaal neerzetten, pas daarna het oude weghalen. Mislukt het schrijven halverwege,
         dan blijft het oude staan en gaat het halve nieuwe weer weg. Daarna gaan ook eigen transcripten weg
-        die een andere Mac intussen op dit asset zette, zodat er precies één van deze app overblijft."""
+        die een andere Mac intussen op dit asset zette, zodat er precies één van deze app overblijft.
+        `replaces`: welke eigen transcripten (engine-namen) wijken; Refine vervangt ook een eerdere correctie."""
         L, fail, print_ = core.L, core.fail, core.print
         asset_id, version_id = info["asset_id"], info["version_id"]
         if still_ours is not None and not still_ours():
@@ -91,10 +100,10 @@ class IconikConnector:
         try:
             existing = self.client.get(transcriptions).get("objects", [])
         except core.Problem:
-            existing = info.get("own") or []
+            existing = (info.get("own") or []) + (info.get("refined") or [])
         replaced = False
         for old in existing:
-            if (old.get("engine_info") or {}).get("name") == core.ENGINE_NAME and old["id"] != transcription_id:
+            if (old.get("engine_info") or {}).get("name") in replaces and old["id"] != transcription_id:
                 removed = core.delete_transcription(self.client, asset_id, version_id, old["id"])
                 print_(f"Oud transcript {old['id']} verwijderd ({removed} segmenten).")
                 replaced = True

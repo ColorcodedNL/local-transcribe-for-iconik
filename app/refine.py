@@ -81,7 +81,11 @@ def open_session(asset_id, reload=False):
         import iconik
         connector = iconik.IconikConnector(client)
         info = connector.open(asset_id, push=False)
-        doc = connector.read(info)
+        doc = connector.read(info, core.REFINED_ENGINE)
+        if doc is not None:
+            doc.source["refined"] = True
+        else:
+            doc = connector.read(info)
         if doc is None:
             raise RefineError(core.L("Dit asset heeft geen transcript van Local Transcribe.",
                                      "This asset has no transcript from Local Transcribe."))
@@ -119,6 +123,7 @@ def view(asset_id):
         "transcript": tmodel.to_dict(doc),
         "tracks": [{"n": n, "label": s["labels"][n], "used": n in s["used"]} for n in range(1, len(s["tracks"]) + 1)],
         "chunk": CHUNK_SECONDS, "lang": core.app_language(), "draft": load_draft(asset_id),
+        "refined": bool(doc.source.get("refined")), "original_kept": _original_path(asset_id).is_file(),
     }
 
 
@@ -272,3 +277,109 @@ def discard_draft(asset_id):
         _draft_path(asset_id).unlink()
     except FileNotFoundError:
         pass
+
+
+
+# --- opslaan in Iconik (deel 3) ---
+# In Iconik blijft alleen de correctie staan: Iconik toont alleen het nieuwste transcript maar doorzoekt ze
+# allemaal, dus een origineel ernaast zou weggecorrigeerde woorden vindbaar houden (getest 2 november).
+# Het origineel blijft op deze Mac (refine/<asset>.original.json) en kan terug, tot iemand die opslag leegt.
+
+def _original_path(asset_id):
+    return DRAFTS_DIR / core.safe_name(asset_id, ".original.json")
+
+
+def _complete(doc, other):
+    """Vult aan wat Iconik niet bewaart (het bestand op deze Mac, de sporenanalyse) uit een ander transcript
+    van hetzelfde asset."""
+    for key in ("connector", "asset_id", "version_id", "title", "media"):
+        if not doc.source.get(key) and other.source.get(key):
+            doc.source[key] = other.source[key]
+    if not doc.tracks:
+        doc.tracks = list(other.tracks)
+
+
+def _connector():
+    client = core.make_client()
+    if client is None:
+        raise RefineError(core.L("Niet verbonden met Iconik.", "Not connected to Iconik."))
+    import iconik
+    return iconik.IconikConnector(client)
+
+
+def _write_json(path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_name(path.name + ".tmp")
+    temp.write_text(json.dumps(data, ensure_ascii=False))
+    temp.replace(path)
+
+
+def save_to_iconik(asset_id):
+    """Zet het concept als correctie in Iconik. Het Whisper-transcript gaat daar weg en blijft op deze Mac."""
+    draft = load_draft(asset_id)
+    if draft is None:
+        raise RefineError(core.L("Er is geen concept om op te slaan.", "There is no draft to save."))
+    doc = tmodel.from_dict(draft["transcript"])
+    if not any(seg.words or seg.text.strip() for seg in doc.segments):
+        raise RefineError(core.L("Het transcript is leeg.", "The transcript is empty."))
+    connector = _connector()
+    info = connector.open(asset_id, push=True, replace=True, allow_refined=True)   # weigert een andere bron
+    original = _original_path(asset_id)
+    if not original.is_file():
+        # Het origineel één keer bewaren: bij een tweede correctie staat het Whisper-transcript er niet meer.
+        # Liefst de kopie van deze Mac (met sporen, modelrevisie en bestand); anders uit Iconik, aangevuld.
+        whisper = _local_copy(asset_id)
+        if whisper is None or whisper.source.get("refined"):
+            whisper = connector.read(info)
+            if whisper is not None:
+                _complete(whisper, doc)
+        if whisper is not None:
+            _write_json(original, {"saved_at": time.strftime("%Y-%m-%dT%H:%M:%S"), "transcript": tmodel.to_dict(whisper)})
+    engine_info = {"type": "EXTERNAL", "name": core.REFINED_ENGINE, "model": doc.engine.get("model") or "",
+                   "version": core.APP_VERSION}
+    transcription_id, written = connector.write(info, doc, engine_info,
+                                                replaces=(core.ENGINE_NAME, core.REFINED_ENGINE))
+    doc.source.update(transcription_id=transcription_id, refined=True)
+    core.save_transcript(doc)          # de kopie op deze Mac is nu de correctie
+    discard_draft(asset_id)
+    with _lock:
+        _sessions.pop(asset_id, None)
+    print(f"Refine: correctie {transcription_id} staat op het asset ({written} regels).")
+    return {"transcription_id": transcription_id, "segments": written}
+
+
+def restore_original(asset_id):
+    """Zet het bewaarde Whisper-transcript terug in Iconik in plaats van de correctie."""
+    try:
+        data = json.loads(_original_path(asset_id).read_text())
+        doc = tmodel.from_dict(data["transcript"])
+    except (OSError, ValueError, KeyError, TypeError):
+        raise RefineError(core.L("Het origineel is niet meer op deze Mac.", "The original is no longer on this Mac."))
+    connector = _connector()
+    info = connector.open(asset_id, push=True, replace=True, allow_refined=True)
+    engine_info = {"type": "EXTERNAL", "name": core.ENGINE_NAME, "model": doc.engine.get("model") or "",
+                   "version": doc.engine.get("version") or ""}
+    transcription_id, written = connector.write(info, doc, engine_info,
+                                                replaces=(core.ENGINE_NAME, core.REFINED_ENGINE))
+    _complete(doc, open_session(asset_id)["doc"])
+    doc.source.update(transcription_id=transcription_id)
+    doc.source.pop("refined", None)
+    core.save_transcript(doc)
+    _original_path(asset_id).unlink()
+    discard_draft(asset_id)
+    with _lock:
+        _sessions.pop(asset_id, None)
+    print(f"Refine: origineel teruggezet als {transcription_id} ({written} regels).")
+    return {"transcription_id": transcription_id, "segments": written}
+
+
+def originals_info():
+    """Hoeveel originelen van correcties er op deze Mac staan, voor de voorkeuren."""
+    files = list(DRAFTS_DIR.glob("*.original.json")) if DRAFTS_DIR.is_dir() else []
+    return {"count": len(files), "bytes": sum(f.stat().st_size for f in files)}
+
+
+def clear_originals():
+    """Gooit de bewaarde originelen weg; daarna kan een correctie niet meer terug naar het origineel."""
+    for f in (DRAFTS_DIR.glob("*.original.json") if DRAFTS_DIR.is_dir() else []):
+        f.unlink(missing_ok=True)

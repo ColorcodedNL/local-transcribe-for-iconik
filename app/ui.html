@@ -114,6 +114,7 @@ button.go { font: inherit; padding: 4px 10px; border-radius: 5px; border: 0; bac
     <section class="set"><h3 data-t="mountsTitle"></h3><div id="mounts"></div></section>
     <section class="set"><h3 data-t="modelsTitle"></h3><div id="models"></div></section>
     <section class="set"><h3 data-t="workerTitle"></h3><div id="worker"></div></section>
+    <section class="set"><h3>Refine</h3><div id="refineSet"></div></section>
     <section class="set"><h3 data-t="spoken"></h3><p>
       <select id="spoken"><option value="auto" data-t="spokenAuto"></option><option value="nl">Nederlands</option><option value="en">English</option><option value="de" data-name="Deutsch" data-untested>Deutsch</option><option value="fr" data-name="Français" data-untested>Français</option><option value="es" data-name="Español" data-untested>Español</option><option value="it" data-name="Italiano" data-untested>Italiano</option><option value="sv" data-name="Svenska" data-untested>Svenska</option></select></p>
       <p class="dim" data-t="spokenHelp"></p></section>
@@ -162,6 +163,8 @@ const TEXT = {
     credit: "Sprekerherkenning gebruikt pyannote speaker-diarization-community-1 van pyannoteAI, licentie CC-BY-4.0. Spraakherkenning gebruikt Whisper large-v3 van OpenAI via MLX.",
     who: {geen: "Niet verbonden", uitgelogd: "Niet ingelogd", gebruiker: "Ingelogd bij Iconik", token: "Persoonlijk token"}, down: "Ontvanger reageert niet",
     notes: {},
+    originals: (n, mb) => n ? `Originelen van ${n} ${n === 1 ? "gecorrigeerd transcript" : "gecorrigeerde transcripten"} staan op deze Mac (${mb} MB). Daarmee zet je in Refine een origineel terug in Iconik.` : "Geen originelen van gecorrigeerde transcripten op deze Mac.",
+    clearOriginals: "Leegmaken", clearSure: "Zeker? Daarna kan geen origineel meer terug. Klik nogmaals",
   },
   en: {
     jobs: "Jobs", settings: "Preferences", clear: "Clear finished", mountsTitle: "ISG Mount Points",
@@ -200,6 +203,8 @@ const TEXT = {
     spOff: "no model found, speaker detection is off",
     credit: "Speaker detection uses pyannote speaker-diarization-community-1 by pyannoteAI, licensed CC-BY-4.0. Speech recognition uses Whisper large-v3 by OpenAI via MLX.",
     who: {geen: "Not connected", uitgelogd: "Not logged in", gebruiker: "Logged in to Iconik", token: "Personal token"}, down: "Receiver is not responding",
+    originals: (n, mb) => n ? `Originals of ${n} corrected ${n === 1 ? "transcript are" : "transcripts are"} kept on this Mac (${mb} MB). With them you can put an original back in Iconik from Refine.` : "No originals of corrected transcripts on this Mac.",
+    clearOriginals: "Clear", clearSure: "Sure? No original can be put back afterwards. Click again",
     notes: {"geluid": "audio", "stil": "silent", "tijdcode of toon": "timecode or tone", "eigen microfoon": "dedicated microphone", "gekozen spoor": "chosen track"},
   },
 };
@@ -352,7 +357,20 @@ function summary(all) {
   $("clear").disabled = !all.some(j => !["wachtend", "bezig"].includes(j.status));
 }
 
+let clearArmed = 0;
+function refineSet(s) {
+  const o = s.originals || {count: 0, bytes: 0}, mb = num(o.bytes / 1e6, 1);
+  const html = `<p>${T.originals(o.count, mb)}</p>` + (o.count ? `<p><button class="plain" id="clearOriginals">${clearArmed ? T.clearSure : T.clearOriginals}</button></p>` : "");
+  if (drawn.refineSet !== html) { $("refineSet").innerHTML = html; drawn.refineSet = html; }
+}
+$("refineSet").onclick = e => {
+  if (e.target.id !== "clearOriginals") return;
+  if (!clearArmed) { clearArmed = setTimeout(() => { clearArmed = 0; tick(); }, 4000); tick(); return; }
+  clearTimeout(clearArmed); clearArmed = 0;
+  fetch("/refine/originals/clear", {method: "POST", headers: {"X-Local-Transcribe": "1"}, body: "{}"}).then(tick);
+};
 function settings(s) {
+  refineSet(s);
   const form = `<form id="clientForm"><p>${T.clientId}</p><p><input name="client_id" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"><button class="go">${T.save}</button></p></form>`;
   const account = {
     geen: `<p>${T.accNone}</p>` + form,

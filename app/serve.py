@@ -463,6 +463,7 @@ def app_state():
     return {
         "jobs": out, "account": account, "user": who.get("name", ""), "actions": actions.get("state", "onbekend"),
         "lang": transcribe.app_language(), "app_language": config.get("app_language", "auto"),
+        "originals": refine.originals_info(),
         "version": transcribe.APP_VERSION, "update": update_view(),
         "spoken": settings.get("language") or config.get("language", "auto"),
         "spoken_fixed": bool(settings.get("language")), "has_client_id": bool(config.get("client_id")),
@@ -692,6 +693,13 @@ class Handler(BaseHTTPRequestHandler):
             if url.path == "/refine/discard":
                 refine.discard_draft(asset_id)
                 return self.reply_json({"ok": True})
+            if url.path == "/refine/save":
+                return self.reply_json(refine.save_to_iconik(asset_id))
+            if url.path == "/refine/restore":
+                return self.reply_json(refine.restore_original(asset_id))
+            if url.path == "/refine/originals/clear":
+                refine.clear_originals()
+                return self.reply_json(refine.originals_info())
         except (refine.RefineError, Problem, ValueError, KeyError, TypeError) as error:
             return self.reply_json({"error": str(error) or type(error).__name__})
         return self.send_error(404)

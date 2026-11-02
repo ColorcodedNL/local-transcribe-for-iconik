@@ -60,6 +60,7 @@ BULK_LIMIT = 500
 CONFIG_PATH = SUPPORT_DIR / "config.json"
 PAGE_SIZE = 100
 ENGINE_NAME = "mlx-whisper"  # hieraan herkent --replace de transcripten van dit script
+REFINED_ENGINE = "local-transcribe-refined"   # een transcript dat iemand in Refine heeft gecorrigeerd
 SAMPLE_RATE = 16000
 
 # Spoorkeuze bij bestanden met losse audiosporen (zie analyse_tracks).

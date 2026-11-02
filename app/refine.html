@@ -78,6 +78,8 @@ footer { display: flex; gap: 18px; align-items: center; padding: 6px 10px; borde
 .btn { padding: 4px 11px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); white-space: nowrap; }
 .btn:disabled { opacity: .45; }
 .btn.danger { color: var(--bad); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 550; }
+.ok { color: var(--good, #2e9a48); }
 .chip { cursor: text; }
 .chip input { all: unset; width: 120px; }
 .addsp { border: 1px dashed var(--line); background: none; color: var(--accent); border-radius: 6px; padding: 2px 9px; }
@@ -102,6 +104,8 @@ footer { display: flex; gap: 18px; align-items: center; padding: 6px 10px; borde
   <button class="icon" id="undo" disabled><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6 4 2.5 7.5 6 11M3 7.5h6.5a4 4 0 0 1 0 8H8"/></svg></button>
   <button class="icon" id="redo" disabled><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M10 4l3.5 3.5L10 11M13 7.5H6.5a4 4 0 0 0 0 8H8"/></svg></button>
   <button class="btn danger" id="discard" hidden></button>
+  <button class="btn" id="restore" hidden></button>
+  <button class="btn primary" id="save" disabled></button>
 </header>
 <div id="error" hidden></div>
 <div id="upper">
@@ -154,13 +158,16 @@ const TEXT = {
     selected: (n, who) => `${n} ${n === 1 ? "woord" : "woorden"} geselecteerd · nu bij ${who}`, wholeBlock: who => `Hele blok · nu bij ${who}`,
     assignTo: "Toewijzen aan", current: "huidig", newSpeaker: "Nieuwe spreker", editText: "Tekst bewerken", editHint: "Enter bewaart, Esc annuleert",
     deleteBlock: "Blok verwijderen",
+    save: "Opslaan in Iconik", saving2: "Opslaan in Iconik...", saved: t => `Opgeslagen in Iconik om ${t}. Het origineel staat op deze Mac.`,
+    restore: "Origineel terugzetten", restoreSure: "Zeker weten? Klik nogmaals", restoring: "Origineel terugzetten...",
+    refinedState: "Gecorrigeerd transcript in Iconik", failed: e => `Niet gelukt: ${e}`,
     play: "Afspelen", pause: "Pauze", keys: "spatie · ← → · ⌥ ← →", blocks: n => `${n} blokken`, words: n => `${n} woorden`,
     hear: "Je hoort:", mix: list => `mix van de gebruikte sporen (${list})`, solo: n => `alleen spoor ${n}`, zoom: "Zoom",
     text: "Tekst", speakerLane: "Sprekers", track: n => `Spoor ${n}`, used: "gebruikt", skipped: "overgeslagen",
     listen: "Luister alleen naar dit spoor", loading: "Laden...", video: "Beeld laden...", noVideo: "Geen beeld: alleen geluid",
     waves: f => `Golfvormen uitrekenen ${Math.round(f * 100)}%`, wavesFail: "Golfvormen niet beschikbaar",
     from: { mac: "kopie op deze Mac", iconik: "uit Iconik" }, source: (e, o) => `Bron: ${e}, ${o}`,
-    note: "Dubbelklik op tekst om te bewerken · rechtsklik voor sprekers · Naar Iconik schrijven komt in de volgende stap",
+    note: "Dubbelklik op tekst om te bewerken · rechtsklik voor sprekers · Opslaan vervangt het transcript in Iconik, het origineel blijft op deze Mac",
     origin: name => `Origineel via opslag (ISG) · ${name}`,
     notes: {},
   },
@@ -173,13 +180,16 @@ const TEXT = {
     selected: (n, who) => `${n} ${n === 1 ? "word" : "words"} selected · now with ${who}`, wholeBlock: who => `Whole block · now with ${who}`,
     assignTo: "Assign to", current: "current", newSpeaker: "New speaker", editText: "Edit text", editHint: "Enter keeps, Esc cancels",
     deleteBlock: "Delete block",
+    save: "Save to Iconik", saving2: "Saving to Iconik...", saved: t => `Saved to Iconik at ${t}. The original is kept on this Mac.`,
+    restore: "Put original back", restoreSure: "Are you sure? Click again", restoring: "Putting the original back...",
+    refinedState: "Corrected transcript in Iconik", failed: e => `Did not work: ${e}`,
     play: "Play", pause: "Pause", keys: "space · ← → · ⌥ ← →", blocks: n => `${n} blocks`, words: n => `${n} words`,
     hear: "You hear:", mix: list => `mix of the used tracks (${list})`, solo: n => `track ${n} only`, zoom: "Zoom",
     text: "Text", speakerLane: "Speakers", track: n => `Track ${n}`, used: "used", skipped: "skipped",
     listen: "Listen to this track only", loading: "Loading...", video: "Loading picture...", noVideo: "No picture: audio only",
     waves: f => `Calculating waveforms ${Math.round(f * 100)}%`, wavesFail: "Waveforms not available",
     from: { mac: "copy on this Mac", iconik: "from Iconik" }, source: (e, o) => `Source: ${e}, ${o}`,
-    note: "Double-click text to edit · right-click for speakers · Writing to Iconik comes in the next step",
+    note: "Double-click text to edit · right-click for speakers · Saving replaces the transcript in Iconik, the original stays on this Mac",
     origin: name => `Original via storage (ISG) · ${name}`,
     notes: {"geluid": "audio", "stil": "silent", "tijdcode of toon": "timecode or tone", "eigen microfoon": "dedicated microphone", "gekozen spoor": "chosen track"},
   },
@@ -520,7 +530,7 @@ $("play").onclick = toggle;
 function showError(text) { $("error").textContent = text; $("error").hidden = false; $("busy").textContent = ""; }
 
 // --- bewerken: alles in het geheugen, als concept bewaard op deze Mac (refine.save_draft) ---
-let speakers = [], history = [], future = [], edits = 0, saveTimer = null, savedAt = "", discardArmed = 0;
+let speakers = [], history = [], future = [], edits = 0, saveTimer = null, savedAt = "", discardArmed = 0, restoreArmed = 0, busy = false;
 const HEADERS = {"X-Local-Transcribe": "1", "Content-Type": "application/json"};
 function fromDict(tr) {
   speakers = tr.speakers.map(s => ({id: String(s.id), name: s.name}));
@@ -560,7 +570,9 @@ function updated(save, keep) {
   $("count").innerHTML = `<span>${T.blocks(blocks.length)}</span><span>${T.words(wordCount)}</span>`;
   $("undo").disabled = !history.length; $("redo").disabled = !future.length;
   $("discard").hidden = !edits; $("discard").textContent = T.discard; discardArmed = 0;
-  $("status").textContent = edits ? T.changes(edits) : T.clean;
+  $("status").textContent = edits ? T.changes(edits) : (D.refined ? T.refinedState : T.clean);
+  $("save").disabled = !edits || busy; $("save").textContent = T.save;
+  $("restore").hidden = !(D.refined && D.original_kept) || edits > 0; $("restore").textContent = T.restore; restoreArmed = 0;
   draw();
   if (save) scheduleSave();
 }
@@ -585,6 +597,28 @@ $("discard").onclick = async () => {
   clearTimeout(saveTimer); saveTimer = null;
   await fetch(`/refine/discard?asset=${encodeURIComponent(ASSET)}`, {method: "POST", headers: HEADERS, body: "{}"});
   location.reload();
+};
+async function post(path) {
+  const r = await fetch(`${path}?asset=${encodeURIComponent(ASSET)}`, {method: "POST", headers: HEADERS, body: "{}"});
+  if (!(r.headers.get("Content-Type") || "").startsWith("application/json")) throw new Error(`HTTP ${r.status}. ${T.restart}`);
+  const j = await r.json(); if (j.error) throw new Error(j.error); return j;
+}
+$("save").onclick = async () => {
+  if (busy) return;
+  busy = true; $("save").disabled = true; $("save").textContent = T.saving2; $("discard").hidden = true;
+  try {
+    if (saveTimer) await saveDraft();
+    await post("/refine/save");
+    history = []; future = []; edits = 0; D.refined = true; D.original_kept = true; D.draft = null;
+    busy = false; updated(false);
+    $("status").innerHTML = `<span class="ok">${esc(T.saved(new Date().toTimeString().slice(0, 5)))}</span>`;
+  } catch (e) { busy = false; updated(false); $("status").textContent = T.failed(e.message || e); }
+};
+$("restore").onclick = async () => {
+  if (!restoreArmed) { restoreArmed = setTimeout(() => { restoreArmed = 0; $("restore").textContent = T.restore; }, 3000); $("restore").textContent = T.restoreSure; return; }
+  busy = true; $("restore").disabled = true; $("restore").textContent = T.restoring;
+  try { await post("/refine/restore"); location.reload(); }
+  catch (e) { busy = false; $("restore").disabled = false; updated(false); $("status").textContent = T.failed(e.message || e); }
 };
 $("back").onclick = async e => { if (saveTimer) { e.preventDefault(); await saveDraft(); location.href = "/"; } };
 

@@ -158,5 +158,119 @@ refine.discard_draft("A1")
 refine.discard_draft("A1")
 check("concept: weggooien (ook twee keer)", refine.view("A1")["draft"] is None)
 
+# --- opslaan in Iconik en origineel terugzetten (nagebootste Iconik) ---
+class FakeIconik:
+    def __init__(self):
+        self.transcriptions, self.segments, self.calls, self.next = [], [], [], 1
+
+    def get(self, path):
+        self.calls.append(("GET", path))
+        if path == "assets/v1/assets/A1/":
+            return {"id": "A1", "title": "Proef", "versions": [{"id": "V", "status": "ACTIVE"}]}
+        if path.endswith("/transcriptions/properties/"):
+            return {"objects": [dict(t) for t in self.transcriptions]}
+        if "/segments/?" in path:
+            q = dict(x.split("=", 1) for x in path.split("?", 1)[1].split("&"))
+            rows = [x for x in self.segments if x["transcription_id"] == q["transcription_id"]]
+            size, page = int(q["per_page"]), int(q["page"])
+            return {"objects": rows[(page - 1) * size: page * size]}
+        raise AssertionError(path)
+
+    def post(self, path, body):
+        self.calls.append(("POST", path))
+        if path.endswith("/transcriptions/properties/"):
+            tid = f"T{self.next}"; self.next += 1
+            self.transcriptions.append(dict(body, id=tid)); return {"id": tid}
+        if path.endswith("/segments/bulk/"):
+            self.segments += body["objects"]; return {}
+        if path.endswith("/reindex/"):
+            return {}
+        raise AssertionError(path)
+
+
+def fake_delete(client, asset_id, version_id, tid):
+    client.calls.append(("DELETE", tid))
+    client.transcriptions = [t for t in client.transcriptions if t["id"] != tid]
+    before = len(client.segments)
+    client.segments = [x for x in client.segments if x["transcription_id"] != tid]
+    return before - len(client.segments)
+
+
+import iconik  # noqa: E402
+transcribe.delete_transcription = fake_delete
+transcribe.find_version = lambda asset: "V"
+fake = FakeIconik()
+transcribe.make_client = lambda: fake
+# Het Whisper-transcript staat in Iconik, zoals na een opdracht.
+connector = iconik.IconikConnector(fake)
+info = connector.open("A1", push=True)
+whisper_id, _ = connector.write(info, doc, {"type": "EXTERNAL", "name": transcribe.ENGINE_NAME, "model": "m", "version": "1"})
+try:
+    refine.save_to_iconik("A1")
+    check("opslaan: zonder concept geweigerd", False)
+except refine.RefineError:
+    check("opslaan: zonder concept geweigerd", True)
+refine.save_draft("A1", json.dumps({"transcript": edited, "edits": 2}))
+result = refine.save_to_iconik("A1")
+calls_after_save = list(fake.calls)
+names = [(t.get("engine_info") or {}).get("name") for t in fake.transcriptions]
+check("opslaan: alleen de correctie staat in Iconik", names == [transcribe.REFINED_ENGINE], names)
+back = connector.read(connector.open("A1", push=False), transcribe.REFINED_ENGINE)
+check("opslaan: met de wijzigingen", back.speakers[0].name == "Interviewer" and back.segments[0].words[0].text == "Hoi"
+      and back.segments[0].words[0].score == 1.0)
+check("opslaan: zoekindex bijgewerkt", calls_after_save[-1] == ("POST", "assets/v1/assets/A1/reindex/"), calls_after_save[-1])
+check("opslaan: origineel op deze Mac", refine.view("A1")["original_kept"]
+      and json.loads((refine.DRAFTS_DIR / "A1.original.json").read_text())["transcript"]["segments"][0]["words"][0][0] == "Hallo")
+v2 = refine.view("A1")
+check("opslaan: concept weg, kopie is de correctie", v2["draft"] is None and v2["refined"]
+      and v2["transcript"]["speakers"][0]["name"] == "Interviewer")
+check("voorkeuren: één origineel bewaard", refine.originals_info()["count"] == 1)
+
+# Een gewone transcriptie mag de correctie niet overschrijven.
+try:
+    connector.open("A1", push=True, replace=True)
+    check("transcriberen: gecorrigeerd asset geweigerd", False)
+except transcribe.Problem as problem:
+    check("transcriberen: gecorrigeerd asset geweigerd", getattr(problem, "skip", False) and "Refine" in str(problem), problem)
+
+# Tweede correctie: vervangt de eerste, het origineel blijft het Whisper-transcript.
+edited["segments"][0]["words"][0] = ["Hallo!", 1000, 1500, 1.0]
+refine.save_draft("A1", json.dumps({"transcript": edited, "edits": 1}))
+refine.save_to_iconik("A1")
+check("tweede correctie: nog steeds één transcript", len(fake.transcriptions) == 1
+      and fake.transcriptions[0]["engine_info"]["name"] == transcribe.REFINED_ENGINE)
+check("tweede correctie: origineel ongewijzigd",
+      json.loads((refine.DRAFTS_DIR / "A1.original.json").read_text())["transcript"]["segments"][0]["words"][0][0] == "Hallo")
+
+# Origineel terugzetten.
+refine.restore_original("A1")
+check("terugzetten: Whisper-transcript weer in Iconik", [t["engine_info"]["name"] for t in fake.transcriptions] == [transcribe.ENGINE_NAME])
+restored = connector.read(connector.open("A1", push=False))
+check("terugzetten: met de oorspronkelijke tekst", restored.segments[0].words[0].text == "Hallo" and restored.speakers[0].name == "Spreker 1")
+check("terugzetten: origineel van de Mac weg, niet meer gecorrigeerd", not refine.view("A1")["original_kept"] and not refine.view("A1")["refined"])
+check("terugzetten: kopie op de Mac weer met bestand en sporen", refine.view("A1")["media_name"] == "clip.mov"
+      and len(refine.view("A1")["tracks"]) == 2 and refine.view("A1")["tracks"][0]["label"] == "eigen microfoon")
+check("transcriberen: daarna weer toegestaan", connector.open("A1", push=True, replace=True)["refined"] == [])
+
+# Lokale originelen legen.
+refine.save_draft("A1", json.dumps({"transcript": edited, "edits": 1}))
+refine.save_to_iconik("A1")
+refine.clear_originals()
+check("legen: geen originelen meer", refine.originals_info() == {"count": 0, "bytes": 0})
+try:
+    refine.restore_original("A1")
+    check("legen: terugzetten kan dan niet meer", False)
+except refine.RefineError:
+    check("legen: terugzetten kan dan niet meer", True)
+
+# Een transcript uit een andere bron blijft altijd staan.
+fake.transcriptions.append({"id": "X", "engine_info": {"name": "iets-anders"}})
+refine.save_draft("A1", json.dumps({"transcript": edited, "edits": 1}))
+try:
+    refine.save_to_iconik("A1")
+    check("andere bron: opslaan geweigerd", False)
+except transcribe.Problem:
+    check("andere bron: opslaan geweigerd", any(t["id"] == "X" for t in fake.transcriptions) and refine.view("A1")["draft"] is not None)
+
 print("ALLES OK" if not fails else f"{fails} FOUT")
 sys.exit(1 if fails else 0)
