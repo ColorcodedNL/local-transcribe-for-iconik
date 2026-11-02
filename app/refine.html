@@ -149,7 +149,7 @@ const TEXT = {
     back: "‹ Opdrachten", prev: "Vorig blok", next: "Volgend blok",
     undo: "Ongedaan maken (⌘Z)", redo: "Opnieuw (⇧⌘Z)", discard: "Wijzigingen weggooien", discardSure: "Zeker weten? Klik nogmaals",
     clean: "Nog niets gewijzigd", changes: n => `${n} ${n === 1 ? "wijziging" : "wijzigingen"} als concept op deze Mac`,
-    saving: "Bewaren...", saveFail: e => `Concept bewaren lukte niet: ${e}`, draftFrom: t => `Concept van ${t} geopend`,
+    restart: "Herstart de app.", saving: "Bewaren...", saveFail: e => `Concept bewaren lukte niet: ${e}`, draftFrom: t => `Concept van ${t} geopend`,
     speakerWord: "Spreker", addSpeaker: "+ Spreker", rename: "Klik om de naam te wijzigen",
     selected: (n, who) => `${n} ${n === 1 ? "woord" : "woorden"} geselecteerd · nu bij ${who}`, wholeBlock: who => `Hele blok · nu bij ${who}`,
     assignTo: "Toewijzen aan", current: "huidig", newSpeaker: "Nieuwe spreker", editText: "Tekst bewerken", editHint: "Enter bewaart, Esc annuleert",
@@ -168,7 +168,7 @@ const TEXT = {
     back: "‹ Jobs", prev: "Previous block", next: "Next block",
     undo: "Undo (⌘Z)", redo: "Redo (⇧⌘Z)", discard: "Discard changes", discardSure: "Are you sure? Click again",
     clean: "No changes yet", changes: n => `${n} ${n === 1 ? "change" : "changes"} kept as a draft on this Mac`,
-    saving: "Saving...", saveFail: e => `Saving the draft failed: ${e}`, draftFrom: t => `Draft from ${t} opened`,
+    restart: "Restart the app.", saving: "Saving...", saveFail: e => `Saving the draft failed: ${e}`, draftFrom: t => `Draft from ${t} opened`,
     speakerWord: "Speaker", addSpeaker: "+ Speaker", rename: "Click to change the name",
     selected: (n, who) => `${n} ${n === 1 ? "word" : "words"} selected · now with ${who}`, wholeBlock: who => `Whole block · now with ${who}`,
     assignTo: "Assign to", current: "current", newSpeaker: "New speaker", editText: "Edit text", editHint: "Enter keeps, Esc cancels",
@@ -570,6 +570,8 @@ async function saveDraft() {
   try {
     const r = await fetch(`/refine/draft?asset=${encodeURIComponent(ASSET)}`, {method: "POST", headers: HEADERS,
       body: JSON.stringify({transcript: toDict(), edits})});
+    // Geen JSON terug: meestal een app die nog met oudere code draait (opnieuw gebouwd zonder herstart).
+    if (!(r.headers.get("Content-Type") || "").startsWith("application/json")) throw new Error(`HTTP ${r.status}. ${T.restart}`);
     const j = await r.json();
     if (j.error) throw new Error(j.error);
     savedAt = j.saved_at;
