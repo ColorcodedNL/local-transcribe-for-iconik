@@ -272,5 +272,14 @@ try:
 except transcribe.Problem:
     check("andere bron: opslaan geweigerd", any(t["id"] == "X" for t in fake.transcriptions) and refine.view("A1")["draft"] is not None)
 
+# --- labels in de opdrachtenlijst ---
+fake.transcriptions = [t for t in fake.transcriptions if t["id"] != "X"]
+check("labels: correctie in Iconik", refine.marks("A1")["refined"], refine.marks("A1"))
+refine.discard_draft("A1")
+check("labels: gecorrigeerd zonder concept", refine.marks("A1") == {"refined": True, "draft": False}, refine.marks("A1"))
+refine.save_draft("A1", json.dumps({"transcript": edited, "edits": 1}))
+check("labels: gecorrigeerd met concept", refine.marks("A1") == {"refined": True, "draft": True}, refine.marks("A1"))
+check("labels: onbekend asset", refine.marks("NIETS") == {"refined": False, "draft": False})
+
 print("ALLES OK" if not fails else f"{fails} FOUT")
 sys.exit(1 if fails else 0)

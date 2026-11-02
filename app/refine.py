@@ -383,3 +383,28 @@ def clear_originals():
     """Gooit de bewaarde originelen weg; daarna kan een correctie niet meer terug naar het origineel."""
     for f in (DRAFTS_DIR.glob("*.original.json") if DRAFTS_DIR.is_dir() else []):
         f.unlink(missing_ok=True)
+
+
+
+# --- labels in de opdrachtenlijst ---
+_marks_cache = {}   # pad van de kopie -> (mtime, gecorrigeerd)
+
+
+def marks(asset_id):
+    """Wat de opdrachtenlijst bij een asset toont: {"refined": correctie staat in Iconik, "draft": concept op
+    deze Mac}. Het venster vraagt dit elke seconde, dus de kopie alleen opnieuw lezen als die veranderde."""
+    if not asset_id:
+        return {"refined": False, "draft": False}
+    copy = core.TRANSCRIPTS_DIR / core.safe_name(asset_id, ".json")
+    refined = False
+    try:
+        mtime = copy.stat().st_mtime
+        cached = _marks_cache.get(copy)
+        if cached and cached[0] == mtime:
+            refined = cached[1]
+        else:
+            refined = bool(json.loads(copy.read_text()).get("source", {}).get("refined"))
+            _marks_cache[copy] = (mtime, refined)
+    except (OSError, ValueError, AttributeError):
+        pass
+    return {"refined": refined, "draft": _draft_path(asset_id).is_file()}

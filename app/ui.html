@@ -61,6 +61,7 @@ button.plain:disabled { color: var(--idle); cursor: default; }
          -webkit-user-select: text; user-select: text; }
 .state { color: var(--muted); white-space: nowrap; }
 section.set p.autostate { margin-bottom: 1.4em; }   /* zo specifiek als section.set p, anders wint die */
+.tag.draft { color: var(--accent); border-color: var(--accent); }
 .tag { font-size: 11px; font-weight: 600; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; white-space: nowrap; }
 .state.bezig { color: var(--accent); } .state.klaar { color: var(--good); } .state.fout { color: var(--bad); } .state.afgebroken { color: var(--muted); } .state.teruggezet { color: var(--warn); }
 .msg { color: var(--muted); margin-top: 2px; -webkit-user-select: text; user-select: text; }
@@ -163,7 +164,7 @@ const TEXT = {
     spOff: "geen model gevonden, sprekerherkenning staat uit",
     credit: "Sprekerherkenning gebruikt pyannote speaker-diarization-community-1 van pyannoteAI, licentie CC-BY-4.0. Spraakherkenning gebruikt Whisper large-v3 van OpenAI via MLX.",
     who: {geen: "Niet verbonden", uitgelogd: "Niet ingelogd", gebruiker: "Ingelogd bij Iconik", token: "Persoonlijk token"}, down: "Ontvanger reageert niet",
-    notes: {}, openIconik: "Openen in Iconik",
+    notes: {}, openIconik: "Openen in Iconik", refinedTag: "Gecorrigeerd", draftTag: "Concept",
     originals: (n, mb) => n ? `Originelen van ${n} ${n === 1 ? "gecorrigeerd transcript" : "gecorrigeerde transcripten"} staan op deze Mac (${mb} MB). Daarmee zet je in Refine een origineel terug in Iconik.` : "Geen originelen van gecorrigeerde transcripten op deze Mac.",
     clearOriginals: "Leegmaken", clearSure: "Zeker? Daarna kan geen origineel meer terug. Klik nogmaals",
   },
@@ -204,7 +205,7 @@ const TEXT = {
     spOff: "no model found, speaker detection is off",
     credit: "Speaker detection uses pyannote speaker-diarization-community-1 by pyannoteAI, licensed CC-BY-4.0. Speech recognition uses Whisper large-v3 by OpenAI via MLX.",
     who: {geen: "Not connected", uitgelogd: "Not logged in", gebruiker: "Logged in to Iconik", token: "Personal token"}, down: "Receiver is not responding",
-    openIconik: "Open in Iconik",
+    openIconik: "Open in Iconik", refinedTag: "Refined", draftTag: "Draft",
     originals: (n, mb) => n ? `Originals of ${n} corrected ${n === 1 ? "transcript are" : "transcripts are"} kept on this Mac (${mb} MB). With them you can put an original back in Iconik from Refine.` : "No originals of corrected transcripts on this Mac.",
     clearOriginals: "Clear", clearSure: "Sure? No original can be put back afterwards. Click again",
     notes: {"geluid": "audio", "stil": "silent", "tijdcode of toon": "timecode or tone", "eigen microfoon": "dedicated microphone", "gekozen spoor": "chosen track"},
@@ -335,7 +336,9 @@ function row(job, isOpen) {
   const tracks = job.tracks || [];
   const toggle = tracks.length ? `<button class="plain more" data-toggle="${job.n}" data-open="${isOpen ? 1 : 0}">${isOpen ? T.hide : T.tracks(tracks.length)}</button>` : "";
   const refine = job.status === "klaar" ? `<button class="plain more" data-refine="${esc(job.asset_id)}">Refine</button>` : "";
-  let html = `<div class="top"><div class="title"${job.asset_id ? ` data-asset="${esc(job.asset_id)}" title="${T.openIconik}"` : ""}>${esc(job.title || job.asset_id)}</div>${job.auto ? `<span class="tag">${T.autoTag}</span>` : ""}${refine}${toggle}<div class="state ${job.status}">${esc(state)}<span class="el"></span></div></div>`;
+  const rf = job.refine || {};
+  const marks = (rf.refined ? `<span class="tag">${T.refinedTag}</span>` : "") + (rf.draft ? `<span class="tag draft">${T.draftTag}</span>` : "");
+  let html = `<div class="top"><div class="title"${job.asset_id ? ` data-asset="${esc(job.asset_id)}" title="${T.openIconik}"` : ""}>${esc(job.title || job.asset_id)}</div>${job.auto ? `<span class="tag">${T.autoTag}</span>` : ""}${marks}${refine}${toggle}<div class="state ${job.status}">${esc(state)}<span class="el"></span></div></div>`;
   if (msg) html += `<div class="msg ${job.status === "fout" ? "fout" : ""}">${esc(msg)}</div>`;
   if (job.status === "bezig") html += stages(job);
   if (isOpen && tracks.length) html += '<div class="tracks">' + tracks.map(t =>

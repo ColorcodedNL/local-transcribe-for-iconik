@@ -442,6 +442,7 @@ def app_state():
             "fraction": job["fraction"], "tracks": job["tracks"],
             "duration": job.get("duration"),
             "result": job.get("result"), "language": job.get("language"),
+            "refine": refine.marks(job["asset_id"]) if job["status"] == "klaar" else None,
             "elapsed": (end - job["started"]).total_seconds() if job["started"] else None,
             "auto": bool(job.get("auto")),
         })
