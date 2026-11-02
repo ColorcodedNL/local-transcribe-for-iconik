@@ -616,7 +616,7 @@ def status_page(note=""):
 # Routes die iets veranderen: alleen met de header X-Local-Transcribe, die alleen het venster meestuurt.
 PROTECTED = {"/clear", "/mount/change", "/mount/remove", "/language", "/applang", "/actions/install",
              "/update/open", "/update/install", "/worker", "/iconik-language", "/login-item", "/settings",
-             "/logout", "/window/show", "/auto"}
+             "/logout", "/window/show", "/auto", "/asset/open"}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -774,6 +774,12 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/login-item":   # opstarten bij inloggen op de Mac; /login is inloggen bij Iconik
             if first("value") in ("on", "off"):
                 set_login_item(first("value") == "on")
+            return self.reply_json({"ok": True})
+        if url.path == "/asset/open":
+            # Het asset in Iconik, in de gewone browser. Alleen een asset-ID: geen willekeurige adressen openen.
+            asset_id = first("id")
+            if re.fullmatch(r"[0-9a-fA-F-]{8,64}", asset_id or ""):
+                subprocess.Popen(["open", f"{transcribe.api_host()}/asset/{asset_id}"])
             return self.reply_json({"ok": True})
         if url.path == "/update/open":
             if update.get("url"):

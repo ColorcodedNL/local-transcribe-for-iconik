@@ -156,7 +156,7 @@ const TEXT = {
     restart: "Herstart de app.", saving: "Bewaren...", saveFail: e => `Concept bewaren lukte niet: ${e}`, draftFrom: t => `Concept van ${t} geopend`,
     speakerWord: "Spreker", addSpeaker: "+ Spreker", rename: "Klik om de naam te wijzigen",
     selected: (n, who) => `${n} ${n === 1 ? "woord" : "woorden"} geselecteerd · nu bij ${who}`, wholeBlock: who => `Hele blok · nu bij ${who}`,
-    assignTo: "Toewijzen aan", current: "huidig", newSpeaker: "Nieuwe spreker", editText: "Tekst bewerken", editHint: "Enter bewaart, Esc annuleert",
+    assignTo: "Toewijzen aan", current: "huidig", newSpeaker: "Nieuwe spreker", editText: "Tekst bewerken", editHint: "Enter splitst · Backspace aan het begin voegt samen · ⌘Enter bewaart · Esc annuleert",
     deleteBlock: "Blok verwijderen",
     save: "Opslaan in Iconik", saving2: "Opslaan in Iconik...", saved: t => `Opgeslagen in Iconik om ${t}. Het origineel staat op deze Mac.`,
     restore: "Origineel terugzetten", restoreSure: "Zeker weten? Klik nogmaals", restoring: "Origineel terugzetten...",
@@ -167,7 +167,7 @@ const TEXT = {
     listen: "Luister alleen naar dit spoor", loading: "Laden...", video: "Beeld laden...", noVideo: "Geen beeld: alleen geluid",
     waves: f => `Golfvormen uitrekenen ${Math.round(f * 100)}%`, wavesFail: "Golfvormen niet beschikbaar",
     from: { mac: "kopie op deze Mac", iconik: "uit Iconik" }, source: (e, o) => `Bron: ${e}, ${o}`,
-    note: "Dubbelklik op tekst om te bewerken · rechtsklik voor sprekers · Opslaan vervangt het transcript in Iconik, het origineel blijft op deze Mac",
+    note: "Dubbelklik op tekst om te bewerken, Enter splitst · rechtsklik voor sprekers · Opslaan vervangt het transcript in Iconik, het origineel blijft op deze Mac",
     origin: name => `Origineel via opslag (ISG) · ${name}`,
     notes: {},
   },
@@ -178,7 +178,7 @@ const TEXT = {
     restart: "Restart the app.", saving: "Saving...", saveFail: e => `Saving the draft failed: ${e}`, draftFrom: t => `Draft from ${t} opened`,
     speakerWord: "Speaker", addSpeaker: "+ Speaker", rename: "Click to change the name",
     selected: (n, who) => `${n} ${n === 1 ? "word" : "words"} selected · now with ${who}`, wholeBlock: who => `Whole block · now with ${who}`,
-    assignTo: "Assign to", current: "current", newSpeaker: "New speaker", editText: "Edit text", editHint: "Enter keeps, Esc cancels",
+    assignTo: "Assign to", current: "current", newSpeaker: "New speaker", editText: "Edit text", editHint: "Enter splits · Backspace at the start merges · ⌘Enter keeps · Esc cancels",
     deleteBlock: "Delete block",
     save: "Save to Iconik", saving2: "Saving to Iconik...", saved: t => `Saved to Iconik at ${t}. The original is kept on this Mac.`,
     restore: "Put original back", restoreSure: "Are you sure? Click again", restoring: "Putting the original back...",
@@ -189,7 +189,7 @@ const TEXT = {
     listen: "Listen to this track only", loading: "Loading...", video: "Loading picture...", noVideo: "No picture: audio only",
     waves: f => `Calculating waveforms ${Math.round(f * 100)}%`, wavesFail: "Waveforms not available",
     from: { mac: "copy on this Mac", iconik: "from Iconik" }, source: (e, o) => `Source: ${e}, ${o}`,
-    note: "Double-click text to edit · right-click for speakers · Saving replaces the transcript in Iconik, the original stays on this Mac",
+    note: "Double-click text to edit, Enter splits · right-click for speakers · Saving replaces the transcript in Iconik, the original stays on this Mac",
     origin: name => `Original via storage (ISG) · ${name}`,
     notes: {"geluid": "audio", "stil": "silent", "tijdcode of toon": "timecode or tone", "eigen microfoon": "dedicated microphone", "gekozen spoor": "chosen track"},
   },
@@ -647,22 +647,78 @@ $("speakers").addEventListener("click", e => {
   input.onblur = () => finish(true);
 });
 
-// woorden bewerken: dubbelklik op de tekst, Enter bewaart, Esc annuleert
-function startEdit(i) {
+// woorden bewerken: dubbelklik op de tekst. Enter splitst op de cursor, Backspace aan het begin voegt samen met
+// het vorige blok, Delete aan het eind met het volgende; ⌘Enter of ergens anders klikken bewaart, Esc annuleert.
+const tokens = t => t.replace(/\s+/g, " ").trim() ? t.replace(/\s+/g, " ").trim().split(" ") : [];
+function caretIn(el) {
+  const sel = window.getSelection(); if (!sel.rangeCount) return {at: 0, collapsed: true};
+  const r = sel.getRangeAt(0), pre = document.createRange(); pre.selectNodeContents(el); pre.setEnd(r.startContainer, r.startOffset);
+  return {at: pre.toString().length, collapsed: r.collapsed};
+}
+function placeCaret(el, at) {
+  const node = el.firstChild, range = document.createRange();
+  if (node) range.setStart(node, Math.min(at, node.textContent.length)); else range.setStart(el, 0);
+  range.collapse(true); const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+}
+function startEdit(i, caret) {
   const el = $("b" + i)?.querySelector(".txt"); if (!el || el.isContentEditable) return;
   pick(i, false);
-  el.textContent = blocks[i].display;
+  const b = blocks[i];
+  el.textContent = b.display;
   el.setAttribute("contenteditable", "plaintext-only"); el.title = T.editHint; el.focus();
-  const range = document.createRange(); range.selectNodeContents(el); range.collapse(false);
-  const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+  placeCaret(el, caret ?? b.display.length);
   let done = false;
+  const text = () => el.textContent.replace(/\s+/g, " ").trim();
+  // De bewerkte tekst over de woorden leggen (zonder eigen ongedaan-stap: de aanroeper doet change()).
+  const apply = () => { if (text() !== b.display) { b.words = retime(b, text()); b.text = ""; } };
   const finish = ok => {
     if (done) return; done = true;
-    const text = el.textContent.replace(/\s+/g, " ").trim(), b = blocks[i];
-    if (ok && text !== b.display) change(() => { b.words = retime(b, text); b.text = ""; }, b);
-    else renderList(), mark("pick", picked, -1);
+    if (ok && text() !== b.display) change(apply, b);
+    else { renderList(); mark("pick", picked, -1); }
   };
-  el.onkeydown = ev => { if (ev.key === "Enter") { ev.preventDefault(); finish(true); } if (ev.key === "Escape") finish(false); ev.stopPropagation(); };
+  el.onkeydown = ev => {
+    ev.stopPropagation();
+    if (ev.key === "Escape") { finish(false); return; }
+    if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); finish(true); return; }
+    const c = caretIn(el), full = el.textContent;
+    if (ev.key === "Enter") {
+      ev.preventDefault();
+      const before = tokens(full.slice(0, c.at)), after = tokens(full.slice(c.at));
+      if (!before.length || !after.length) return;           // aan de rand: niets te splitsen
+      done = true;
+      let second = null;
+      change(() => {
+        b.words = retime(b, before.concat(after).join(" ")); b.text = "";
+        const k = before.length, rest = b.words.splice(k);
+        second = {start: rest[0].start, end: b.end, speaker: b.speaker, text: "", words: rest};
+        b.end = b.words[b.words.length - 1].end;
+        blocks.splice(blocks.indexOf(b) + 1, 0, second);
+      }, () => second);
+      startEdit(blocks.indexOf(second), 0);
+      return;
+    }
+    if (ev.key === "Backspace" && c.collapsed && c.at === 0 && i > 0) {
+      ev.preventDefault(); done = true;
+      const prev = blocks[i - 1], joinAt = prev.display.length + 1;
+      change(() => {
+        apply();
+        prev.words = prev.words.concat(b.words); prev.text = ""; prev.end = Math.max(prev.end, b.end);
+        blocks.splice(blocks.indexOf(b), 1);
+      }, prev);
+      startEdit(blocks.indexOf(prev), joinAt);
+      return;
+    }
+    if (ev.key === "Delete" && c.collapsed && c.at >= full.length && i < blocks.length - 1) {
+      ev.preventDefault(); done = true;
+      const nextB = blocks[i + 1], joinAt = text().length;
+      change(() => {
+        apply();
+        b.words = b.words.concat(nextB.words); b.text = ""; b.end = Math.max(b.end, nextB.end);
+        blocks.splice(blocks.indexOf(nextB), 1);
+      }, b);
+      startEdit(blocks.indexOf(b), joinAt);
+    }
+  };
   el.onblur = () => finish(true);
 }
 $("list").addEventListener("dblclick", e => { const el = e.target.closest(".blk"); if (el && !e.target.closest("[contenteditable]")) startEdit(+el.dataset.i); });

@@ -56,6 +56,7 @@ button.plain:disabled { color: var(--idle); cursor: default; }
 
 .job { border-bottom: 1px solid var(--line); padding: 10px 2px 11px; }
 .top { display: flex; gap: 10px; align-items: baseline; }
+.title[data-asset] { cursor: pointer; } .title[data-asset]:hover { color: var(--accent); }
 .title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 550;
          -webkit-user-select: text; user-select: text; }
 .state { color: var(--muted); white-space: nowrap; }
@@ -162,7 +163,7 @@ const TEXT = {
     spOff: "geen model gevonden, sprekerherkenning staat uit",
     credit: "Sprekerherkenning gebruikt pyannote speaker-diarization-community-1 van pyannoteAI, licentie CC-BY-4.0. Spraakherkenning gebruikt Whisper large-v3 van OpenAI via MLX.",
     who: {geen: "Niet verbonden", uitgelogd: "Niet ingelogd", gebruiker: "Ingelogd bij Iconik", token: "Persoonlijk token"}, down: "Ontvanger reageert niet",
-    notes: {},
+    notes: {}, openIconik: "Openen in Iconik",
     originals: (n, mb) => n ? `Originelen van ${n} ${n === 1 ? "gecorrigeerd transcript" : "gecorrigeerde transcripten"} staan op deze Mac (${mb} MB). Daarmee zet je in Refine een origineel terug in Iconik.` : "Geen originelen van gecorrigeerde transcripten op deze Mac.",
     clearOriginals: "Leegmaken", clearSure: "Zeker? Daarna kan geen origineel meer terug. Klik nogmaals",
   },
@@ -203,6 +204,7 @@ const TEXT = {
     spOff: "no model found, speaker detection is off",
     credit: "Speaker detection uses pyannote speaker-diarization-community-1 by pyannoteAI, licensed CC-BY-4.0. Speech recognition uses Whisper large-v3 by OpenAI via MLX.",
     who: {geen: "Not connected", uitgelogd: "Not logged in", gebruiker: "Logged in to Iconik", token: "Personal token"}, down: "Receiver is not responding",
+    openIconik: "Open in Iconik",
     originals: (n, mb) => n ? `Originals of ${n} corrected ${n === 1 ? "transcript are" : "transcripts are"} kept on this Mac (${mb} MB). With them you can put an original back in Iconik from Refine.` : "No originals of corrected transcripts on this Mac.",
     clearOriginals: "Clear", clearSure: "Sure? No original can be put back afterwards. Click again",
     notes: {"geluid": "audio", "stil": "silent", "tijdcode of toon": "timecode or tone", "eigen microfoon": "dedicated microphone", "gekozen spoor": "chosen track"},
@@ -242,6 +244,7 @@ document.querySelectorAll(".nav").forEach(b => b.onclick = () => {
 $("clear").onclick = () => act("/clear").then(tick);
 $("list").onclick = e => {
   const r = e.target.closest("[data-refine]"); if (r) { location.href = "/refine?asset=" + encodeURIComponent(r.dataset.refine); return; }
+  const a = e.target.closest("[data-asset]"); if (a && !window.getSelection().toString()) { act("/asset/open?id=" + encodeURIComponent(a.dataset.asset)); return; }
   const b = e.target.closest("[data-toggle]"); if (b) { open[b.dataset.toggle] = b.dataset.open !== "1"; tick(); }
 };
 $("mounts").onclick = e => { const b = e.target.closest("[data-mount]"); if (b) { b.blur(); act(`/mount/${b.dataset.mount}?id=${encodeURIComponent(b.dataset.id)}`).then(tick); } };
@@ -332,7 +335,7 @@ function row(job, isOpen) {
   const tracks = job.tracks || [];
   const toggle = tracks.length ? `<button class="plain more" data-toggle="${job.n}" data-open="${isOpen ? 1 : 0}">${isOpen ? T.hide : T.tracks(tracks.length)}</button>` : "";
   const refine = job.status === "klaar" ? `<button class="plain more" data-refine="${esc(job.asset_id)}">Refine</button>` : "";
-  let html = `<div class="top"><div class="title">${esc(job.title || job.asset_id)}</div>${job.auto ? `<span class="tag">${T.autoTag}</span>` : ""}${refine}${toggle}<div class="state ${job.status}">${esc(state)}<span class="el"></span></div></div>`;
+  let html = `<div class="top"><div class="title"${job.asset_id ? ` data-asset="${esc(job.asset_id)}" title="${T.openIconik}"` : ""}>${esc(job.title || job.asset_id)}</div>${job.auto ? `<span class="tag">${T.autoTag}</span>` : ""}${refine}${toggle}<div class="state ${job.status}">${esc(state)}<span class="el"></span></div></div>`;
   if (msg) html += `<div class="msg ${job.status === "fout" ? "fout" : ""}">${esc(msg)}</div>`;
   if (job.status === "bezig") html += stages(job);
   if (isOpen && tracks.length) html += '<div class="tracks">' + tracks.map(t =>
