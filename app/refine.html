@@ -174,7 +174,7 @@ const v = $("video");
 const TYPE = 'video/mp4; codecs="mp4v.20.9, mp4a.40.2"', AUDIO_TYPE = 'audio/mp4; codecs="mp4a.40.2"';
 let ms, sb, gen = 0, target = null, next = 0, running = false, solo = 0, wantPlay = false;
 let pending = null;   // waar de speler naartoe onderweg is zolang dat stukje nog laadt
-const now = () => pending ?? (v.currentTime || 0);
+const now = () => Math.min(pending ?? (v.currentTime || 0), dur);   // nooit voorbij het eind (laatste stukje is iets langer)
 function waitIdle() { return sb.updating ? new Promise(r => sb.addEventListener("updateend", r, {once: true})) : Promise.resolve(); }
 function buffered(t) {
   if (!sb) return false;
@@ -183,7 +183,7 @@ function buffered(t) {
   return false;
 }
 function seek(t) {
-  t = Math.max(0, Math.min(t, Math.max(dur - 0.05, 0)));
+  t = Math.max(0, Math.min(t, Math.max(dur - 1 / fps, 0)));
   if (buffered(t)) { pending = null; v.currentTime = t; draw(); return; }
   pending = t; target = t; gen++; kick();
 }
@@ -235,7 +235,7 @@ function startPlayer(t) {
     sb = ms.addSourceBuffer(type); sb.mode = "sequence"; seek(t);
   }, {once: true});
 }
-v.addEventListener("timeupdate", () => { kick(); });
+v.addEventListener("timeupdate", () => { if (v.currentTime >= dur && !v.paused) v.pause(); kick(); });
 v.addEventListener("play", () => { wantPlay = true; playIcon(); });
 v.addEventListener("pause", () => { if (pending === null) wantPlay = false; playIcon(); });
 function toggle() {
