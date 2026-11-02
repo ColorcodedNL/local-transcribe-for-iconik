@@ -34,6 +34,8 @@ from pathlib import Path
 import numpy as np
 import requests
 
+import transcript as tmodel   # het eigen transcriptmodel (app/transcript.py)
+
 # Niets naar buiten behalve Iconik zelf (en eenmalig de modeldownload). pyannote 4 stuurt
 # standaard gebruiksgegevens naar otel.pyannote.ai; dat zetten we uit voordat het geladen wordt.
 os.environ["PYANNOTE_METRICS_ENABLED"] = "false"
@@ -143,7 +145,10 @@ def memory_report(stage):
 
 
 def tell(kind, **data):
-    """Meldt voortgang aan wie meeluistert; mag de verwerking nooit storen."""
+    """Meldt voortgang aan wie meeluistert; mag de verwerking nooit storen.
+    De sporen worden ook per draad onthouden: die gaan mee in het transcript (prepare_asset)."""
+    if kind == "tracks":
+        _local.tracks = data.get("tracks")
     events = getattr(_local, "events", None)
     if events is not None:
         events.append((kind, data))
@@ -1474,13 +1479,33 @@ def prepare_asset(iconik, args, on_info=None, interactive=True):
     model_path = ensure_model(args.model)
     memory_report("begin")
     tell("stage", name="audio")
+    _local.tracks = None
     samples, microphones = load_audio_tracks(path, getattr(args, "track", None))
+    tracks = getattr(_local, "tracks", None) or []
     print(f"Audio:   {len(samples) / SAMPLE_RATE:.0f} seconden")
     memory_report("audio")
     if on_info:
         on_info(asset.get("title"), len(samples) / SAMPLE_RATE)
-    return {"asset": asset, "version_id": version_id, "own": own,
+    return {"asset": asset, "version_id": version_id, "own": own, "media_path": str(path), "tracks": tracks,
             "samples": samples, "microphones": microphones, "model_path": model_path}
+
+
+TRANSCRIPTS_DIR = SUPPORT_DIR / "transcripts"
+
+
+def save_transcript(doc):
+    """Bewaart een kopie van het transcript in het eigen model op deze Mac, met de sporenanalyse die Iconik
+    niet kent. Voor de editor (Refine) en later voor het bijstellen op basis van correcties. Mag nooit een
+    opdracht laten mislukken: het transcript staat dan al in Iconik."""
+    try:
+        name = re.sub(r"[^A-Za-z0-9_.-]", "_", f"{doc.source.get('asset_id') or 'zonder-id'}.json")
+        TRANSCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
+        target = TRANSCRIPTS_DIR / name
+        temp = target.with_name(target.name + ".tmp")
+        temp.write_text(json.dumps(tmodel.to_dict(doc), ensure_ascii=False))
+        os.replace(temp, target)
+    except Exception as error:
+        print(f"Kopie van het transcript bewaren lukte niet: {error}")
 
 
 def expected_languages():
@@ -1655,26 +1680,32 @@ def process_asset(iconik, args, hf_token, on_info=None, prepared=None):
     pieces = [(numbers[speaker], words) for speaker, words in pieces]
     print(f"Sprekers: {len(numbers)}, stukken: {len(pieces)}")
 
-    properties = {
-        "language": language,
-        "speaker_labels": {str(n): f"{L('Spreker', 'Speaker')} {n + 1}"
-                           for n in numbers.values()},
-        "engine_info": {
-            "type": "EXTERNAL",
-            "name": ENGINE_NAME,
-            "model": args.model,
-            "version": pkg_version("mlx-whisper"),
-        },
+    engine_info = {
+        "type": "EXTERNAL",
+        "name": ENGINE_NAME,
+        "model": args.model,
+        "version": pkg_version("mlx-whisper"),
     }
+    # Het transcript in het eigen model; de payload voor Iconik komt daaruit. De sporen en de vaste
+    # modelrevisie staan alleen in het model: Iconik kent er geen velden voor.
+    doc = tmodel.from_pieces(
+        pieces, language, L("Spreker", "Speaker"),
+        engine=dict(engine_info, revision=MODEL_REVISIONS.get(args.model)),
+        tracks=tmodel.tracks_from_infos(prepared.get("tracks")),
+        source={"connector": "iconik", "asset_id": args.asset_id, "version_id": version_id,
+                "title": asset.get("title") or "", "media": prepared.get("media_path") or ""})
+    properties = dict(tmodel.to_iconik(doc, "", version_id)[0], engine_info=engine_info)
 
     if not args.push:
-        segments = [to_iconik_segment(w, "<transcription_id>", version_id, n) for n, w in pieces]
+        segments = tmodel.to_iconik(doc, "<transcription_id>", version_id)[1]
         out_dir = Path(args.out)
         out_dir.mkdir(parents=True, exist_ok=True)
         out_file = out_dir / f"{args.asset_id}.iconik.json"
         out_file.write_text(json.dumps(
             {"properties": properties, "segments": segments}, ensure_ascii=False, indent=2
         ))
+        (out_dir / f"{args.asset_id}.transcript.json").write_text(
+            json.dumps(tmodel.to_dict(doc), ensure_ascii=False, indent=2))
         print()
         for segment in segments[:25]:
             seconds = segment["time_start_milliseconds"] / 1000
@@ -1697,7 +1728,7 @@ def process_asset(iconik, args, hf_token, on_info=None, prepared=None):
     # schrijven halverwege, dan blijft het oude staan en gaat het halve nieuwe weer weg.
     transcriptions = f"assets/v1/assets/{args.asset_id}/versions/{version_id}/transcriptions/properties/"
     transcription_id = iconik.post(transcriptions, properties)["id"]
-    segments = [to_iconik_segment(w, transcription_id, version_id, n) for n, w in pieces]
+    segments = tmodel.to_iconik(doc, transcription_id, version_id)[1]
     segments = [s for s in segments if s["segment_text"]]   # alleen witruimte: geen regel
     try:
         for offset in range(0, len(segments), BULK_LIMIT):
@@ -1723,6 +1754,8 @@ def process_asset(iconik, args, hf_token, on_info=None, prepared=None):
             removed = delete_transcription(iconik, args.asset_id, version_id, old["id"])
             print(f"Oud transcript {old['id']} verwijderd ({removed} segmenten).")
     print(f"\nKlaar. Transcript {transcription_id} staat op het asset.")
+    doc.source["transcription_id"] = transcription_id
+    save_transcript(doc)
     return {"title": asset.get("title"), "segments": len(segments),
             "speakers": len(numbers), "pushed": True, "language": language}
 

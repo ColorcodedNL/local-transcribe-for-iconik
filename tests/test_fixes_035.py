@@ -33,6 +33,7 @@ import transcribe, serve  # noqa: E402,E401
 transcribe.L = lambda nl, en: nl
 tmp = Path(tempfile.mkdtemp())
 transcribe.CONFIG_PATH = tmp / "config.json"
+transcribe.TRANSCRIPTS_DIR = tmp / "transcripts"   # nooit in de echte map met transcripten schrijven
 serve.jobs_path = lambda: tmp / "jobs.json"
 fails = 0
 
@@ -195,6 +196,12 @@ deleted, problem = run_push(iconik)
 order = [c for c in iconik.calls if c[0] == "POST"]
 check("push gelukt: oud pas weg na het nieuwe", problem is None and deleted == ["oud"] and len(order) == 2, (deleted, problem))
 check("precies een transcript van de app over", [t["id"] for t in iconik.transcripts] == ["nieuw"], iconik.transcripts)
+import json as _json  # noqa: E402
+_files = sorted(transcribe.TRANSCRIPTS_DIR.glob("*.json"))
+_saved = _json.loads(_files[0].read_text()) if _files else {}
+check("kopie in het eigen model bewaard, met het id van het nieuwe transcript",
+      len(_files) == 1 and _saved.get("format") == "local-transcribe" and _saved.get("source", {}).get("transcription_id") == "nieuw",
+      (_files, _saved.get("source")))
 
 iconik = FakeIconik(fail_bulk=True)
 deleted, problem = run_push(iconik)
