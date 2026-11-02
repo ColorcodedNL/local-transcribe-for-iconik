@@ -270,6 +270,9 @@ def listen(kind, **data):
 ACTION_TITLE = "Local Transcribe"
 ACTION_URL = "iconiktranscribe://transcribe"
 ACTION_CONTEXTS = ("ASSET", "COLLECTION", "BULK")
+# De knoppen in Iconik: (titel, link, contexten). Refine transcript opent de editor, alleen op één asset.
+ACTIONS = ((ACTION_TITLE, ACTION_URL, ACTION_CONTEXTS),
+           ("Refine transcript", "iconiktranscribe://refine", ("ASSET",)))
 actions = {}              # "state": aanwezig | ontbreekt | geweigerd | onbekend
 update = {}               # nieuwere versie op GitHub: version, url, mode (code of dmg), state, error
 update_lock = threading.Lock()
@@ -348,10 +351,24 @@ def install_update():
     threading.Thread(target=work, daemon=True, name="update-install").start()
 
 
+def refine_link(url):
+    """De link van de knop Refine transcript: iconiktranscribe://refine?asset_ids=<id>[,...]. Geeft de pagina
+    van de editor voor het eerste asset, of None. Alleen openen: niets in de rij, dus geen sleutel nodig."""
+    if not (url or "").startswith("iconiktranscribe://refine"):
+        return None
+    query = parse_qs(urlparse(url).query)
+    ids = [i for value in query.get("asset_ids", []) for i in value.split(",") if i]
+    if not ids or not re.fullmatch(r"[0-9a-fA-F-]{8,64}", ids[0]):
+        return None
+    return f"/refine?asset={ids[0]}"
+
+
 def missing_actions(connection):
+    """De knoppen die nog niet in deze Iconik-omgeving staan, als (context, titel, link)."""
     existing = connection.get("assets/v1/custom_actions/?per_page=200").get("objects", [])
-    have = {a["context"] for a in existing if a.get("url") == ACTION_URL}
-    return [context for context in ACTION_CONTEXTS if context not in have]
+    have = {(a.get("context"), a.get("url")) for a in existing}
+    return [(context, title, url) for title, url, contexts in ACTIONS for context in contexts
+            if (context, url) not in have]
 
 
 def check_actions():
@@ -369,11 +386,11 @@ def check_actions():
 def install_actions():
     try:
         connection = client()
-        for context in missing_actions(connection):
+        for context, title, url in missing_actions(connection):
             connection.post(f"assets/v1/custom_actions/{context}/",
-                            {"context": context, "title": ACTION_TITLE, "type": "OPEN", "url": ACTION_URL})
+                            {"context": context, "title": title, "type": "OPEN", "url": url})
         actions["state"] = "aanwezig"
-        print("De knop Local Transcribe is in Iconik gezet.")
+        print("De knoppen van Local Transcribe staan in Iconik.")
     except Exception as error:
         actions["state"] = "geweigerd"
         print(f"Knop in Iconik zetten lukte niet: {error}")
@@ -805,7 +822,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply_json(window_state)
         if url.path == "/window/show":
             # De app vraagt het venster een pagina te tonen en naar voren te komen.
-            window_state["page"] = "/login" if first("page") == "/login" else "/"
+            page = first("page")
+            refine_link = re.fullmatch(r"/refine\?asset=[0-9a-fA-F-]{8,64}", page or "")
+            window_state["page"] = page if page == "/login" or refine_link else "/"
             window_state["n"] += 1
             if show_hook:
                 show_hook(window_state["page"])

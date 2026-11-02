@@ -110,7 +110,7 @@ class FakeIconik(BaseHTTPRequestHandler):
         if path == "users/v1/users/current/":
             return self.send(200, {"first_name": "Test", "last_name": "Gebruiker", "email": "test@example.com"})
         if path.startswith("assets/v1/custom_actions/"):
-            return self.send(200, {"objects": [{"context": c, "url": serve.ACTION_URL} for c in serve.ACTION_CONTEXTS]})
+            return self.send(200, {"objects": [{"context": c, "url": url} for _, url, contexts in serve.ACTIONS for c in contexts]})
         if path.startswith("assets/v1/assets/"):
             return self.send(200, {"title": "Titel " + path.split("/")[3]})
         return self.send(200, {"objects": []})

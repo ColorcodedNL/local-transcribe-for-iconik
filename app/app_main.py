@@ -83,8 +83,18 @@ def local_get(path, timeout=60):
         connection.close()
 
 
+def refine_page(url):
+    """De knop Refine transcript in Iconik; de pagina zelf bepaalt serve.refine_link (getest)."""
+    page = serve.refine_link(url)
+    if page:
+        print(f"[{datetime.now():%H:%M:%S}] Refine uit Iconik: {page}")
+    return page
+
+
 def send_link(url):
     """Geeft een link uit Iconik aan de ontvanger. Geeft de pagina terug die het venster moet tonen."""
+    if url.startswith("iconiktranscribe://refine"):
+        return refine_page(url)
     query = url.split("?", 1)[1] if "?" in url else ""
     if not query:
         return None
@@ -129,7 +139,8 @@ def run_as_messenger():
         for url in urls:
             page = send_link(url) or page
         try:
-            local_get(f"/window/show?page={page or '/'}", timeout=5)
+            from urllib.parse import quote
+            local_get(f"/window/show?page={quote(page or '/', safe='')}", timeout=5)
         except Exception:
             pass
         AppHelper.callAfter(AppKit.NSApp.terminate_, None)
