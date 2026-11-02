@@ -74,6 +74,21 @@ header h1 { margin: 0; font-size: 18px; font-weight: 650; letter-spacing: -.015e
 #canvas { display: block; width: 100%; cursor: text; }
 footer { display: flex; gap: 18px; align-items: center; padding: 6px 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
 #error { margin: 0 18px 10px; background: color-mix(in srgb, var(--bad) 14%, transparent); border-left: 3px solid var(--bad); padding: 8px 10px; border-radius: 4px; -webkit-user-select: text; user-select: text; }
+.txt[contenteditable] { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 3px; background: var(--surface); cursor: text; }
+.btn { padding: 4px 11px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); white-space: nowrap; }
+.btn:disabled { opacity: .45; }
+.btn.danger { color: var(--bad); }
+.chip { cursor: text; }
+.chip input { all: unset; width: 120px; }
+.addsp { border: 1px dashed var(--line); background: none; color: var(--accent); border-radius: 6px; padding: 2px 9px; }
+#menu { position: fixed; z-index: 20; min-width: 240px; max-width: 320px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+        box-shadow: 0 10px 28px rgba(0,0,0,.25); padding: 5px; font-size: 13px; }
+#menu .h { padding: 4px 9px 6px; color: var(--muted); font-size: 11px; }
+#menu button { all: unset; box-sizing: border-box; width: 100%; display: flex; align-items: center; gap: 8px; padding: 6px 9px; border-radius: 5px; }
+#menu button:hover, #menu button:focus { background: var(--accent); color: #fff; }
+#menu .cur { color: var(--muted); font-size: 11px; margin-left: auto; }
+#menu button:hover .cur, #menu button:focus .cur { color: #fff; }
+#menu hr { border: 0; height: 1px; background: var(--soft); margin: 5px 0; }
 [hidden] { display: none !important; }
 </style>
 </head>
@@ -82,8 +97,11 @@ footer { display: flex; gap: 18px; align-items: center; padding: 6px 10px; borde
   <a href="/" id="back"></a>
   <h1 id="title"></h1>
   <span class="tag">Refine</span>
-  <span class="dim" id="mode"></span>
+  <span class="dim" id="status"></span>
   <span class="grow"></span>
+  <button class="icon" id="undo" disabled><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6 4 2.5 7.5 6 11M3 7.5h6.5a4 4 0 0 1 0 8H8"/></svg></button>
+  <button class="icon" id="redo" disabled><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M10 4l3.5 3.5L10 11M13 7.5H6.5a4 4 0 0 0 0 8H8"/></svg></button>
+  <button class="btn danger" id="discard" hidden></button>
 </header>
 <div id="error" hidden></div>
 <div id="upper">
@@ -124,28 +142,45 @@ footer { display: flex; gap: 18px; align-items: center; padding: 6px 10px; borde
   </div>
   <footer><span id="source"></span><span class="grow"></span><span id="note"></span></footer>
 </section>
+<div id="menu" role="menu" hidden></div>
 <script>
 const TEXT = {
   nl: {
-    back: "‹ Opdrachten", mode: "Alleen bekijken: bewerken komt in de volgende stap", prev: "Vorig blok", next: "Volgend blok",
+    back: "‹ Opdrachten", prev: "Vorig blok", next: "Volgend blok",
+    undo: "Ongedaan maken (⌘Z)", redo: "Opnieuw (⇧⌘Z)", discard: "Wijzigingen weggooien", discardSure: "Zeker weten? Klik nogmaals",
+    clean: "Nog niets gewijzigd", changes: n => `${n} ${n === 1 ? "wijziging" : "wijzigingen"} als concept op deze Mac`,
+    saving: "Bewaren...", saveFail: e => `Concept bewaren lukte niet: ${e}`, draftFrom: t => `Concept van ${t} geopend`,
+    speakerWord: "Spreker", addSpeaker: "+ Spreker", rename: "Klik om de naam te wijzigen",
+    selected: (n, who) => `${n} ${n === 1 ? "woord" : "woorden"} geselecteerd · nu bij ${who}`, wholeBlock: who => `Hele blok · nu bij ${who}`,
+    assignTo: "Toewijzen aan", current: "huidig", newSpeaker: "Nieuwe spreker", editText: "Tekst bewerken", editHint: "Enter bewaart, Esc annuleert",
+    deleteBlock: "Blok verwijderen",
     play: "Afspelen", pause: "Pauze", keys: "spatie · ← → · ⌥ ← →", blocks: n => `${n} blokken`, words: n => `${n} woorden`,
     hear: "Je hoort:", mix: list => `mix van de gebruikte sporen (${list})`, solo: n => `alleen spoor ${n}`, zoom: "Zoom",
     text: "Tekst", speakerLane: "Sprekers", track: n => `Spoor ${n}`, used: "gebruikt", skipped: "overgeslagen",
     listen: "Luister alleen naar dit spoor", loading: "Laden...", video: "Beeld laden...", noVideo: "Geen beeld: alleen geluid",
     waves: f => `Golfvormen uitrekenen ${Math.round(f * 100)}%`, wavesFail: "Golfvormen niet beschikbaar",
     from: { mac: "kopie op deze Mac", iconik: "uit Iconik" }, source: (e, o) => `Bron: ${e}, ${o}`,
-    note: "Niets wordt opgeslagen: dit is alleen bekijken.", origin: name => `Origineel via opslag (ISG) · ${name}`,
+    note: "Dubbelklik op tekst om te bewerken · rechtsklik voor sprekers · Naar Iconik schrijven komt in de volgende stap",
+    origin: name => `Origineel via opslag (ISG) · ${name}`,
     notes: {},
   },
   en: {
-    back: "‹ Jobs", mode: "View only: editing comes in the next step", prev: "Previous block", next: "Next block",
+    back: "‹ Jobs", prev: "Previous block", next: "Next block",
+    undo: "Undo (⌘Z)", redo: "Redo (⇧⌘Z)", discard: "Discard changes", discardSure: "Are you sure? Click again",
+    clean: "No changes yet", changes: n => `${n} ${n === 1 ? "change" : "changes"} kept as a draft on this Mac`,
+    saving: "Saving...", saveFail: e => `Saving the draft failed: ${e}`, draftFrom: t => `Draft from ${t} opened`,
+    speakerWord: "Speaker", addSpeaker: "+ Speaker", rename: "Click to change the name",
+    selected: (n, who) => `${n} ${n === 1 ? "word" : "words"} selected · now with ${who}`, wholeBlock: who => `Whole block · now with ${who}`,
+    assignTo: "Assign to", current: "current", newSpeaker: "New speaker", editText: "Edit text", editHint: "Enter keeps, Esc cancels",
+    deleteBlock: "Delete block",
     play: "Play", pause: "Pause", keys: "space · ← → · ⌥ ← →", blocks: n => `${n} blocks`, words: n => `${n} words`,
     hear: "You hear:", mix: list => `mix of the used tracks (${list})`, solo: n => `track ${n} only`, zoom: "Zoom",
     text: "Text", speakerLane: "Speakers", track: n => `Track ${n}`, used: "used", skipped: "skipped",
     listen: "Listen to this track only", loading: "Loading...", video: "Loading picture...", noVideo: "No picture: audio only",
     waves: f => `Calculating waveforms ${Math.round(f * 100)}%`, wavesFail: "Waveforms not available",
     from: { mac: "copy on this Mac", iconik: "from Iconik" }, source: (e, o) => `Source: ${e}, ${o}`,
-    note: "Nothing is saved: this is view only.", origin: name => `Original via storage (ISG) · ${name}`,
+    note: "Double-click text to edit · right-click for speakers · Writing to Iconik comes in the next step",
+    origin: name => `Original via storage (ISG) · ${name}`,
     notes: {"geluid": "audio", "stil": "silent", "tijdcode of toon": "timecode or tone", "eigen microfoon": "dedicated microphone", "gekozen spoor": "chosen track"},
   },
 };
@@ -263,7 +298,8 @@ function blockAt(t) {
 function renderList() {
   const html = blocks.map((b, i) => {
     const sp = speakerOf[b.speaker] || {name: b.speaker, color: COLORS[0]};
-    const words = b.text ? esc(b.text) : b.words.map(w => w.score < 0.5 ? `<span class="low">${esc(w.text)}</span>` : esc(w.text)).join(" ");
+    const words = b.text && !b.words.length ? esc(b.text)
+      : b.words.map((w, k) => `<span class="w${w.score < 0.5 ? " low" : ""}" data-w="${k}">${esc(w.text)}</span>`).join(" ");
     return `<div class="blk" id="b${i}" data-i="${i}"><span class="nr">${i + 1}</span><span class="meta"><span class="mono">${tc(b.start)} → ${tc(b.end)}</span><span>${secs(b.end - b.start)}</span><span class="who"><i class="sw" style="background:${sp.color}"></i>${esc(sp.name)}</span></span><span class="txt">${words}</span></div>`;
   }).join("");
   $("list").innerHTML = html;
@@ -279,6 +315,7 @@ function pick(i, jump) {
   draw();
 }
 $("list").addEventListener("click", e => {
+  if (e.target.closest("[contenteditable]")) return;
   if (window.getSelection().toString()) return;   // tekst selecteren mag zonder te springen
   const el = e.target.closest(".blk"); if (el) pick(+el.dataset.i, true);
 });
@@ -459,6 +496,8 @@ async function loadWaves() {
 document.addEventListener("keydown", e => {
   if (e.target.closest("input:not([type=range]), textarea, [contenteditable]")) return;
   const t = now();
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+  if (e.key === "Enter" && picked >= 0) { e.preventDefault(); startEdit(picked); return; }
   if (e.code === "Space") { e.preventDefault(); toggle(); }
   else if (e.key === "ArrowLeft" && e.altKey) { e.preventDefault(); stepBlock(-1); }
   else if (e.key === "ArrowRight" && e.altKey) { e.preventDefault(); stepBlock(1); }
@@ -480,25 +519,239 @@ $("play").onclick = toggle;
 
 function showError(text) { $("error").textContent = text; $("error").hidden = false; $("busy").textContent = ""; }
 
+// --- bewerken: alles in het geheugen, als concept bewaard op deze Mac (refine.save_draft) ---
+let speakers = [], history = [], future = [], edits = 0, saveTimer = null, savedAt = "", discardArmed = 0;
+const HEADERS = {"X-Local-Transcribe": "1", "Content-Type": "application/json"};
+function fromDict(tr) {
+  speakers = tr.speakers.map(s => ({id: String(s.id), name: s.name}));
+  blocks = tr.segments.map(s => ({start: s.start / 1000, end: s.end / 1000, speaker: String(s.speaker), text: s.text || "",
+    words: (s.words || []).map(w => ({text: w[0], start: w[1] / 1000, end: w[2] / 1000, score: w[3]}))}));
+}
+function toDict() {
+  const ms = x => Math.round(x * 1000);
+  return Object.assign({}, D.transcript, {
+    speakers: speakers.map(s => ({id: s.id, name: s.name})),
+    segments: blocks.map(b => Object.assign({start: ms(b.start), end: ms(b.end), speaker: b.speaker,
+      words: b.words.map(w => [w.text, ms(w.start), ms(w.end), w.score])}, b.text ? {text: b.text} : {})),
+  });
+}
+const snapshot = () => JSON.stringify({speakers, blocks});
+function restore(text) { const o = JSON.parse(text); speakers = o.speakers; blocks = o.blocks; }
+// Elke wijziging gaat hierdoorheen: vooraf een momentopname voor ongedaan maken, daarna alles bijwerken.
+function change(fn, keep) {
+  const before = snapshot();
+  if (fn() === false) return;
+  history.push(before); if (history.length > 300) history.shift();
+  future = []; edits++;
+  updated(true, typeof keep === "function" ? keep() : keep);
+}
+function updated(save, keep) {
+  // Lege blokken weg, tijden uit de woorden, op volgorde.
+  blocks = blocks.filter(b => b.words.length || b.text.trim());
+  blocks.forEach(b => {
+    if (b.words.length) { b.start = Math.min(b.start, b.words[0].start); b.end = Math.max(b.end, b.words[b.words.length - 1].end); }
+    b.display = b.text || b.words.map(w => w.text).join(" ");
+  });
+  blocks.sort((a, b) => a.start - b.start || a.end - b.end);
+  speakerOf = {}; speakers.forEach((s, i) => speakerOf[s.id] = {name: s.name, color: COLORS[i % COLORS.length]});
+  picked = keep ? blocks.indexOf(keep) : Math.min(picked, blocks.length - 1); nowAt = -1;
+  renderSpeakers(); renderList(); mark("pick", picked, -1);
+  const wordCount = blocks.reduce((n, b) => n + b.words.length, 0);
+  $("count").innerHTML = `<span>${T.blocks(blocks.length)}</span><span>${T.words(wordCount)}</span>`;
+  $("undo").disabled = !history.length; $("redo").disabled = !future.length;
+  $("discard").hidden = !edits; $("discard").textContent = T.discard; discardArmed = 0;
+  $("status").textContent = edits ? T.changes(edits) : T.clean;
+  draw();
+  if (save) scheduleSave();
+}
+function scheduleSave() { clearTimeout(saveTimer); saveTimer = setTimeout(saveDraft, 700); }
+async function saveDraft() {
+  clearTimeout(saveTimer); saveTimer = null;
+  try {
+    const r = await fetch(`/refine/draft?asset=${encodeURIComponent(ASSET)}`, {method: "POST", headers: HEADERS,
+      body: JSON.stringify({transcript: toDict(), edits})});
+    const j = await r.json();
+    if (j.error) throw new Error(j.error);
+    savedAt = j.saved_at;
+  } catch (e) { $("status").textContent = T.saveFail(e.message || e); }
+}
+function undo() { if (!history.length) return; future.push(snapshot()); restore(history.pop()); edits = Math.max(0, edits - 1); updated(true); }
+function redo() { if (!future.length) return; history.push(snapshot()); restore(future.pop()); edits++; updated(true); }
+$("undo").onclick = undo; $("redo").onclick = redo;
+$("discard").onclick = async () => {
+  if (!discardArmed) { discardArmed = setTimeout(() => { discardArmed = 0; $("discard").textContent = T.discard; }, 3000); $("discard").textContent = T.discardSure; return; }
+  clearTimeout(saveTimer); saveTimer = null;
+  await fetch(`/refine/discard?asset=${encodeURIComponent(ASSET)}`, {method: "POST", headers: HEADERS, body: "{}"});
+  location.reload();
+};
+$("back").onclick = async e => { if (saveTimer) { e.preventDefault(); await saveDraft(); location.href = "/"; } };
+
+// sprekers: hernoemen in de balk, nieuwe spreker
+function newSpeaker() {
+  const n = Math.max(0, ...speakers.map(s => +s.id || 0)) + 1;
+  const s = {id: String(n), name: `${T.speakerWord} ${n}`}; speakers.push(s); return s.id;
+}
+function renderSpeakers() {
+  $("speakers").innerHTML = speakers.map(s => `<span class="chip" data-sp="${esc(s.id)}" title="${T.rename}"><i class="sw" style="background:${speakerOf[s.id].color}"></i><span class="nm">${esc(s.name)}</span></span>`).join("")
+    + `<button class="addsp" id="addsp">${T.addSpeaker}</button>`;
+}
+$("speakers").addEventListener("click", e => {
+  if (e.target.id === "addsp") { change(() => { newSpeaker(); }); return; }
+  const chip = e.target.closest(".chip"); if (!chip || chip.querySelector("input")) return;
+  const s = speakers.find(x => x.id === chip.dataset.sp), nm = chip.querySelector(".nm");
+  const input = document.createElement("input"); input.value = s.name; nm.replaceWith(input); input.focus(); input.select();
+  let done = false;
+  const finish = ok => {
+    if (done) return; done = true;
+    const name = input.value.trim();
+    if (ok && name && name !== s.name) change(() => { speakers.find(x => x.id === s.id).name = name; });
+    else renderSpeakers();
+  };
+  input.onkeydown = ev => { if (ev.key === "Enter") finish(true); if (ev.key === "Escape") finish(false); ev.stopPropagation(); };
+  input.onblur = () => finish(true);
+});
+
+// woorden bewerken: dubbelklik op de tekst, Enter bewaart, Esc annuleert
+function startEdit(i) {
+  const el = $("b" + i)?.querySelector(".txt"); if (!el || el.isContentEditable) return;
+  pick(i, false);
+  el.textContent = blocks[i].display;
+  el.setAttribute("contenteditable", "plaintext-only"); el.title = T.editHint; el.focus();
+  const range = document.createRange(); range.selectNodeContents(el); range.collapse(false);
+  const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+  let done = false;
+  const finish = ok => {
+    if (done) return; done = true;
+    const text = el.textContent.replace(/\s+/g, " ").trim(), b = blocks[i];
+    if (ok && text !== b.display) change(() => { b.words = retime(b, text); b.text = ""; }, b);
+    else renderList(), mark("pick", picked, -1);
+  };
+  el.onkeydown = ev => { if (ev.key === "Enter") { ev.preventDefault(); finish(true); } if (ev.key === "Escape") finish(false); ev.stopPropagation(); };
+  el.onblur = () => finish(true);
+}
+$("list").addEventListener("dblclick", e => { const el = e.target.closest(".blk"); if (el && !e.target.closest("[contenteditable]")) startEdit(+el.dataset.i); });
+
+// Nieuwe tekst over de oude woorden leggen: gelijke woorden houden hun tijd en zekerheid, wat veranderd of
+// nieuw is krijgt de tijd van wat het vervangt (of het gat ertussen) en zekerheid 1: nagekeken door een mens.
+function retime(b, text) {
+  const old = b.words, toks = text ? text.split(" ") : [];
+  if (!old.length) {
+    const step = (b.end - b.start) / Math.max(toks.length, 1);
+    return toks.map((t, k) => ({text: t, start: b.start + k * step, end: b.start + (k + 1) * step, score: 1}));
+  }
+  const n = old.length, m = toks.length, L = Array.from({length: n + 1}, () => new Int32Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--)
+    L[i][j] = old[i].text === toks[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+  // Standaard vergelijking (langste gemeenschappelijke reeks), daarna de stukken ertussen invullen.
+  const ops = []; let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (old[i].text === toks[j]) { ops.push("="); i++; j++; }
+    else if (L[i + 1][j] >= L[i][j + 1]) { ops.push("-"); i++; }
+    else { ops.push("+"); j++; }
+  }
+  while (i < n) { ops.push("-"); i++; }
+  while (j < m) { ops.push("+"); j++; }
+  const out = []; i = 0; j = 0;
+  let i0 = 0, j0 = 0, inRun = false;
+  const flush = () => {                     // oude woorden i0..i vervangen door nieuwe j0..j
+    if (!inRun) return; inRun = false;
+    if (j <= j0) return;
+    const from = i > i0 ? old[i0].start : (i0 > 0 ? old[i0 - 1].end : b.start);
+    const to = i > i0 ? old[i - 1].end : (i0 < n ? old[i0].start : b.end);
+    const step = Math.max(to - from, 0) / (j - j0);
+    for (let k = j0; k < j; k++) out.push({text: toks[k], start: from + (k - j0) * step, end: from + (k - j0 + 1) * step, score: 1});
+  };
+  for (const op of ops) {
+    if (op === "=") { flush(); out.push(Object.assign({}, old[i])); i++; j++; continue; }
+    if (!inRun) { inRun = true; i0 = i; j0 = j; }
+    if (op === "-") i++; else j++;
+  }
+  flush();
+  return out;
+}
+
+// sprekers wisselen: rechtsklik op geselecteerde woorden of op een blok
+function selectedWords(i) {
+  const sel = window.getSelection(), el = $("b" + i)?.querySelector(".txt");
+  if (!el || !sel.rangeCount || sel.isCollapsed) return null;
+  const range = sel.getRangeAt(0), hit = [...el.querySelectorAll(".w")].filter(w => range.intersectsNode(w)).map(w => +w.dataset.w);
+  return hit.length ? [Math.min(...hit), Math.max(...hit)] : null;
+}
+function assign(i, from, to, speaker) {
+  change(() => {
+    const b = blocks[i], last = b.words.length - 1;
+    if (speaker === b.speaker) return false;     // al van deze spreker: niets splitsen
+    if (speaker === "new") speaker = newSpeaker();
+    if (from === null || (from <= 0 && to >= last)) { if (b.speaker === speaker) return false; b.speaker = speaker; return; }
+    // Splitsen op de woordgrenzen: ervoor en erna houden de oude spreker, de selectie krijgt de nieuwe.
+    const part = (ws, sp) => ({start: ws[0].start, end: ws[ws.length - 1].end, speaker: sp, text: "", words: ws});
+    const pieces = [];
+    if (from > 0) pieces.push(part(b.words.slice(0, from), b.speaker));
+    const mid = part(b.words.slice(from, to + 1), speaker); pieces.push(mid);
+    if (to < last) pieces.push(part(b.words.slice(to + 1), b.speaker));
+    pieces[0].start = Math.min(pieces[0].start, b.start); pieces[pieces.length - 1].end = Math.max(pieces[pieces.length - 1].end, b.end);
+    blocks.splice(i, 1, ...pieces);
+    assign.keep = mid;
+  }, () => assign.keep);
+}
+function openMenu(x, y, i, range) {
+  const b = blocks[i], cur = speakerOf[b.speaker]?.name || b.speaker, menu = $("menu");
+  const head = range ? T.selected(range[1] - range[0] + 1, esc(cur)) : T.wholeBlock(esc(cur));
+  menu.innerHTML = `<div class="h">${head}</div><div class="h" style="font-weight:600;padding-top:0">${T.assignTo}</div>`
+    + speakers.map(s => `<button data-to="${esc(s.id)}"><i class="sw" style="background:${speakerOf[s.id].color}"></i>${esc(s.name)}${s.id === b.speaker ? `<span class="cur">${T.current}</span>` : ""}</button>`).join("")
+    + `<button data-to="new"><i class="sw" style="border:1px dashed var(--muted)"></i>${T.newSpeaker}</button><hr>`
+    + `<button data-act="edit">${T.editText}</button><button data-act="delete">${T.deleteBlock}</button>`;
+  menu.hidden = false;
+  const w = menu.offsetWidth, h = menu.offsetHeight;
+  menu.style.left = Math.min(x, innerWidth - w - 8) + "px"; menu.style.top = Math.min(y, innerHeight - h - 8) + "px";
+  menu.onclick = e => {
+    const btn = e.target.closest("button"); if (!btn) return;
+    closeMenu();
+    if (btn.dataset.to) { assign.keep = null; assign(i, range ? range[0] : null, range ? range[1] : null, btn.dataset.to); }
+    else if (btn.dataset.act === "edit") startEdit(i);
+    else if (btn.dataset.act === "delete") change(() => { blocks.splice(i, 1); });
+  };
+  (menu.querySelector(`button[data-to]:not([data-to="${CSS.escape(b.speaker)}"])`) || menu.querySelector("button"))?.focus();
+}
+function closeMenu() { $("menu").hidden = true; }
+document.addEventListener("mousedown", e => { if (!e.target.closest("#menu")) closeMenu(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeMenu(); }, true);
+// macOS selecteert bij een rechtsklik het woord onder de muis; de selectie daarom vastleggen vóór dat gebeurt.
+let ctxRange = null;
+$("list").addEventListener("mousedown", e => {
+  const el = e.target.closest(".blk");
+  if (e.button !== 2 || !el || e.target.closest("[contenteditable]")) return;
+  ctxRange = selectedWords(+el.dataset.i); e.preventDefault();
+});
+$("list").addEventListener("contextmenu", e => {
+  const el = e.target.closest(".blk"); if (!el || e.target.closest("[contenteditable]")) return;
+  e.preventDefault(); const i = +el.dataset.i;
+  openMenu(e.clientX, e.clientY, i, ctxRange); ctxRange = null;
+});
+cv.addEventListener("contextmenu", e => {
+  const r = cv.getBoundingClientRect(), tops = laneTops(), y = e.clientY - r.top;
+  const i = blockAt(viewStart + (e.clientX - r.left) / r.width * span);
+  if (i < 0 || y < tops.text || y >= tops.spk) return;
+  e.preventDefault(); pick(i, false); openMenu(e.clientX, e.clientY, i, null);   // op de tijdlijn alleen hele blokken
+});
+
 // --- start ---
 async function start() {
   try { D = await (await fetch(`/refine/view?asset=${encodeURIComponent(ASSET)}`)).json(); }
   catch (e) { showError(String(e)); return; }
   lang = D.lang === "nl" ? "nl" : "en"; T = TEXT[lang]; document.documentElement.lang = lang;
-  $("back").textContent = T.back; $("mode").textContent = T.mode; $("keys").textContent = T.keys;
+  $("back").textContent = T.back; $("keys").textContent = T.keys;
+  $("undo").title = T.undo; $("undo").setAttribute("aria-label", T.undo); $("redo").title = T.redo; $("redo").setAttribute("aria-label", T.redo);
   $("prev").setAttribute("aria-label", T.prev); $("next").setAttribute("aria-label", T.next);
   $("hearLabel").textContent = T.hear; $("zoomLabel").textContent = T.zoom; $("note").textContent = T.note;
   if (D.error) { $("title").textContent = ASSET; showError(D.error); return; }
   document.title = D.title + " · Refine"; $("title").textContent = D.title;
   fps = D.fps || 25; dur = D.duration || 0;
   const tr = D.transcript;
-  tr.speakers.forEach((s, i) => speakerOf[s.id] = {name: s.name, color: COLORS[i % COLORS.length]});
-  blocks = tr.segments.map(s => ({start: s.start / 1000, end: s.end / 1000, speaker: s.speaker, text: s.text || "",
-    words: (s.words || []).map(w => ({text: w[0], start: w[1] / 1000, end: w[2] / 1000, score: w[3]}))}));
-  blocks.forEach(b => b.display = b.text || b.words.map(w => w.text).join(" "));
-  $("speakers").innerHTML = tr.speakers.map(s => `<span class="chip"><i class="sw" style="background:${speakerOf[s.id].color}"></i>${esc(s.name)}</span>`).join("");
-  const wordCount = blocks.reduce((n, b) => n + b.words.length, 0);
-  $("count").innerHTML = `<span>${T.blocks(blocks.length)}</span><span>${T.words(wordCount)}</span>`;
+  fromDict(D.draft ? D.draft.transcript : tr);
+  if (D.draft) { edits = D.draft.edits || 0; savedAt = D.draft.saved_at; }
+  updated(false);
+  if (D.draft) $("status").textContent = T.draftFrom(D.draft.saved_at.replace("T", " ").slice(0, 16)) + " · " + T.changes(edits);
   $("total").textContent = "/ " + tc(dur);
   const engine = [tr.engine.model, tr.engine.version ? "mlx-whisper " + tr.engine.version : ""].filter(Boolean).join(", ") || "Local Transcribe";
   $("source").textContent = T.source(engine, T.from[D.origin] || D.origin);

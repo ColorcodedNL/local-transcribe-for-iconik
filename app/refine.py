@@ -13,6 +13,7 @@ De golfvormen per spoor (50 punten per seconde) komen uit het bestand dat een op
 import json
 import subprocess
 import threading
+import time
 from pathlib import Path
 
 import numpy as np
@@ -117,7 +118,7 @@ def view(asset_id):
         "media_name": Path(s["media"]).name, "duration": s["duration"], "fps": s["fps"], "video": s["video"],
         "transcript": tmodel.to_dict(doc),
         "tracks": [{"n": n, "label": s["labels"][n], "used": n in s["used"]} for n in range(1, len(s["tracks"]) + 1)],
-        "chunk": CHUNK_SECONDS, "lang": core.app_language(),
+        "chunk": CHUNK_SECONDS, "lang": core.app_language(), "draft": load_draft(asset_id),
     }
 
 
@@ -227,3 +228,47 @@ def _compute_waves(asset_id, job):
             _wave_jobs.pop(asset_id, None)
     except Exception as error:
         job["error"] = str(error) or type(error).__name__
+
+
+# --- concept: bewerkingen bewaren op deze Mac tot ze naar Iconik gaan (deel 3) ---
+
+DRAFTS_DIR = core.SUPPORT_DIR / "refine"
+DRAFT_LIMIT = 50 * 1024 * 1024
+
+
+def _draft_path(asset_id):
+    return DRAFTS_DIR / core.safe_name(asset_id, ".draft.json")
+
+
+def load_draft(asset_id):
+    try:
+        data = json.loads(_draft_path(asset_id).read_text())
+        tmodel.from_dict(data["transcript"])          # alleen een geldig transcript telt
+        return data
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def save_draft(asset_id, raw):
+    """Bewaart het concept dat het scherm stuurt: {"transcript": eigen model als dict, "edits": aantal}."""
+    if not asset_id:
+        raise RefineError("Geen asset.")
+    data = json.loads(raw)
+    doc = tmodel.from_dict(data["transcript"])        # controleert de opbouw; gooit bij onzin
+    original = open_session(asset_id)["doc"]
+    doc.source, doc.engine, doc.tracks = original.source, original.engine, original.tracks
+    payload = {"saved_at": time.strftime("%Y-%m-%dT%H:%M:%S"), "edits": int(data.get("edits") or 0),
+               "transcript": tmodel.to_dict(doc)}
+    DRAFTS_DIR.mkdir(parents=True, exist_ok=True)
+    path = _draft_path(asset_id)
+    temp = path.with_name(path.name + ".tmp")
+    temp.write_text(json.dumps(payload, ensure_ascii=False))
+    temp.replace(path)
+    return payload["saved_at"]
+
+
+def discard_draft(asset_id):
+    try:
+        _draft_path(asset_id).unlink()
+    except FileNotFoundError:
+        pass

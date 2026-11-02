@@ -42,6 +42,7 @@ def check(name, cond, detail=""):
 tmp = Path(tempfile.mkdtemp())
 transcribe.TRANSCRIPTS_DIR = tmp / "transcripts"
 transcribe.WAVES_DIR = tmp / "waves"
+refine.DRAFTS_DIR = tmp / "refine"
 media = tmp / "clip.mov"
 # 12 s beeld met twee mono audiosporen: spoor 1 een toon, spoor 2 stil.
 subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=25:duration=12",
@@ -130,6 +131,32 @@ check("opdracht: track_info bewaart de golfvorm", transcribe._local.peaks.get(3)
 transcribe._local.peaks = None
 transcribe.save_waves("B/1", {1: p})
 check("opdracht: save_waves met veilige naam", transcribe.read_waves(transcribe.WAVES_DIR / "B_1.waves") == {1: p})
+
+# --- concept ---
+check("concept: eerst geen", refine.view("A1")["draft"] is None)
+edited = model.to_dict(doc)
+edited["speakers"][0]["name"] = "Interviewer"
+edited["segments"][0]["words"][0] = ["Hoi", 1000, 1500, 1.0]
+edited["source"] = {"connector": "ander", "media": "/elders"}      # het scherm bepaalt de bron niet
+saved = refine.save_draft("A1", json.dumps({"transcript": edited, "edits": 3}))
+draft = refine.view("A1")["draft"]
+check("concept: bewaard met aantal en tijd", draft and draft["edits"] == 3 and draft["saved_at"] == saved, draft and draft["edits"])
+check("concept: wijzigingen erin", draft["transcript"]["speakers"][0]["name"] == "Interviewer"
+      and draft["transcript"]["segments"][0]["words"][0][0] == "Hoi")
+check("concept: bron en sporen van het origineel", draft["transcript"]["source"]["media"] == str(media)
+      and len(draft["transcript"]["tracks"]) == 2, draft["transcript"]["source"])
+for bad_body in ("geen json", json.dumps({"transcript": {"format": "iets anders"}}), json.dumps({"edits": 1})):
+    try:
+        refine.save_draft("A1", bad_body)
+        check("concept: onzin wordt geweigerd", False, bad_body)
+    except (ValueError, KeyError, TypeError):
+        check("concept: onzin wordt geweigerd", refine.view("A1")["draft"]["edits"] == 3)
+(refine.DRAFTS_DIR / "A1.draft.json").write_text("{kapot")
+check("concept: kapot bestand telt als geen concept", refine.view("A1")["draft"] is None)
+refine.save_draft("A1", json.dumps({"transcript": edited, "edits": 1}))
+refine.discard_draft("A1")
+refine.discard_draft("A1")
+check("concept: weggooien (ook twee keer)", refine.view("A1")["draft"] is None)
 
 print("ALLES OK" if not fails else f"{fails} FOUT")
 sys.exit(1 if fails else 0)

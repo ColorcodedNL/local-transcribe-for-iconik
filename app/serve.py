@@ -677,6 +677,25 @@ class Handler(BaseHTTPRequestHandler):
         port = self.server.server_address[1]
         return self.headers.get("Host", "") in (f"localhost:{port}", f"127.0.0.1:{port}")
 
+    def do_POST(self):
+        """Alleen voor het concept van Refine: zelfde controles als de veranderende GET-routes."""
+        url = urlparse(self.path)
+        if not self.host_ok() or self.headers.get("X-Local-Transcribe") != "1":
+            return self.send_error(403)
+        asset_id = parse_qs(url.query).get("asset", [""])[0]
+        try:
+            if url.path == "/refine/draft":
+                size = int(self.headers.get("Content-Length") or 0)
+                if not 0 < size <= refine.DRAFT_LIMIT:
+                    return self.send_error(413)
+                return self.reply_json({"saved_at": refine.save_draft(asset_id, self.rfile.read(size))})
+            if url.path == "/refine/discard":
+                refine.discard_draft(asset_id)
+                return self.reply_json({"ok": True})
+        except (refine.RefineError, Problem, ValueError, KeyError, TypeError) as error:
+            return self.reply_json({"error": str(error) or type(error).__name__})
+        return self.send_error(404)
+
     def do_GET(self):
         url = urlparse(self.path)
         if not self.host_ok():
