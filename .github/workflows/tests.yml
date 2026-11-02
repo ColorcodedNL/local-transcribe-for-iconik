@@ -1,6 +1,7 @@
 # Alle tests bij elke push en pull request, ook de browsertest van het venster.
 # De app zelf draait alleen op een Mac; de tests vervangen MLX, torch en de sleutelhanger, dus Linux volstaat.
-# De browsertest gebruikt de Google Chrome die al op de runner staat: geen download, geen apt.
+# De browsertest gebruikt de Google Chrome die al op de runner staat. ffmpeg komt uit apt: test_refine maakt er
+# een testbestand mee, en test_audio_memory slaat zonder ffmpeg de helft over.
 name: tests
 on: [push, pull_request]
 jobs:
@@ -9,6 +10,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
+      - name: ffmpeg
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends ffmpeg
       - name: uv
         run: pipx install uv
       - name: Tests
