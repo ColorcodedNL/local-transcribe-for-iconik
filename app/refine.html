@@ -204,6 +204,9 @@ async function loadChunk(my) {
   await waitIdle();
   // Achter de afspeelkop ruimen, anders loopt de buffer bij een lang bestand vol.
   if (sb.buffered.length && v.currentTime - sb.buffered.start(0) > 90) { sb.remove(0, v.currentTime - 30); await waitIdle(); }
+  // Elk stukje op zijn eigen plek: het begint intern op 0 en is door AAC iets langer dan gevraagd. Achter
+  // elkaar plakken (sequence) liep daardoor per stukje 23 ms uit; zo overschrijft het volgende de staart.
+  sb.timestampOffset = next;
   sb.appendBuffer(buf); await waitIdle();
   next += D.chunk; return true;
 }
@@ -213,7 +216,7 @@ async function loop() {
       const t = target, my = gen; target = null;
       await waitIdle();
       if (sb.buffered.length) { sb.remove(0, dur + 1); await waitIdle(); }
-      sb.timestampOffset = t; next = t;
+      next = t;
       if (!await loadChunk(my) || my !== gen) continue;
       v.currentTime = t; pending = null; $("busy").textContent = "";
       if (wantPlay) v.play().catch(() => {});
@@ -232,7 +235,7 @@ function startPlayer(t) {
     const type = D.video ? TYPE : AUDIO_TYPE;
     if (!MediaSource.isTypeSupported(type)) { showError("WebKit: " + type); return; }
     ms.duration = dur;   // anders zet WebKit de afspeelpositie terug op 0
-    sb = ms.addSourceBuffer(type); sb.mode = "sequence"; seek(t);
+    sb = ms.addSourceBuffer(type); sb.mode = "segments"; seek(t);
   }, {once: true});
 }
 v.addEventListener("timeupdate", () => { if (v.currentTime >= dur && !v.paused) v.pause(); kick(); });
@@ -302,11 +305,12 @@ function sizeCanvas() {
 }
 function setZoom() {
   // Schuif 0..1000 logaritmisch van het hele bestand tot 8 seconden in beeld.
-  const z = +$("zoom").value / 1000, full = Math.max(dur, 8);
+  const z = +$("zoom").value / 1000, full = Math.max(dur * 1.04, 8);   // iets ruimte voorbij het einde
   span = Math.exp(Math.log(full) + (Math.log(8) - Math.log(full)) * z);
   clampView(); draw();
 }
-function clampView() { viewStart = Math.max(0, Math.min(viewStart, Math.max(dur - span, 0))); }
+// Tot net voorbij het einde schuiven, zodat de afspeelkop aan het eind in beeld blijft.
+function clampView() { viewStart = Math.max(0, Math.min(viewStart, Math.max(dur + span * 0.04 - span, 0))); }
 const xOf = (t, w) => (t - viewStart) / span * w;
 function niceStep(w) {
   const want = span / Math.max(w / 90, 1);
@@ -339,7 +343,7 @@ function draw() {
     ctx.fillStyle = sp.color;
     roundRect(x0, tops.text + 6, bw, TEXT_H - 12, 4); ctx.fill();
     if (i === picked) { ctx.strokeStyle = css["--text"]; ctx.lineWidth = 2; roundRect(x0 - 2, tops.text + 4, bw + 4, TEXT_H - 8, 5); ctx.stroke(); }
-    if (bw > 24) {
+    if (bw > 40) {
       ctx.save(); ctx.beginPath(); ctx.rect(x0 + 6, tops.text + 6, bw - 12, TEXT_H - 12); ctx.clip();
       ctx.fillStyle = DARK_INK.has(sp.color) ? "#1c1f23" : "#ffffff"; ctx.textBaseline = "top";
       wrap(b.display, x0 + 6, tops.text + 10, bw - 12, 13, 2);
@@ -360,6 +364,9 @@ function draw() {
       ctx.fillRect(x, mid - h / 2, 1, h);
     }
   });
+  // na het einde van het bestand
+  const xEnd = xOf(dur, w);
+  if (xEnd < w) { ctx.fillStyle = css["--soft"]; ctx.fillRect(Math.max(xEnd, 0), RULER, w - Math.max(xEnd, 0), tops.height - RULER); }
   // afspeelkop
   if (t >= viewStart && t <= viewStart + span) {
     const x = Math.round(xOf(t, w));
@@ -401,6 +408,7 @@ function frame() {
     const t = now();
     $("tc").textContent = tc(t);
     if (follow && !v.paused && (t < viewStart || t > viewStart + span * 0.85)) { viewStart = t - span * 0.1; clampView(); }
+    if (follow && v.paused && pending === null && t > viewStart + span) { viewStart = t - span * 0.9; clampView(); }
     const i = blockAt(t);
     if (i !== nowAt) {
       mark("now", i, nowAt); nowAt = i;
@@ -449,7 +457,7 @@ async function loadWaves() {
 
 // --- toetsen ---
 document.addEventListener("keydown", e => {
-  if (e.target.closest("input, textarea, [contenteditable]")) return;
+  if (e.target.closest("input:not([type=range]), textarea, [contenteditable]")) return;
   const t = now();
   if (e.code === "Space") { e.preventDefault(); toggle(); }
   else if (e.key === "ArrowLeft" && e.altKey) { e.preventDefault(); stepBlock(-1); }

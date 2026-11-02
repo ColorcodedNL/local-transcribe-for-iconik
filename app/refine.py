@@ -148,6 +148,8 @@ def chunk(asset_id, start, seconds=CHUNK_SECONDS, solo=0):
     audio, _ = _audio_args(s, int(solo or 0))
     video = (["-map", "0:v:0", "-vf", f"scale={CHUNK_WIDTH}:-2", "-c:v", "mpeg4", "-q:v", "4", "-g", "25"]
              if s["video"] else [])
+    # Een stukje begint altijd op tijd 0; de speler zet het zelf op de juiste plek (timestampOffset per stukje).
+    # Achter elkaar plakken liep per stukje 23 ms uit (AAC vult aan), na een half uur seconden naast het beeld.
     command = ["ffmpeg", "-nostdin", "-v", "error", "-ss", f"{start:.3f}", "-i", s["media"], "-t", f"{seconds:.3f}",
                *video, *audio, "-f", "mp4", "-movflags", "frag_keyframe+empty_moov+default_base_moof", "pipe:1"]
     result = subprocess.run(command, capture_output=True, timeout=120)
