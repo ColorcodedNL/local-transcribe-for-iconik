@@ -102,17 +102,8 @@ fi
 "$RES/python/bin/python3.12" -m compileall -q -j 0 "$RES/python/lib" "$RES/app" || true
 
 touch "$OUT"
-# Ondertekenen met het eigen certificaat als dat in de sleutelhanger staat (eenmalig: tools/make_dev_cert.sh).
-# macOS herkent de app dan bij elke build als dezelfde, zodat "Altijd toestaan" voor de sleutelhanger blijft
-# gelden. Zonder certificaat: ad hoc, zoals voorheen.
-IDENTITY="${LT_SIGN_IDENTITY:-Local Transcribe Dev}"
-if security find-identity -v -p codesigning 2>/dev/null | grep -q "\"$IDENTITY\""; then
-  codesign --force --deep -s "$IDENTITY" "$OUT"
-  echo "Ondertekend met: $IDENTITY"
-else
-  codesign --force --deep -s - "$OUT"
-  echo "Ondertekend: ad hoc (geen certificaat \"$IDENTITY\"; zie tools/make_dev_cert.sh)"
-fi
+# Ad hoc, net als de release: testbuilds gedragen zich zo hetzelfde als wat gebruikers krijgen.
+codesign --force --deep -s - "$OUT"
 echo "Gebouwd: $OUT (versie $VERSION)"
 if pgrep -qf "$OUT/Contents/MacOS/"; then
   echo "Let op: deze app draait nog met de oude code. Sluit hem (Cmd+Q) en open hem opnieuw."
