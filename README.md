@@ -14,7 +14,7 @@
 
 A Mac app that transcribes assets from [Iconik](https://www.iconik.io) on your own machine and writes the result back to Iconik as native transcriptions, with word timing and speaker labels. You start it from Iconik: pick an asset, a collection or a selection and choose **Local Transcribe**. The app reads the file from your mounted storage, transcribes it locally and sends the transcript back. Nothing goes to a cloud transcription service.
 
-![The app window with a finished job and its audio tracks](docs/images/app-jobs.png)
+![The job list: finished jobs with their tags (Auto, Refined, Draft) and the Refine button](docs/images/app-jobs.png)
 
 ## Features
 
@@ -60,6 +60,8 @@ The app checks GitHub Releases every six hours and shows a banner when there is 
 ## Remote jobs
 
 With **Allow remote jobs** (Preferences) a Mac picks up requests made in Iconik, from any location, and processes them in the background, as the account signed in on that Mac. Starting jobs from the Custom Action works as before.
+
+![Preferences: Iconik account, storage, models, remote jobs and auto transcribe, and the originals kept by Refine](docs/images/app-preferences.png)
 
 Iconik is the queue. The app creates the metadata fields `local_transcribe_status` (Requested, In progress, Done, Failed) and `local_transcribe_info`, and a metadata view. Add the fields to a view your team uses and set the status to Requested on an asset, or on a collection through Update Metadata to request everything in it. Labels can be Dutch or English (Preferences, **Language of the fields in Iconik**); stored values are always English.
 
