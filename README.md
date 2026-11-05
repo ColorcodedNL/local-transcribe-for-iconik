@@ -65,6 +65,8 @@ With **Allow remote jobs** (Preferences) a Mac picks up requests made in Iconik,
 
 Iconik is the queue. The app creates the metadata fields `local_transcribe_status` (Requested, In progress, Done, Failed) and `local_transcribe_info`, and a metadata view. Add the fields to a view your team uses and set the status to Requested on an asset, or on a collection through Update Metadata to request everything in it. Labels can be Dutch or English (Preferences, **Language of the fields in Iconik**); stored values are always English.
 
+![The Transcription and Transcription details fields in the Iconik metadata panel, after an automatic job](docs/images/iconik-metadata.jpg)
+
 - A Mac checks once a minute and claims one asset at a time. Tested with two Macs on one account: they split the queue without double work, and an asset of a Mac that stops, sleeps or loses its storage goes to the other. More Macs and separate accounts are not tested yet.
 - Problems with the Mac (storage not mounted, signed out, offline) put the asset back, up to three attempts, and pause that Mac for ten minutes; **Resume now** lifts the pause. Problems with the asset itself fail straight away, with the reason in the details field.
 - With remote jobs on, the app stays in the menu bar. **Open at login** starts it hidden. Quitting during a job offers **After this job**.
