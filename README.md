@@ -97,6 +97,8 @@ The limits can be changed in `config.json` (`~/Library/Application Support/Local
 
 ## Refine
 
+![Refine: the original, the transcript blocks with their speakers, and a timeline with the text blocks and every audio track](docs/images/refine.jpg)
+
 Refine opens a transcript in the app window: the original on the left, the blocks on the right, and a timeline below with the text blocks, the speakers and every audio track as a waveform. Open it with **Refine** on a finished job, or with **Refine transcript** in the menu of an asset in Iconik (the app adds that button together with Local Transcribe).
 
 - **Playback.** The original plays straight from the storage (ISG). WebKit cannot play most camera formats, so the app converts short pieces with its own ffmpeg while you watch. Clicking a block or the timeline jumps there; space, the arrow keys and J K L work as in an editor. The headphone button on a track plays only that track; by default you hear the mix of the tracks the app used.
