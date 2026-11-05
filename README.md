@@ -10,6 +10,8 @@
 >
 > 0.5.0 is a code update: installed apps offer it with one click. New users take the `.dmg` from the [latest release](../../releases/latest).
 
+![Refine: the original, the transcript blocks with their speakers, and a timeline with the text blocks and every audio track](docs/images/refine.jpg)
+
 A Mac app that transcribes assets from [Iconik](https://www.iconik.io) on your own machine and writes the result back to Iconik as native transcriptions, with word timing and speaker labels.
 
 You start it from Iconik itself: pick an asset, a collection or a selection, and choose **Local Transcribe**. The app reads the source file from your mounted storage, transcribes it locally and sends the transcript back. Nothing goes to a cloud transcription service.
@@ -96,8 +98,6 @@ While auto transcribe is on and the Mac is on mains power, the Mac does not go t
 The limits can be changed in `config.json` (`~/Library/Application Support/Local Transcribe for Iconik/`): `auto_min_free_gb`, `auto_max_cpu`, `auto_max_gpu`, `auto_max_minutes` and `expected_languages`.
 
 ## Refine
-
-![Refine: the original, the transcript blocks with their speakers, and a timeline with the text blocks and every audio track](docs/images/refine.jpg)
 
 Refine opens a transcript in the app window: the original on the left, the blocks on the right, and a timeline below with the text blocks, the speakers and every audio track as a waveform. Open it with **Refine** on a finished job, or with **Refine transcript** in the menu of an asset in Iconik (the app adds that button together with Local Transcribe).
 
