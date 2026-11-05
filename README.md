@@ -31,7 +31,7 @@ A Mac app that transcribes assets from [Iconik](https://www.iconik.io) on your o
 
 ![Local Transcribe in the Iconik asset menu](docs/images/iconik-menu.png)
 
-![The transcript with speakers in Iconik](docs/images/iconik-transcript.png)
+![The transcript in Iconik, with speakers and the uncertain words underlined](docs/images/iconik-transcript.jpg)
 
 ## Requirements
 
