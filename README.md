@@ -29,7 +29,7 @@ A Mac app that transcribes assets from [Iconik](https://www.iconik.io) on your o
 - **Remote jobs and auto transcribe (optional).** Let a Mac in the background handle requests made in Iconik, or work through everything on the storage that has no transcript yet. See [Remote jobs](#remote-jobs).
 - **Updates from inside the app.** Most are a one-click install of about a hundred KB, signed and verified before anything is written.
 
-![Local Transcribe in the Iconik asset menu](docs/images/iconik-menu.png)
+![The Local Transcribe and Refine transcript buttons in the Iconik asset menu](docs/images/iconik-menu.jpg)
 
 ![The transcript in Iconik, with speakers and the uncertain words underlined](docs/images/iconik-transcript.jpg)
 
