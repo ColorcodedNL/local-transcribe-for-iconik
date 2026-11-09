@@ -501,6 +501,59 @@ def menu_texts():
     return MENU_NL if transcribe.app_language() == "nl" else {}
 
 
+# Rechtsklikmenu in een bewerkveld: deze onderdelen van WebKit blijven weg, de rest (spelling, Writing Tools,
+# knippen en plakken, opzoeken) blijft staan. Buiten een bewerkveld blijft het menu leeg zoals pywebview het doet.
+EDIT_MENU_MARKERS = {"WKMenuItemIdentifierCut", "WKMenuItemIdentifierPaste", "WKMenuItemIdentifierSpellingMenu"}
+EDIT_MENU_HIDDEN = {"WKMenuItemIdentifierReload", "WKMenuItemIdentifierGoBack", "WKMenuItemIdentifierGoForward",
+                    "WKMenuItemIdentifierInspectElement", "WKMenuItemIdentifierOpenLinkInNewWindow",
+                    "WKMenuItemIdentifierDownloadLinkedFile", "WKMenuItemIdentifierOpenFrameInNewWindow"}
+# Submenu's zonder eigen ID, herkend aan de vaste tags van hun onderdelen (WebCore ContextMenuAction):
+# lettertype (41-47) en schrijfrichting van alinea en selectie (52-54, 59-61). Zinloos in platte tekst.
+EDIT_SUBMENU_HIDDEN_TAGS = set(range(41, 48)) | {52, 53, 54, 59, 60, 61}
+_menu_logged = set()   # elke soort menu één keer in het log, om de onderdelen te kunnen nakijken
+
+
+def text_tools(objc, AppKit, BrowserView):
+    """Spelling en Writing Tools (Proeflezen, Herschrijven) in de bewerkvelden van Refine."""
+    # WebKit leest dit bij de start; zonder waarde staat spelling tijdens het typen uit. Een eigen keuze van de
+    # gebruiker (via Spelling en grammatica in het rechtsklikmenu) blijft voorgaan.
+    AppKit.NSUserDefaults.standardUserDefaults().registerDefaults_({"WebContinuousSpellCheckingEnabled": True})
+    Host = BrowserView.WebKitHost
+
+    @objc.typedSelector(b"@@:{CGRect={CGPoint=dd}{CGSize=dd}}@")
+    def initWithFrame_configuration_(self, frame, config):
+        # Een WKWebView krijgt standaard de beperkte Writing Tools (alleen een paneel); "complete" geeft ook
+        # proeflezen en herschrijven in de tekst zelf. Bestaat vanaf macOS 15.
+        if config.respondsToSelector_(b"setWritingToolsBehavior:"):
+            config.setWritingToolsBehavior_(1)   # NSWritingToolsBehaviorComplete
+        return objc.super(Host, self).initWithFrame_configuration_(frame, config)
+
+    @objc.typedSelector(b"v@:@@")
+    def willOpenMenu_withEvent_(self, menu, event):
+        ids = [str(item.identifier() or "") for item in menu.itemArray()]
+        if tuple(ids) not in _menu_logged:
+            _menu_logged.add(tuple(ids))
+            def describe(item):
+                if item.isSeparatorItem():
+                    return "-"
+                text = f"{item.identifier() or ''}#{item.tag()} {item.title()}"
+                if item.submenu() is not None and not item.identifier():
+                    text += " [" + ", ".join(f"#{sub.tag()}" for sub in item.submenu().itemArray()) + "]"
+                return text
+            parts = [describe(item) for item in menu.itemArray()]
+            print(f"[{datetime.now():%H:%M:%S}] rechtsklikmenu: {' | '.join(parts)}")
+        if not EDIT_MENU_MARKERS.intersection(ids):
+            menu.removeAllItems()   # geen bewerkveld: zoals pywebview het doet
+            return
+        for item in list(menu.itemArray()):
+            sub = item.submenu()
+            if (str(item.identifier() or "") in EDIT_MENU_HIDDEN or
+                    (sub is not None and EDIT_SUBMENU_HIDDEN_TAGS.intersection(i.tag() for i in sub.itemArray()))):
+                menu.removeItem_(item)
+
+    objc.classAddMethods(Host, [initWithFrame_configuration_, willOpenMenu_withEvent_])
+
+
 def main():
     global window
     if our_receiver_running():
@@ -571,6 +624,7 @@ def main():
                 threading.Thread(target=on_link, args=(str(url.absoluteString()),), daemon=True).start()
 
     BrowserView.AppDelegate = LocalTranscribeDelegate
+    text_tools(objc, AppKit, BrowserView)
     serve.show_hook = show  # een tweede exemplaar kan zo het venster naar voren halen
     serve.restart_hook = restart  # na een code-update
     from PyObjCTools import AppHelper
