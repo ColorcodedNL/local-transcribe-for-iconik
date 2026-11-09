@@ -77,11 +77,22 @@ except refine.RefineError as error:
 bad = model.from_dict(model.to_dict(doc))
 bad.source["media"] = str(tmp / "weg.mov")
 (transcribe.TRANSCRIPTS_DIR / "A2.json").write_text(json.dumps(model.to_dict(bad)))
-try:
-    refine.view("A2")
-    check("view: origineel onbereikbaar geeft een leesbare fout", False)
-except refine.RefineError as error:
-    check("view: origineel onbereikbaar geeft een leesbare fout", "ISG" in str(error), error)
+# Origineel onbereikbaar (ISG niet gekoppeld): openen lukt, alleen tekst.
+off = refine.view("A2")
+check("offline: openen lukt zonder origineel", off["offline"] and not off["video"], off)
+check("offline: duur uit het transcript, fps 25", abs(off["duration"] - 5.4) < 0.01 and off["fps"] == 25.0, off)
+check("offline: sporen uit het transcript", [t["n"] for t in off["tracks"]] == [1, 2] and off["tracks"][0]["used"], off["tracks"])
+check("offline: concept werkt", refine.save_draft("A2", json.dumps({"transcript": model.to_dict(bad), "edits": 1}))
+      and refine.view("A2")["draft"]["edits"] == 1)
+refine.discard_draft("A2")
+for name, call in (("chunk", lambda: refine.chunk("A2", 0)), ("waves", lambda: refine.waves("A2"))):
+    try:
+        call()
+        check(f"offline: {name} geeft een leesbare fout", False)
+    except refine.RefineError as error:
+        check(f"offline: {name} geeft een leesbare fout", "ISG" in str(error), error)
+check("offline: geen golfvormen gestart", "A2" not in refine._wave_jobs)
+check("view: online niet offline", refine.view("A1")["offline"] is False)
 
 # --- stukjes voor de speler ---
 mix = refine.chunk("A1", 3.0, 4)
@@ -123,6 +134,18 @@ if peaks:
     check("waves: toon hoog, stil spoor laag", np.frombuffer(peaks[1], np.uint8)[50:500].min() > 150
           and np.frombuffer(peaks[2], np.uint8).max() < 10)
 check("waves: daarna direct uit het bestand", refine.waves("A1")[0] == body)
+
+# Daarna de opslag weg: duur, fps en sporen uit wat Refine eerder zag, golfvormen uit de cache.
+away = media.with_name("clip-weg.mov")
+media.rename(away)
+try:
+    off = refine.view("A1")
+    check("offline na eerder openen: duur en fps van het origineel", off["offline"] and abs(off["duration"] - 12) < 0.2
+          and off["fps"] == 25.0, off)
+    check("offline na eerder openen: golfvormen uit de cache", refine.waves("A1")[0] == body)
+finally:
+    away.rename(media)
+check("weer online na terugkoppelen", refine.view("A1")["offline"] is False)
 
 # --- golfvormen tijdens een opdracht ---
 transcribe._local.peaks = {}

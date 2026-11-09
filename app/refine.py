@@ -67,6 +67,35 @@ def _reachable(path):
         return False
 
 
+def _media_info_path(asset_id):
+    return core.WAVES_DIR / core.safe_name(asset_id, ".media.json")
+
+
+def _save_media_info(asset_id, info):
+    """Duur, fps en sporen van het origineel, voor als het later niet bereikbaar is."""
+    try:
+        path = _media_info_path(asset_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if not path.is_file() or json.loads(path.read_text()) != info:
+            path.write_text(json.dumps(info))
+    except (OSError, ValueError):
+        pass
+
+
+def _offline_shape(asset_id, doc):
+    """(duur, fps, aantal sporen) zonder het origineel: uit wat Refine eerder zag, de golfvormen en het transcript."""
+    try:
+        info = json.loads(_media_info_path(asset_id).read_text())
+    except (OSError, ValueError):
+        info = {}
+    peaks = core.read_waves(_waves_path(asset_id)) or {}
+    ends = [seg.end / 1000 for seg in doc.segments]
+    duration = max([float(info.get("duration") or 0), max(ends, default=0)]
+                   + [len(p) / core.WAVE_RATE for p in peaks.values()])
+    count = max([int(info.get("tracks") or 0), max(peaks, default=0)] + [t.number for t in doc.tracks])
+    return duration, float(info.get("fps") or 25), count
+
+
 def open_session(asset_id, reload=False):
     """De sessie voor een asset: transcript, bestand en sporen. Gooit RefineError met een leesbare reden."""
     with _lock:
@@ -98,15 +127,21 @@ def open_session(asset_id, reload=False):
             media = str(core.find_media_file(client, asset_id, interactive=False)) if client else ""
         except Exception:
             media = ""
-    if not _reachable(media):
-        raise RefineError(core.L("Het origineel is op deze Mac niet bereikbaar. Is de opslag (ISG) gekoppeld?",
-                                 "The original is not reachable on this Mac. Is the storage (ISG) connected?"))
-    duration, fps, has_video = _probe(media)
-    tracks = core.list_tracks(media)
     known = {t.number: t for t in doc.tracks}
+    if _reachable(media):
+        duration, fps, has_video = _probe(media)
+        tracks = core.list_tracks(media)
+        _save_media_info(asset_id, {"duration": duration, "fps": fps, "video": has_video, "tracks": len(tracks),
+                                    "name": Path(media).name})
+        offline = False
+    else:
+        # Zonder origineel (opslag niet gekoppeld): alleen tekst bewerken, met de golfvormen uit de cache.
+        media = doc.source.get("media") or ""
+        duration, fps, count = _offline_shape(asset_id, doc)
+        tracks, has_video, offline = [None] * count, False, True
     used = [n for n in range(1, len(tracks) + 1) if known.get(n) and known[n].used] or [1]
     session = {"asset_id": asset_id, "doc": doc, "origin": origin, "media": media, "duration": duration,
-               "fps": fps, "video": has_video, "tracks": tracks, "used": used,
+               "fps": fps, "video": has_video, "tracks": tracks, "used": used, "offline": offline,
                "labels": {n: (known[n].label if n in known else "") for n in range(1, len(tracks) + 1)}}
     with _lock:
         _sessions[asset_id] = session
@@ -119,7 +154,7 @@ def view(asset_id):
     doc = s["doc"]
     return {
         "asset_id": asset_id, "title": doc.source.get("title") or asset_id, "origin": s["origin"],
-        "media_name": Path(s["media"]).name, "duration": s["duration"], "fps": s["fps"], "video": s["video"],
+        "media_name": Path(s["media"]).name, "offline": s["offline"], "duration": s["duration"], "fps": s["fps"], "video": s["video"],
         "transcript": tmodel.to_dict(doc),
         "tracks": [{"n": n, "label": s["labels"][n], "used": n in s["used"]} for n in range(1, len(s["tracks"]) + 1)],
         "chunk": CHUNK_SECONDS, "lang": core.app_language(), "draft": load_draft(asset_id),
@@ -149,6 +184,8 @@ def _audio_args(session, solo):
 def chunk(asset_id, start, seconds=CHUNK_SECONDS, solo=0):
     """Een stukje van het origineel als fragmented mp4 (MPEG-4 beeld, AAC geluid)."""
     s = open_session(asset_id)
+    if s["offline"]:
+        raise RefineError(_offline_reason())
     start = max(0.0, min(float(start), max(s["duration"] - 0.05, 0)))
     seconds = max(0.5, min(float(seconds), 30.0))
     audio, _ = _audio_args(s, int(solo or 0))
@@ -166,6 +203,11 @@ def chunk(asset_id, start, seconds=CHUNK_SECONDS, solo=0):
 
 # --- golfvormen ---
 
+def _offline_reason():
+    return core.L("Het origineel is op deze Mac niet bereikbaar. Is de opslag (ISG) gekoppeld?",
+                  "The original is not reachable on this Mac. Is the storage (ISG) connected?")
+
+
 def _waves_path(asset_id):
     return core.WAVES_DIR / core.safe_name(asset_id, ".waves")
 
@@ -176,6 +218,8 @@ def waves(asset_id):
     path = _waves_path(asset_id)
     if core.read_waves(path) is not None:
         return path.read_bytes(), None
+    if open_session(asset_id)["offline"]:
+        raise RefineError(_offline_reason())
     with _lock:
         job = _wave_jobs.get(asset_id)
         if job is None:

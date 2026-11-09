@@ -44,6 +44,7 @@ header h1 { margin: 0; font-size: 18px; font-weight: 650; letter-spacing: -.015e
 .icon:hover { background: var(--soft); }
 #play { width: 36px; height: 36px; background: var(--accent); color: #fff; border-radius: 50%; }
 #play:hover { filter: brightness(1.08); }
+#play.off { opacity: .35; filter: none; cursor: default; }
 #right { width: 440px; flex: none; display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
 #speakers { padding: 8px 10px; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; background: var(--head); }
 .chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; background: var(--surface); }
@@ -70,6 +71,7 @@ header h1 { margin: 0; font-size: 18px; font-weight: 650; letter-spacing: -.015e
 .lane-name span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lane-name span.used { color: var(--good, #2e9a48); }
 .listen { width: 26px; height: 26px; flex: none; border: 1px solid var(--line); background: var(--surface); border-radius: 5px; display: flex; align-items: center; justify-content: center; }
+.listen[hidden] { display: flex; visibility: hidden; }
 .listen[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
 #canvasBox { position: relative; overflow: hidden; }
 #canvas { display: block; width: 100%; cursor: text; }
@@ -171,10 +173,12 @@ const TEXT = {
     hear: "Je hoort:", mix: list => `mix van de gebruikte sporen (${list})`, solo: n => `alleen spoor ${n}`, zoom: "Zoom",
     text: "Tekst", speakerLane: "Sprekers", track: n => `Spoor ${n}`, used: "gebruikt", skipped: "overgeslagen",
     listen: "Luister alleen naar dit spoor", loading: "Laden...", video: "Beeld laden...", noVideo: "Geen beeld: alleen geluid",
+    offline: "Origineel niet bereikbaar: alleen tekst. Koppel de opslag (ISG) voor beeld en geluid.",
+    noSound: "niets, het origineel is niet bereikbaar", wavesOffline: "Golfvormen pas als het origineel bereikbaar is",
     waves: f => `Golfvormen uitrekenen ${Math.round(f * 100)}%`, wavesFail: "Golfvormen niet beschikbaar",
     from: { mac: "kopie op deze Mac", iconik: "uit Iconik" }, source: (e, o) => `Bron: ${e}, ${o}`,
     note: "Dubbelklik op tekst om te bewerken, Enter splitst · rechtsklik voor sprekers · Opslaan vervangt het transcript in Iconik, het origineel blijft op deze Mac",
-    origin: name => `Origineel via opslag (ISG) · ${name}`,
+    origin: name => `Origineel via opslag (ISG) · ${name}`, originOff: name => `Origineel niet bereikbaar · ${name}`,
     notes: {},
   },
   en: {
@@ -196,10 +200,12 @@ const TEXT = {
     hear: "You hear:", mix: list => `mix of the used tracks (${list})`, solo: n => `track ${n} only`, zoom: "Zoom",
     text: "Text", speakerLane: "Speakers", track: n => `Track ${n}`, used: "used", skipped: "skipped",
     listen: "Listen to this track only", loading: "Loading...", video: "Loading picture...", noVideo: "No picture: audio only",
+    offline: "Original not reachable: text only. Connect the storage (ISG) for picture and sound.",
+    noSound: "nothing, the original is not reachable", wavesOffline: "Waveforms once the original is reachable",
     waves: f => `Calculating waveforms ${Math.round(f * 100)}%`, wavesFail: "Waveforms not available",
     from: { mac: "copy on this Mac", iconik: "from Iconik" }, source: (e, o) => `Source: ${e}, ${o}`,
     note: "Double-click text to edit, Enter splits · right-click for speakers · Saving replaces the transcript in Iconik, the original stays on this Mac",
-    origin: name => `Original via storage (ISG) · ${name}`,
+    origin: name => `Original via storage (ISG) · ${name}`, originOff: name => `Original not reachable · ${name}`,
     notes: {"geluid": "audio", "stil": "silent", "tijdcode of toon": "timecode or tone", "eigen microfoon": "dedicated microphone", "gekozen spoor": "chosen track"},
   },
 };
@@ -238,6 +244,7 @@ function buffered(t) {
 }
 function seek(t) {
   t = Math.max(0, Math.min(t, Math.max(dur - 1 / fps, 0)));
+  if (D.offline) { pending = t; draw(); return; }   // geen speler: alleen de afspeelkop verplaatsen
   if (buffered(t)) { pending = null; v.currentTime = t; draw(); return; }
   pending = t; target = t; gen++; kick();
 }
@@ -296,6 +303,7 @@ v.addEventListener("timeupdate", () => { if (v.currentTime >= dur && !v.paused) 
 v.addEventListener("play", () => { wantPlay = true; playIcon(); });
 v.addEventListener("pause", () => { if (pending === null) wantPlay = false; playIcon(); });
 function toggle() {
+  if (D.offline) { flash(T.offline); return; }
   if (!v.paused) { wantPlay = false; v.pause(); return; }
   wantPlay = true; playIcon();
   if (pending !== null) return;               // de sprong die nog laadt, speelt daarna vanzelf af
@@ -487,14 +495,14 @@ function renderLabels() {
   let html = `<div style="height:${RULER}px"></div><div style="height:${TEXT_H}px;color:var(--text);font-weight:600">${T.text}</div><div style="height:${SPK}px">${T.speakerLane}</div>`;
   html += D.tracks.map(tr => {
     const state = (tr.label ? note(tr.label) + " · " : "") + (tr.used ? T.used : T.skipped);
-    return `<div style="height:${TRACK}px"><button class="listen" data-n="${tr.n}" aria-pressed="${solo === tr.n}" title="${T.listen}" aria-label="${T.listen}: ${T.track(tr.n)}"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2.5 10V8a5.5 5.5 0 0 1 11 0v2"/><rect x="2" y="9.5" width="3" height="4.5" rx="1"/><rect x="11" y="9.5" width="3" height="4.5" rx="1"/></svg></button><span class="lane-name"><b>${T.track(tr.n)}</b><span class="${tr.used ? "used" : ""}">${esc(state)}</span></span></div>`;
+    return `<div style="height:${TRACK}px"><button class="listen"${D.offline ? " hidden" : ""} data-n="${tr.n}" aria-pressed="${solo === tr.n}" title="${T.listen}" aria-label="${T.listen}: ${T.track(tr.n)}"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2.5 10V8a5.5 5.5 0 0 1 11 0v2"/><rect x="2" y="9.5" width="3" height="4.5" rx="1"/><rect x="11" y="9.5" width="3" height="4.5" rx="1"/></svg></button><span class="lane-name"><b>${T.track(tr.n)}</b><span class="${tr.used ? "used" : ""}">${esc(state)}</span></span></div>`;
   }).join("");
   $("labels").innerHTML = html;
   const used = D.tracks.filter(t => t.used).map(t => t.n).join(" + ");
-  $("hear").textContent = solo ? T.solo(solo) : T.mix(used);
+  $("hear").textContent = D.offline ? T.noSound : solo ? T.solo(solo) : T.mix(used);
 }
 $("labels").addEventListener("click", e => {
-  const b = e.target.closest(".listen"); if (!b) return;
+  const b = e.target.closest(".listen"); if (!b || D.offline) return;
   const n = +b.dataset.n; solo = solo === n ? 0 : n;
   renderLabels(); startPlayer(now()); draw();
 });
@@ -504,7 +512,7 @@ async function loadWaves() {
     try { r = await fetch(`/refine/waves?asset=${encodeURIComponent(ASSET)}`); } catch { $("wavesState").textContent = T.wavesFail; return; }
     if ((r.headers.get("Content-Type") || "").startsWith("application/json")) {
       const j = await r.json();
-      if (j.error) { $("wavesState").textContent = T.wavesFail; console.log(j.error); return; }
+      if (j.error) { $("wavesState").textContent = D.offline ? T.wavesOffline : T.wavesFail; console.log(j.error); return; }
       $("wavesState").textContent = T.waves(j.fraction || 0);
       await new Promise(res => setTimeout(res, 800)); continue;
     }
@@ -684,7 +692,9 @@ function startEdit(i, caret) {
   pick(i, false);
   const b = blocks[i];
   el.textContent = b.display;
-  el.setAttribute("contenteditable", "plaintext-only"); el.title = T.editHint; el.focus();
+  el.setAttribute("contenteditable", "plaintext-only"); el.title = T.editHint;
+  el.spellcheck = true; el.lang = D.transcript.language || "";   // spelling in de taal van het transcript
+  el.focus();
   placeCaret(el, caret ?? b.display.length);
   let done = false;
   const text = () => el.textContent.replace(/\s+/g, " ").trim();
@@ -744,7 +754,12 @@ function startEdit(i, caret) {
       startEdit(blocks.indexOf(b), joinAt);
     }
   };
-  el.onblur = () => finish(true);
+  // Writing Tools, het rechtsklikmenu of een ander venster nemen de focus even over: dan blijft het veld open.
+  // Pas als de focus binnen het venster ergens anders heen gaat, is het bewerken klaar.
+  el.onblur = () => setTimeout(() => {
+    if (done || !document.hasFocus() || document.activeElement === el) return;
+    finish(true);
+  }, 0);
 }
 $("list").addEventListener("dblclick", e => { const el = e.target.closest(".blk"); if (el && !e.target.closest("[contenteditable]")) startEdit(+el.dataset.i); });
 
@@ -952,13 +967,14 @@ async function start() {
   $("total").textContent = "/ " + tc(dur);
   const engine = [tr.engine.model, tr.engine.version ? "mlx-whisper " + tr.engine.version : ""].filter(Boolean).join(", ") || "Local Transcribe";
   $("source").textContent = T.source(engine, T.from[D.origin] || D.origin);
-  $("src").textContent = T.origin(D.media_name); $("src").hidden = false;
-  $("busy").textContent = D.video ? T.video : T.noVideo;
+  $("src").textContent = (D.offline ? T.originOff : T.origin)(D.media_name); $("src").hidden = false;
+  if (D.offline) { $("play").classList.add("off"); $("play").title = T.offline; }
+  $("busy").textContent = D.offline ? T.offline : D.video ? T.video : T.noVideo;
   renderList(); renderLabels(); readColors(); playIcon();
   $("zoom").value = 600; setZoom(); sizeCanvas();
   new ResizeObserver(sizeCanvas).observe($("canvasBox"));
   matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { readColors(); draw(); });
-  startPlayer(blocks.length ? blocks[0].start : 0);
+  if (D.offline) seek(blocks.length ? blocks[0].start : 0); else startPlayer(blocks.length ? blocks[0].start : 0);
   loadWaves();
   requestAnimationFrame(frame);
 }
