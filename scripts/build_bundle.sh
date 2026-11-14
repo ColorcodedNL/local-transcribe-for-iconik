@@ -98,8 +98,34 @@ if [ -f "$TELEMETRY" ]; then
   grep -q '^metrics_enabled: false' "$TELEMETRY" || { echo "Telemetrie van pyannote kon niet uit"; exit 1; }
 fi
 
+# Geen paden van deze Mac in de bundel: iedereen die de dmg opent, kan ze lezen (gebruikersnaam en mappen).
+# - Scripts van pakketten in python/bin (hf, numba, pip, ...): de app gebruikt ze niet, en hun eerste regel
+#   is het volledige pad van de bouwmap. Alleen de Python zelf blijft.
+# - De naam waaronder libpython zichzelf kent, was het pad in de uv-map van deze gebruiker.
+# - _sysconfigdata onthoudt waar uv deze Python had neergezet.
+# - Bytecode onthoudt het pad van elk bronbestand: oude bytecode uit build/python weg, en de nieuwe krijgt
+#   het pad dat klopt als de app in Programma's staat (compileall -s en -p).
+find "$RES/python/bin" -mindepth 1 ! -name python ! -name python3 ! -name python3.12 -delete
+install_name_tool -id @rpath/libpython3.12.dylib "$PYLIB/libpython3.12.dylib"
+sed -i '' "s|$HOME|/Users/build|g" "$PYLIB"/python3.12/_sysconfigdata*.py
+find "$RES" -type d -name __pycache__ -prune -exec rm -rf {} +
+
 # Bytecode vooraf maken, zodat de eerste start niet traag is en de bundel na ondertekenen niet meer verandert
-"$RES/python/bin/python3.12" -m compileall -q -j 0 "$RES/python/lib" "$RES/app" || true
+INSTALLED_RES="/Applications/Local Transcribe for Iconik.app/Contents/Resources"
+# -B: de Python die dit draait, schrijft zelf geen bytecode voor wat hij daarbij laadt (die kreeg anders het
+# echte pad van de bouwmap, en compileall sloeg die bestanden daarna over). -f: alles opnieuw, wat er ook staat.
+"$RES/python/bin/python3.12" -B -m compileall -q -f -j 0 -s "$RES" -p "$INSTALLED_RES" "$RES/python/lib" "$RES/app" || true
+
+# Controle: staat er toch nog een pad van deze Mac in de bundel, dan niet verder. Zo komt een nieuw lek
+# (een pakket dat iets anders bewaart, een eigen build met een pad erin) bij het bouwen aan het licht.
+# Alleen bij nood overslaan met ALLOW_LOCAL_PATHS=1.
+LEAKS="$(grep -rlaF -e "$HOME" -e "/Users/$(id -un)/" "$RES" | head -20 || true)"
+if [ -n "$LEAKS" ] && [ "${ALLOW_LOCAL_PATHS:-}" != 1 ]; then
+  echo "STOP: een pad van deze Mac ($HOME) staat in de bundel, in onder meer:"
+  echo "$LEAKS" | sed "s|^$RES/|  |"
+  echo "Staat ffmpeg erbij: bouw die opnieuw met scripts/build_ffmpeg.sh (verwijder eerst build/ffmpeg-out)."
+  exit 1
+fi
 
 touch "$OUT"
 # Ad hoc, net als de release: testbuilds gedragen zich zo hetzelfde als wat gebruikers krijgen.

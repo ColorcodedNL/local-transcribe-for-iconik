@@ -6,6 +6,9 @@ Kiest welke code de app draait: de code in de bundel, of een nieuwere code-updat
 gedownload en gecontroleerd (zie updater.py). De bundel zelf wordt nooit aangepast, dus de
 codehandtekening van de app blijft geldig.
 
+De update wordt bij elke start opnieuw gecontroleerd tegen zijn handtekening en uit het geheugen
+geladen (app_shell.load_code en use_code). De map zelf komt niet op het zoekpad van Python.
+
 Start een update niet goed, dan komt de versie op de lijst met mislukte versies (bad.json)
 en start de app opnieuw met de code uit de bundel.
 
@@ -64,8 +67,11 @@ def pid_alive(pid):
         return True  # bestaat, maar is niet van ons
 
 
-def choose_code(here, code_dir, shell_version, version_tuple):
-    """(map, versie) van de code-update die gebruikt moet worden, of None voor de code in de bundel."""
+def choose_code(here, code_dir, shell_version, version_tuple, load=None):
+    """(map, versie, inhoud) van de code-update die gebruikt moet worden, of None voor de code in de bundel.
+
+    `load` is app_shell.load_code: leest en controleert de ondertekende zip en geeft (inhoud, reden).
+    Zonder `load` (alleen in tests van de keuze zelf) telt wat er los in de map staat en is inhoud None."""
     bundled = read_json(here / "manifest.json")
     if not bundled:
         return None  # geen bundel (draait uit de projectmap): altijd de eigen code
@@ -95,7 +101,18 @@ def choose_code(here, code_dir, shell_version, version_tuple):
     if isinstance(bad, list) and version in bad:
         return None
     folder = code_dir / version
-    manifest = read_json(folder / "manifest.json")
+    contents = None
+    if load is not None:
+        contents, reason = load(folder, version)
+        if contents is None:
+            log(f"code {version} niet gebruikt: {reason}; code uit de bundel")
+            return None
+        try:
+            manifest = json.loads(contents["manifest.json"])
+        except (KeyError, ValueError):
+            return None
+    else:
+        manifest = read_json(folder / "manifest.json")
     if not isinstance(manifest, dict) or manifest.get("version") != version:
         return None
     try:
@@ -105,9 +122,9 @@ def choose_code(here, code_dir, shell_version, version_tuple):
         return None
     if version_tuple(version) <= version_tuple(str(bundled.get("version", "0"))):
         return None  # de bundel is even nieuw of nieuwer (bijvoorbeeld na een nieuwe dmg)
-    if not (folder / "app_main.py").is_file():
+    if not ("app_main.py" in contents if contents is not None else (folder / "app_main.py").is_file()):
         return None
-    return folder, version
+    return folder, version, contents
 
 
 def fall_back(code_dir, version):
@@ -125,13 +142,14 @@ def run():
     import app_shell
     chosen = None
     try:
-        chosen = choose_code(HERE, app_shell.CODE_DIR, app_shell.SHELL_VERSION, app_shell.version_tuple)
+        chosen = choose_code(HERE, app_shell.CODE_DIR, app_shell.SHELL_VERSION, app_shell.version_tuple,
+                             app_shell.load_code)
     except Exception as error:
         log(f"code kiezen mislukte ({type(error).__name__}: {error}); code uit de bundel")
     os.environ.pop("LOCALTRANSCRIBE_CODE", None)
     if chosen:
-        folder, version = chosen
-        sys.path.insert(0, str(folder))
+        version = chosen[1]
+        app_shell.use_code(chosen[2], version)   # uit het geheugen; de map komt niet op het zoekpad
         os.environ["LOCALTRANSCRIBE_CODE"] = version
     try:
         import app_main

@@ -44,6 +44,10 @@ def prepare():
 def log_start():
     """Kopregel in het log. Pas als vaststaat dat dit exemplaar de app wordt: een tweede start (een klik
     in Iconik terwijl de app al draait) schreef hem anders midden in de regels van een lopende opdracht."""
+    if serve.rotate_log(LOGDIR / "serve.log"):   # te groot geworden: het oude is nu serve.log.1
+        log = open(LOGDIR / "serve.log", "a", buffering=1)
+        os.dup2(log.fileno(), 1)
+        os.dup2(log.fileno(), 2)
     code = f"code-update {CODE_VERSION}" if CODE_VERSION else "code uit de bundel"
     cache = "MallocLargeCache=" + os.environ.get("MallocLargeCache", "standaard")   # uit LSEnvironment in Info.plist
     print(f"\n===== app gestart {datetime.now():%Y-%m-%d %H:%M:%S} vanaf {RES.parent.parent} ({code}, {cache}) =====")
@@ -73,8 +77,13 @@ def show(page=None):
 def local_get(path, timeout=60):
     """GET op de eigen ontvanger, zonder doorverwijzingen te volgen. Geeft (status, Location)."""
     connection = http.client.HTTPConnection("127.0.0.1", PORT, timeout=timeout)
+    headers = {"X-Local-Transcribe": "1"}  # /window/show vraagt erom
     try:
-        connection.request("GET", path, headers={"X-Local-Transcribe": "1"})  # /window/show vraagt erom
+        headers[serve.KEY_HEADER] = serve.listener_key()   # de sessie voor de app zelf en een tweede start
+    except Exception:
+        pass
+    try:
+        connection.request("GET", path, headers=headers)
         response = connection.getresponse()
         location = response.getheader("Location") or ""
         response.read()
@@ -632,7 +641,8 @@ def main():
 
     storage = SUPPORT / "webview"
     storage.mkdir(parents=True, exist_ok=True)
-    window = webview.create_window(APP_NAME, BASE + "/", width=980, height=620, min_size=(640, 360))
+    # Het venster meldt zich met de sessie van deze start en krijgt de cookie; daarna gaat het naar de app.
+    window = webview.create_window(APP_NAME, f"{BASE}/window/open?t={serve.SESSION}", width=980, height=620, min_size=(640, 360))
     window.events.closing += on_closing
     # Niet in privemodus: zo blijft de inlog bij Iconik in dit venster bewaard.
     threading.Thread(target=watch_settings, daemon=True).start()

@@ -337,17 +337,17 @@ check("heartbeat na het resultaat overschrijft het niet", worker.beat(queue) is 
       and fake.values["a"][worker.FIELD] == worker.DONE and "3 regels" in fake.values["a"][worker.INFO])
 
 # paden komen niet in het detailveld
-check("scrub: bestand niet gevonden", "/Volumes" not in worker.scrub("Bestand niet gevonden: /Volumes/Archief/Iconik/Map met spatie/clip.mp4")
+check("scrub: bestand niet gevonden", "/Volumes" not in worker.scrub("Bestand niet gevonden: /Volumes/Voorbeeld/Iconik/Map met spatie/clip.mp4")
       and worker.scrub("Bestand niet gevonden: /Volumes/A/b c.mp4") == "Bestand niet gevonden.")
-check("scrub: map niet bereikbaar", worker.scrub("De map /Volumes/Archief/Iconik is niet bereikbaar. Is de opslag (ISG) gemount?")
-      == "De map is niet bereikbaar. Is de opslag (ISG) gemount?" and "Archief" not in worker.scrub("The folder /Volumes/Archief/Iconik cannot be reached. Is it mounted?"))
+check("scrub: map niet bereikbaar", worker.scrub("De map /Volumes/Voorbeeld/Iconik is niet bereikbaar. Is de opslag (ISG) gemount?")
+      == "De map is niet bereikbaar. Is de opslag (ISG) gemount?" and "Voorbeeld" not in worker.scrub("The folder /Volumes/Voorbeeld/Iconik cannot be reached. Is it mounted?"))
 check("scrub: pad tussen aanhalingstekens en los pad", "/Users" not in worker.scrub("[Errno 2] No such file or directory: '/Users/x y/z.wav'")
       and "/private" not in worker.scrub("Fout in /private/var/folders/ab/cd.tmp daarna") and worker.scrub("Geen internet.") == "Geen internet.")
 fake.values["p"] = {worker.FIELD: worker.BUSY, worker.INFO: "x"}
-queue.finish("p", "testmac", False, "Bestand niet gevonden: /Volumes/Archief/Iconik/geheim/clip.mp4")
+queue.finish("p", "testmac", False, "Bestand niet gevonden: /Volumes/Voorbeeld/Iconik/geheim/clip.mp4")
 check("finish schrijft geen pad", "/Volumes" not in fake.values["p"][worker.INFO] and "testmac" in fake.values["p"][worker.INFO])
-queue.give_back("p", "testmac", "De map /Volumes/Archief/Iconik is niet bereikbaar. Is de opslag (ISG) gemount?", 1)
-check("give_back schrijft geen pad", "/Volumes" not in fake.values["p"][worker.INFO] and "Archief" not in fake.values["p"][worker.INFO])
+queue.give_back("p", "testmac", "De map /Volumes/Voorbeeld/Iconik is niet bereikbaar. Is de opslag (ISG) gemount?", 1)
+check("give_back schrijft geen pad", "/Volumes" not in fake.values["p"][worker.INFO] and "Voorbeeld" not in fake.values["p"][worker.INFO])
 
 # eerdere mislukte pogingen blijven achter het resultaat staan
 fake.values["h"] = {worker.FIELD: worker.BUSY, worker.INFO: worker.busy_info("testmac", "abc123", 2, ["othermac", "derde"])}
@@ -597,6 +597,11 @@ check("busy_owner leest de naam", worker.busy_owner("Bezig op Mac Studio sinds 1
 check("stamp is lokale tijd, dag-maand uur:minuut", worker.stamp(datetime(2026, 10, 14, 12, 59)) == "14-10 12:59")
 name = worker.machine_name()
 check("machine_name is een leesbare naam", bool(name) and name.isprintable())
+check("zonder eigen naam: de computernaam", name == worker.computer_name())
+check("eigen naam voor deze Mac", worker.set_machine_alias("  Montage  3 ") == "Montage 3" and worker.machine_name() == "Montage 3")
+check("eigen naam: tekens die de lijst breken en regeleinden eruit, niet te lang",
+      worker.clean_alias("a;b[c]\nd") == "abcd" and len(worker.clean_alias("x" * 100)) == worker.MAX_NAME, worker.clean_alias("a;b[c]\nd"))
+check("eigen naam leeg: weer de computernaam", worker.set_machine_alias("") == "" and worker.machine_name() == worker.computer_name())
 
 fake.values["q"] = {worker.FIELD: worker.BUSY, worker.INFO: "Bezig op testmac sinds 13:00 (abc)"}
 queue.give_back("q", "testmac", "Is de opslag (ISG) gemount?", 1)
@@ -640,43 +645,43 @@ try:
 except RuntimeError:
     check("een andere fout dan een 404 wordt doorgegeven", True)
 fake.get = real_get
-check("auto claimt een asset zonder status", queue.claim("nieuw-video", "rocinante", sleep=lambda s: None, auto=True) == 1)
+check("auto claimt een asset zonder status", queue.claim("nieuw-video", "macbook", sleep=lambda s: None, auto=True) == 1)
 info = fake.values["nieuw-video"][worker.INFO]
 check("auto claim: bezig, met [auto] en een claimcode", fake.values["nieuw-video"][worker.FIELD] == worker.BUSY
-      and worker.is_auto(info) and worker.claim_code(info) and worker.busy_owner(info) == "rocinante", info)
-check("auto claimt geen aangevraagd asset", queue.claim("aangevraagd", "rocinante", sleep=lambda s: None, auto=True) == 0)
-check("auto claimt geen asset dat al klaar is", queue.claim("klaar", "rocinante", sleep=lambda s: None, auto=True) == 0)
-check("de gewone route claimt geen asset zonder status", queue.claim("oud-video", "rocinante", sleep=lambda s: None) == 0)
+      and worker.is_auto(info) and worker.claim_code(info) and worker.busy_owner(info) == "macbook", info)
+check("auto claimt geen aangevraagd asset", queue.claim("aangevraagd", "macbook", sleep=lambda s: None, auto=True) == 0)
+check("auto claimt geen asset dat al klaar is", queue.claim("klaar", "macbook", sleep=lambda s: None, auto=True) == 0)
+check("de gewone route claimt geen asset zonder status", queue.claim("oud-video", "macbook", sleep=lambda s: None) == 0)
 check("na de claim is het geen kandidaat meer", "nieuw-video" not in queue.candidates(["opslag-1"]))
 
 # Mislukt door de Mac: terug naar leeg, niet naar Aangevraagd
-check("teruggeven van een auto-job", queue.give_back("nieuw-video", "rocinante", "Is de opslag (ISG) gemount?", 1))
+check("teruggeven van een auto-job", queue.give_back("nieuw-video", "macbook", "Is de opslag (ISG) gemount?", 1))
 info = fake.values["nieuw-video"].get(worker.INFO, "")
 check("mislukte auto-job: status leeg, geen voorrang", worker.FIELD not in fake.values["nieuw-video"], fake.values["nieuw-video"])
 check("mislukte auto-job: poging, Mac en [auto] in de details", worker.failed_attempts(info) == 1
-      and worker.failed_on(info) == ["rocinante"] and worker.is_auto(info), info)
+      and worker.failed_on(info) == ["macbook"] and worker.is_auto(info), info)
 check("weer een kandidaat", "nieuw-video" in queue.candidates(["opslag-1"]))
 check("de Mac waarop hij mislukte pakt hem niet zelf opnieuw",
-      queue.claim("nieuw-video", "rocinante", sleep=lambda s: None, auto=True) == 0)
-check("een andere Mac wel, als tweede poging", queue.claim("nieuw-video", "Ploefbook", sleep=lambda s: None, auto=True) == 2
-      and worker.failed_on(fake.values["nieuw-video"][worker.INFO]) == ["rocinante"])
-check("na drie pogingen definitief fout", not queue.give_back("nieuw-video", "Ploefbook", "opslag weg", 3)
+      queue.claim("nieuw-video", "macbook", sleep=lambda s: None, auto=True) == 0)
+check("een andere Mac wel, als tweede poging", queue.claim("nieuw-video", "Laptop", sleep=lambda s: None, auto=True) == 2
+      and worker.failed_on(fake.values["nieuw-video"][worker.INFO]) == ["macbook"])
+check("na drie pogingen definitief fout", not queue.give_back("nieuw-video", "Laptop", "opslag weg", 3)
       and fake.values["nieuw-video"][worker.FIELD] == worker.FAILED)
 
 # Klaar: [auto] blijft zichtbaar in de details
-queue.claim("oud-video", "rocinante", sleep=lambda s: None, auto=True)
-queue.finish("oud-video", "rocinante", True, "31 regels, 2 sprekers")
+queue.claim("oud-video", "macbook", sleep=lambda s: None, auto=True)
+queue.finish("oud-video", "macbook", True, "31 regels, 2 sprekers")
 info = fake.values["oud-video"][worker.INFO]
 check("klaar na auto: Klaar met [auto] in de details", fake.values["oud-video"][worker.FIELD] == worker.DONE
       and worker.is_auto(info) and "31 regels" in info, info)
 
 # Vastgelopen auto-job: een andere Mac zet hem terug op leeg, niet op Aangevraagd
-queue.claim("audio", "rocinante", sleep=lambda s: None, auto=True)
+queue.claim("audio", "macbook", sleep=lambda s: None, auto=True)
 fake.values["audio"][worker.INFO] = fake.values["audio"][worker.INFO].replace(
     worker.utc_stamp(), "2026-10-01 10:00Z")
-released = queue.release_stale("Ploefbook")
+released = queue.release_stale("Laptop")
 check("vastgelopen auto-job gaat terug naar leeg", released == ["audio"] and worker.FIELD not in fake.values["audio"]
-      and worker.failed_on(fake.values["audio"][worker.INFO]) == ["rocinante"], fake.values["audio"])
+      and worker.failed_on(fake.values["audio"][worker.INFO]) == ["macbook"], fake.values["audio"])
 
 # --- de lus: eerst aanvragen, dan pas automatisch
 fake, queue = ready()
@@ -687,33 +692,33 @@ add = lambda asset_id, remote=0, auto=False: taken.append((asset_id, remote, aut
 settings = {"storages": ["opslag-1"], "audio": False, "max_minutes": 60}
 worker.current.clear()
 worker._pause[0] = 0.0
-check("auto uit: niets automatisch", worker.poll_once(queue, "rocinante", lambda: False, add, sleep=lambda s: None) is None
+check("auto uit: niets automatisch", worker.poll_once(queue, "macbook", lambda: False, add, sleep=lambda s: None) is None
       and not taken)
 check("geen ruimte (auto geeft None): niets automatisch",
-      worker.poll_once(queue, "rocinante", lambda: False, add, sleep=lambda s: None, auto=lambda: None) is None and not taken)
+      worker.poll_once(queue, "macbook", lambda: False, add, sleep=lambda s: None, auto=lambda: None) is None and not taken)
 fake.values["aanvraag"] = {worker.FIELD: worker.REQUESTED}
-got = worker.poll_once(queue, "rocinante", lambda: False, add, sleep=lambda s: None, auto=lambda: settings)
+got = worker.poll_once(queue, "macbook", lambda: False, add, sleep=lambda s: None, auto=lambda: settings)
 check("een aanvraag gaat voor, ook met auto aan", got == "aanvraag" and taken[-1] == ("aanvraag", 1)
       and not worker.is_auto(fake.values["aanvraag"][worker.INFO]), taken)
-got = worker.poll_once(queue, "rocinante", lambda: False, add, sleep=lambda s: None, auto=lambda: settings)
+got = worker.poll_once(queue, "macbook", lambda: False, add, sleep=lambda s: None, auto=lambda: settings)
 check("geen aanvraag meer: het nieuwste asset zonder status, met auto in de lijst", got == "auto-1" and taken[-1] == ("auto-1", 1, True)
       and worker.is_auto(fake.values["auto-1"][worker.INFO]) and worker.state["last_auto"] == "auto-1", taken)
 check("de heartbeat volgt het auto-asset", worker.current.get("asset") == "auto-1"
       and worker.current.get("code") == worker.claim_code(fake.values["auto-1"][worker.INFO]))
 check("tijdens een opdracht wordt niets gezocht",
-      worker.poll_once(queue, "rocinante", lambda: True, add, sleep=lambda s: None, auto=lambda: settings) is None)
+      worker.poll_once(queue, "macbook", lambda: True, add, sleep=lambda s: None, auto=lambda: settings) is None)
 calls = []
-worker.poll_once(queue, "rocinante", lambda: False, add, sleep=lambda s: None,
+worker.poll_once(queue, "macbook", lambda: False, add, sleep=lambda s: None,
                  auto=lambda: calls.append(1) or None)
 fake.values["aanvraag-2"] = {worker.FIELD: worker.REQUESTED}
-worker.poll_once(queue, "rocinante", lambda: False, add, sleep=lambda s: None,
+worker.poll_once(queue, "macbook", lambda: False, add, sleep=lambda s: None,
                  auto=lambda: calls.append(2) or settings)
 check("de ruimte wordt pas gemeten als er geen aanvraag ligt", calls == [1], calls)
 worker.current.clear()
 fake.values["aanvraag-3"] = {worker.FIELD: worker.REQUESTED}
 fake.media["auto-3"] = {"type": "video", "storage": "opslag-1", "minutes": 5, "created": "2026-09-03", "transcript": False}
 answers = iter([True, False])   # mag aan het begin van de ronde, niet meer vlak voor de claim
-got = worker.poll_once(queue, "rocinante", lambda: False, add, sleep=lambda s: None, auto=lambda: settings,
+got = worker.poll_once(queue, "macbook", lambda: False, add, sleep=lambda s: None, auto=lambda: settings,
                        allowed=lambda: next(answers, False))
 check("mag het niet meer vlak voor de claim: niets geclaimd", got is None
       and fake.values["aanvraag-3"][worker.FIELD] == worker.REQUESTED, fake.values["aanvraag-3"])
@@ -722,9 +727,9 @@ worker.current.clear()
 
 # Een gewone aanvraag blijft zich gedragen zoals voorheen
 fake.values["gewoon"] = {worker.FIELD: worker.REQUESTED}
-queue.claim("gewoon", "rocinante", sleep=lambda s: None)
+queue.claim("gewoon", "macbook", sleep=lambda s: None)
 check("gewone claim heeft geen [auto]", not worker.is_auto(fake.values["gewoon"][worker.INFO]))
-queue.give_back("gewoon", "rocinante", "opslag weg", 1)
+queue.give_back("gewoon", "macbook", "opslag weg", 1)
 check("gewone job gaat terug op Aangevraagd", fake.values["gewoon"][worker.FIELD] == worker.REQUESTED
       and not worker.is_auto(fake.values["gewoon"][worker.INFO]))
 

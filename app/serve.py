@@ -42,6 +42,16 @@ PAGE_SIZE = 100
 MAX_DEPTH = 5  # hoe diep collecties in collecties worden gevolgd
 
 KEY_FILE = transcribe.CONFIG_PATH.parent / "key"
+# Wie mag er bij de ontvanger? Alles behalve de paar open routes hieronder vraagt een sessie:
+# - het venster van de app: een cookie met SESSION, die het bij het openen krijgt via /window/open. SESSION
+#   bestaat alleen in het geheugen van deze start, dus alleen het venster van dit proces heeft hem;
+# - de app zelf en een tweede start van de app (zelfde gebruiker): de sleutel uit KEY_FILE (alleen leesbaar
+#   voor de eigenaar) in de header X-Local-Transcribe-Key.
+# Zonder sessie kan een ander proces of een andere gebruiker op deze Mac de opdrachten, de naam van de
+# ingelogde gebruiker, transcripten en beeld niet meer opvragen op poort 8765.
+SESSION = secrets.token_urlsafe(32)
+SESSION_COOKIE = "lt_session"
+KEY_HEADER = "X-Local-Transcribe-Key"
 pending_login = {}        # state -> verifier, voor een inlog die onderweg is
 pending_ids = []          # opdrachten die wachten tot er is ingelogd
 window_state = {"n": 0, "page": "/"}   # wat het venster van de app moet tonen
@@ -184,6 +194,13 @@ STALL_GRACE = 20          # seconden die de app krijgt om zelf af te sluiten voo
 last_progress = [time.monotonic()]
 UI_FILE = Path(__file__).with_name("ui.html")
 REFINE_FILE = Path(__file__).with_name("refine.html")
+
+
+def page_text(file):
+    """De tekst van een pagina van het venster. Met shell 5 of hoger via app_shell: dan komt hij bij een
+    code-update uit de gecontroleerde zip in het geheugen en niet uit een map die aan te passen is."""
+    reader = getattr(app_shell, "read_text", None)
+    return reader(file.name) if reader else file.read_text()
 
 
 def make_options(job):
@@ -351,6 +368,29 @@ def install_update():
     threading.Thread(target=work, daemon=True, name="update-install").start()
 
 
+ASSET_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
+
+
+def valid_asset_id(asset_id):
+    """Een asset-ID dat de editor mag gebruiken. Het komt in een pad bij Iconik en in bestandsnamen op deze
+    Mac terecht, dus alleen letters, cijfers, streepje en liggend streepje: geen schuine streep, punt of
+    vraagteken waarmee het naar iets anders zou wijzen."""
+    return bool(ASSET_ID_RE.fullmatch(asset_id or ""))
+
+
+def rotate_log(path, limit=5 * 1024 * 1024):
+    """Een log boven de grens wordt <naam>.1 (een vorige .1 verdwijnt); daarna begint een leeg log. Geeft True
+    als dat gebeurd is: wie het log open heeft, moet het dan opnieuw openen. Het log groeide anders eindeloos,
+    met de titels van alle assets erin."""
+    try:
+        if path.stat().st_size <= limit:
+            return False
+        os.replace(path, path.with_name(path.name + ".1"))
+        return True
+    except OSError:
+        return False
+
+
 def refine_link(url):
     """De link van de knop Refine transcript: iconiktranscribe://refine?asset_ids=<id>[,...]. Geeft de pagina
     van de editor voor het eerste asset, of None. Alleen openen: niets in de rij, dus geen sleutel nodig."""
@@ -488,6 +528,7 @@ def app_state():
         "mounts": mount_list(config), "model": settings.get("model", ""),
         "speakers": "lokaal" if local else "huggingface" if settings.get("hf_token") else "uit",
         "worker": dict(remote.state, enabled=worker_enabled(), machine=remote.machine_name(),
+                       machine_alias=remote.machine_alias[0], computer=remote.computer_name(),
                        login=login_item_on(), login_available=bundle_path() is not None,
                        iconik_language=worker_languages()[1], auto_on=bool(config.get("auto_transcribe")),
                        auto_audio=bool(config.get("auto_audio")), awake=awake["on"]),
@@ -628,13 +669,15 @@ def running(job):
 
 def status_page(note=""):
     """Het venster: een vaste pagina die zelf de gegevens ophaalt bij /state."""
-    return UI_FILE.read_text().replace('"__NOTE__"', json.dumps(note))
+    return page_text(UI_FILE).replace('"__NOTE__"', json.dumps(note))
 
 
-# Routes die iets veranderen: alleen met de header X-Local-Transcribe, die alleen het venster meestuurt.
+# Routes die iets veranderen: alleen als POST met de header X-Local-Transcribe, die alleen het venster
+# meestuurt (en de sessie, zoals alles). Een link, een plaatje of een formulier op een andere pagina kan zo'n
+# verzoek niet maken. De waarden staan nog in de querystring, zoals voorheen.
 PROTECTED = {"/clear", "/mount/change", "/mount/remove", "/language", "/applang", "/actions/install",
              "/update/open", "/update/install", "/worker", "/iconik-language", "/login-item", "/settings",
-             "/logout", "/window/show", "/auto", "/asset/open"}
+             "/logout", "/window/show", "/auto", "/asset/open", "/machine-name"}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -669,7 +712,9 @@ class Handler(BaseHTTPRequestHandler):
         """De editor: alleen lezen in deel 1, dus geen PROTECTED-routes."""
         asset_id = first("asset")
         if path == "/refine":
-            return self.reply(200, REFINE_FILE.read_text())
+            return self.reply(200, page_text(REFINE_FILE))
+        if not valid_asset_id(asset_id):
+            return self.reply_json({"error": "asset"})
         try:
             if path == "/refine/view":
                 return self.reply_json(refine.view(asset_id))
@@ -696,15 +741,56 @@ class Handler(BaseHTTPRequestHandler):
         port = self.server.server_address[1]
         return self.headers.get("Host", "") in (f"localhost:{port}", f"127.0.0.1:{port}")
 
+    def session_ok(self):
+        """Komt dit verzoek van het venster (cookie) of van de app zelf (sleutel)? Zie SESSION bovenaan."""
+        for part in (self.headers.get("Cookie") or "").split(";"):
+            name, _, value = part.strip().partition("=")
+            if name == SESSION_COOKIE and secrets.compare_digest(value.encode(), SESSION.encode()):
+                return True
+        given, key = self.headers.get(KEY_HEADER) or "", settings.get("key") or ""
+        return bool(given and key) and secrets.compare_digest(given.encode(), key.encode())
+
+    def open_window(self, token):
+        """Het venster van de app meldt zich met SESSION en krijgt de cookie. Daarna gaat het naar de app."""
+        if not secrets.compare_digest((token or "").encode(), SESSION.encode()):
+            return self.send_error(403)
+        self.send_response(303)
+        self.send_header("Location", "/")
+        # Lax: de cookie gaat mee als Iconik na het inloggen terugstuurt naar /oauth/callback en door naar /.
+        self.send_header("Set-Cookie", f"{SESSION_COOKIE}={SESSION}; Path=/; HttpOnly; SameSite=Lax")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+
+    def run_route(self, url):
+        try:
+            return self.route(url)
+        except Problem as problem:
+            return self.reply(200, status_page(str(problem)))
+        except Exception as error:
+            # Geen netwerk of een onverwachte fout: een pagina met de fout, geen verbroken verbinding.
+            print(f"Fout bij {url.path}: {type(error).__name__}: {error}")
+            try:
+                return self.reply(500, status_page(f"{type(error).__name__}: {error}"))
+            except Exception:
+                pass
+
     def do_POST(self):
-        """Alleen voor het concept van Refine: zelfde controles als de veranderende GET-routes."""
+        """Alles wat iets verandert: de routes in PROTECTED en die van Refine."""
         url = urlparse(self.path)
         if not self.host_ok() or self.headers.get("X-Local-Transcribe") != "1":
             return self.send_error(403)
+        if url.path != "/window/show" and not self.session_ok():
+            return self.send_error(403)
+        size = int(self.headers.get("Content-Length") or 0)
+        if url.path in PROTECTED:
+            if size:
+                self.rfile.read(min(size, 65536))   # het venster stuurt hier niets mee; wat er toch is, weg
+            return self.run_route(url)
         asset_id = parse_qs(url.query).get("asset", [""])[0]
+        if url.path != "/refine/originals/clear" and not valid_asset_id(asset_id):
+            return self.reply_json({"error": "asset"})
         try:
             if url.path == "/refine/draft":
-                size = int(self.headers.get("Content-Length") or 0)
                 if not 0 < size <= refine.DRAFT_LIMIT:
                     return self.send_error(413)
                 return self.reply_json({"saved_at": refine.save_draft(asset_id, self.rfile.read(size))})
@@ -726,21 +812,28 @@ class Handler(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         if not self.host_ok():
             return self.send_error(403)
+        if url.path == "/window/open":
+            return self.open_window(parse_qs(url.query).get("t", [""])[0])
+        # Open zonder sessie: de terugkeer van het inloggen (heeft zijn eigen state), de link uit Iconik
+        # (heeft de sleutel in het pad), en de twee routes waarmee een tweede start van de app kijkt of er al
+        # een exemplaar draait en het venster naar voren haalt. Die laatste twee blijven open voor een oudere
+        # versie van de app die de sleutel nog niet meestuurt; ze geven niets prijs en veranderen niets.
+        open_route = (url.path in ("/oauth/callback", "/window/state", "/window/show")
+                      or url.path == "/transcribe" or url.path.startswith("/transcribe/"))
+        if not open_route and not self.session_ok():
+            return self.send_error(403)
         # Wat iets verandert, mag alleen het venster zelf: een andere webpagina kan deze header niet
         # meesturen naar localhost. Links (inloggen, de knop in Iconik met sleutel) staan hier niet in.
-        if url.path in PROTECTED and self.headers.get("X-Local-Transcribe") != "1":
-            return self.send_error(403)
-        try:
-            return self.route(url)
-        except Problem as problem:
-            return self.reply(200, status_page(str(problem)))
-        except Exception as error:
-            # Geen netwerk of een onverwachte fout: een pagina met de fout, geen verbroken verbinding.
-            print(f"Fout bij {url.path}: {type(error).__name__}: {error}")
-            try:
-                return self.reply(500, status_page(f"{type(error).__name__}: {error}"))
-            except Exception:
-                pass
+        if url.path in PROTECTED:
+            if self.headers.get("X-Local-Transcribe") != "1":
+                return self.send_error(403)
+            if url.path != "/window/show":   # alleen dit mag nog als GET (zie hierboven)
+                self.send_response(405)
+                self.send_header("Allow", "POST")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+        return self.run_route(url)
 
     def route(self, url):
         query = parse_qs(url.query)
@@ -767,6 +860,15 @@ class Handler(BaseHTTPRequestHandler):
                 remote.resume()
                 remote.wake.set()
             return self.reply_json({"ok": True})
+        if url.path == "/machine-name":
+            # De naam van deze Mac in Iconik. Niet tijdens een opdracht: het asset staat dan onder de oude naam
+            # op "bezig", en de werker herkent zijn eigen werk aan die naam.
+            if busy():
+                return self.reply_json({"ok": False, "error": transcribe.L(
+                    "Wacht tot de lopende opdracht klaar is.", "Wait until the running job has finished.")})
+            name = remote.set_machine_alias(first("value"))
+            transcribe.set_config("machine_name", name)
+            return self.reply_json({"ok": True, "name": remote.machine_name()})
         if url.path == "/auto":
             for key, name in (("value", "auto_transcribe"), ("audio", "auto_audio")):
                 if first(key) in ("on", "off"):
@@ -819,7 +921,8 @@ class Handler(BaseHTTPRequestHandler):
             clear_finished()
             return self.reply_json({"ok": True})
         if url.path == "/window/state":
-            return self.reply_json(window_state)
+            # Zonder sessie alleen dat de app er is (een tweede start kijkt hiernaar), niet welke pagina openstaat.
+            return self.reply_json(window_state if self.session_ok() else {"ok": True})
         if url.path == "/window/show":
             # De app vraagt het venster een pagina te tonen en naar voren te komen.
             page = first("page")
@@ -1371,6 +1474,7 @@ def start(model="mlx-community/whisper-large-v3-mlx", language=None, mount=None,
         language=language, mount=mount, idle_exit=idle_exit)
 
     transcribe.LISTENER = listen
+    remote.set_machine_alias(transcribe.load_config().get("machine_name"))
     load_jobs()
     atexit.register(save_jobs)
     threading.Thread(target=_saver, daemon=True, name="bewaren").start()

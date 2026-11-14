@@ -52,7 +52,7 @@ check("daarna niets meer te doen", serve.missing_actions(fake) == [] and serve.a
 empty = FakeIconik([])
 check("lege omgeving: vier knoppen", len(serve.missing_actions(empty)) == 4)
 
-aid = "2df8d8e0-a790-11f0-9edb-4a3452efd6a5"
+aid = "aaaaaaaa-1111-2222-3333-444444444444"
 check("link: editor voor het asset", serve.refine_link(f"iconiktranscribe://refine?asset_ids={aid}") == f"/refine?asset={aid}")
 check("link: bij meer assets het eerste", serve.refine_link(f"iconiktranscribe://refine?asset_ids={aid},{aid[::-1]}") == f"/refine?asset={aid}")
 check("link: zonder asset niets", serve.refine_link("iconiktranscribe://refine") is None)

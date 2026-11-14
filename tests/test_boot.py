@@ -46,5 +46,28 @@ scenario("geen current.json", None, current=None)
 scenario("vorige start mislukt (proces weg)", None, marker="0.2.1 999999")
 scenario("start loopt nog (eigen pid)", "0.2.1", marker=f"0.2.1 {os.getpid()}")
 scenario("marker van andere versie", "0.2.1", marker="0.2.0 999999")
+
+
+# Met de controle van shell 5: wat de lader teruggeeft telt, niet wat er los in de map staat.
+def with_loader(name, expect, loaded, shell=1):
+    global fails
+    root = Path(tempfile.mkdtemp()); here = root / "app"; code = root / "code"; here.mkdir(); (code / "0.2.1").mkdir(parents=True)
+    (here / "manifest.json").write_text(json.dumps({"version": "0.2.0"}))
+    (code / "current.json").write_text(json.dumps({"version": "0.2.1"}))
+    (code / "0.2.1" / "manifest.json").write_text(json.dumps({"version": "0.2.1", "requires_shell": 1}))
+    (code / "0.2.1" / "app_main.py").write_text("")
+    got = boot.choose_code(here, code, shell, vt, lambda folder, version: loaded)
+    ok = (got[1] if got else None) == expect and (got is None or got[2] is loaded[0])
+    fails += not ok
+    print(("OK   " if ok else "FOUT ") + name + f" -> {got[1] if got else None}")
+
+
+good = {"manifest.json": json.dumps({"version": "0.2.1", "requires_shell": 1}).encode(), "app_main.py": b""}
+with_loader("lader: gecontroleerde update", "0.2.1", (good, None))
+with_loader("lader: afgekeurd", None, (None, "de handtekening klopt niet"))
+with_loader("lader: manifest in de zip zegt andere versie", None, (dict(good, **{"manifest.json": b'{"version": "9.9.9"}'}), None))
+with_loader("lader: manifest in de zip vraagt nieuwere shell", None, (dict(good, **{"manifest.json": b'{"version": "0.2.1", "requires_shell": 2}'}), None))
+with_loader("lader: app_main.py niet in de zip", None, ({"manifest.json": good["manifest.json"]}, None))
+with_loader("lader: manifest in de zip is onzin", None, (dict(good, **{"manifest.json": b"{"}), None))
 print("ALLES OK" if not fails else f"{fails} FOUT")
 raise SystemExit(1 if fails else 0)

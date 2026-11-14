@@ -135,6 +135,7 @@ const TEXT = {
     btnInstall: "Zet de knoppen in Iconik", btnPresent: "De knoppen Local Transcribe en Refine transcript staan in Iconik.",
     btnDenied: "Je account mag geen Custom Actions aanmaken. Vraag een Iconik-beheerder om één keer in deze app in te loggen en de knop te plaatsen.",
     workerTitle: "Op afstand", workerOn: "Opdrachten op afstand toestaan",
+    nameLabel: "Naam van deze Mac in Iconik", nameSave: "Bewaar", nameHelp: "Staat in de details van een asset, zichtbaar voor iedereen die het asset in Iconik ziet. Leeg: de computernaam.",
     workerHelp: "Staat opdrachten uit Iconik toe vanaf elke locatie. Dit draait op de achtergrond. De opslag (ISG) moet op deze Mac gemount zijn.",
     loginOn: "Opstarten bij inloggen", loginHelp: "Opent de app bij het inloggen. Staat opdrachten op afstand aan, dan blijft hij in de menubalk.",
     autoOn: "Automatisch transcriberen", autoHelp: "Transcribeert alles op de opslag (ISG) van deze Mac dat nog geen transcript heeft: nieuwste eerst, video tot een uur. Alleen als er ruimte is: op netstroom, genoeg geheugen vrij en weinig CPU en GPU in gebruik, ook als iemand op de Mac werkt. Aanvragen van collega's gaan altijd voor. Zolang dit aan staat en de Mac op netstroom is, gaat hij niet slapen (het scherm wel).",
@@ -176,6 +177,7 @@ const TEXT = {
     btnInstall: "Add the buttons to Iconik", btnPresent: "The Local Transcribe and Refine transcript buttons are in Iconik.",
     btnDenied: "Your account is not allowed to create Custom Actions. Ask an Iconik admin to log in to this app once and add the button.",
     workerTitle: "Remote", workerOn: "Allow remote jobs",
+    nameLabel: "Name of this Mac in Iconik", nameSave: "Save", nameHelp: "Shown in the details of an asset, visible to everyone who sees the asset in Iconik. Empty: the computer name.",
     workerHelp: "Allows jobs from Iconik from any location. This runs in the background. The storage (ISG) must be mounted on this Mac.",
     loginOn: "Open at login", loginHelp: "Opens the app when you log in. With remote jobs allowed it stays in the menu bar.",
     autoOn: "Transcribe automatically", autoHelp: "Transcribes everything on the storage (ISG) of this Mac that has no transcript yet: newest first, video up to an hour. Only when there is room: on mains power, enough memory free and little CPU and GPU in use, also while someone works on the Mac. Requests from colleagues always come first. While this is on and the Mac is on mains power, it does not go to sleep (the display does).",
@@ -217,7 +219,7 @@ let drawn = {}, view = "jobs", lang = "en", T = TEXT.en, started = false, landed
 
 const $ = id => document.getElementById(id);
 // Verzoeken die iets veranderen gaan met deze header; de ontvanger weigert ze zonder (zie PROTECTED in serve.py).
-const H = { headers: { "X-Local-Transcribe": "1" } };
+const H = { method: "POST", headers: { "X-Local-Transcribe": "1" } };   // alles wat iets verandert is een POST
 const act = path => fetch(path, H);
 const esc = text => String(text ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 const clock = s => { s = Math.max(0, Math.round(s)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60); return (h ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(s % 60).padStart(2, "0"); };
@@ -273,7 +275,7 @@ function fieldsHtml(w) {
   return `<p>${T.fieldsLang} <select id="fieldsLang" style="width:auto"><option value="nl"${cur === "nl" ? " selected" : ""}>Nederlands</option><option value="en"${cur === "en" ? " selected" : ""}>English</option></select></p><p class="dim">${T.fieldsHelp}</p>` + (fieldsMsg ? `<p>${esc(fieldsMsg)}</p>` : "");
 }
 $("worker").onchange = e => {
-  const h = { headers: { "X-Local-Transcribe": "1" } };
+  const h = H;
   if (e.target.id === "loginOn") { e.target.blur(); fetch("/login-item?value=" + (e.target.checked ? "on" : "off"), h).then(tick); return; }
   if (e.target.id === "workerOn") { e.target.blur(); fetch("/worker?value=" + (e.target.checked ? "on" : "off"), h).then(tick); return; }
   if (e.target.id === "autoOn") { e.target.blur(); fetch("/auto?value=" + (e.target.checked ? "on" : "off"), h).then(tick); return; }
@@ -282,6 +284,16 @@ $("worker").onchange = e => {
     const value = e.target.value; e.target.blur(); fieldsMsg = "";
     fetch("/iconik-language?value=" + value, h).then(r => r.json()).then(r => { fieldsMsg = r.ok ? T.fieldsDone : T.fieldsFail + ": " + (r.error || ""); tick(); }).catch(() => { fieldsMsg = T.fieldsFail; tick(); });
   }
+};
+$("worker").onsubmit = e => {
+  if (e.target.id !== "nameForm") return;
+  e.preventDefault();
+  const name = new FormData(e.target).get("machine") || "";
+  document.activeElement && document.activeElement.blur();   // anders tekent settings() dit blok niet opnieuw
+  act("/machine-name?value=" + encodeURIComponent(name)).then(r => r.json()).then(r => {
+    if (!r.ok) { $("note").textContent = r.error; $("note").hidden = false; }
+    tick();
+  });
 };
 $("worker").onclick = e => {
   if (e.target.id === "resumeNow") { e.target.disabled = true; act("/worker?value=resume").then(tick); }
@@ -407,7 +419,7 @@ function settings(s) {
   const html = {
     account,
     mounts: mounts.length ? mounts.map(m => `<div class="mount"><div><strong>${esc(m.name || "ISG " + m.id)}</strong><br><code>${esc(m.path)}</code></div><button class="plain" data-mount="change" data-id="${esc(m.id)}">${T.change}</button><button class="plain" data-mount="remove" data-id="${esc(m.id)}">${T.remove}</button></div>`).join("") : `<p class="dim">${T.noMounts}</p>`,
-    worker: (w => `<p><label><input type="checkbox" id="workerOn" style="width:auto;margin:0 .5em 0 0;vertical-align:middle"${w.enabled ? " checked" : ""}> ${T.workerOn}</label></p><p class="dim">${T.workerHelp}</p>${w.login_available ? `<p><label><input type="checkbox" id="loginOn" style="width:auto;margin:0 .5em 0 0;vertical-align:middle"${w.login ? " checked" : ""}> ${T.loginOn}</label></p><p class="dim">${T.loginHelp}</p>` : ""}` + (w.enabled ? autoHtml(w) : "") + fieldsHtml(w) + (w.enabled ? `<p class="dim">${T.workerAs}: ${esc(w.machine || "")}${w.last_poll ? `. ${T.workerLast}: ${esc(w.last_poll)}` : ""}${w.last_asset ? `. ${T.workerAsset}: <code>${esc(w.last_asset)}</code>` : ""}</p>` + (w.paused_until ? `<p>${T.workerPaused} ${esc(w.paused_until)}${w.pause_reason ? ": " + esc(w.pause_reason) : ""}. <button class="plain" id="resumeNow">${T.resumeNow}</button></p>` : "") + (w.error ? `<p>${T.workerProblem}: ${esc(w.error)}</p>` : "") : ""))(s.worker || {}),
+    worker: (w => `<p><label><input type="checkbox" id="workerOn" style="width:auto;margin:0 .5em 0 0;vertical-align:middle"${w.enabled ? " checked" : ""}> ${T.workerOn}</label></p><p class="dim">${T.workerHelp}</p>${w.login_available ? `<p><label><input type="checkbox" id="loginOn" style="width:auto;margin:0 .5em 0 0;vertical-align:middle"${w.login ? " checked" : ""}> ${T.loginOn}</label></p><p class="dim">${T.loginHelp}</p>` : ""}` + (w.enabled ? autoHtml(w) : "") + fieldsHtml(w) + (w.enabled ? `<form id="nameForm" style="margin:.8em 0 .2em"><label>${T.nameLabel}<br><input name="machine" maxlength="40" value="${esc(w.machine_alias || "")}" placeholder="${esc(w.computer || "")}" style="width:18em;margin:.3em .5em 0 0"></label><button>${T.nameSave}</button></form><p class="dim">${T.nameHelp}</p>` : "") + (w.enabled ? `<p class="dim">${T.workerAs}: ${esc(w.machine || "")}${w.last_poll ? `. ${T.workerLast}: ${esc(w.last_poll)}` : ""}${w.last_asset ? `. ${T.workerAsset}: <code>${esc(w.last_asset)}</code>` : ""}</p>` + (w.paused_until ? `<p>${T.workerPaused} ${esc(w.paused_until)}${w.pause_reason ? ": " + esc(w.pause_reason) : ""}. <button class="plain" id="resumeNow">${T.resumeNow}</button></p>` : "") + (w.error ? `<p>${T.workerProblem}: ${esc(w.error)}</p>` : "") : ""))(s.worker || {}),
     models: `<p>${T.speech}: <code>${esc(s.model)}</code></p><p>${T.speakers}: ${{lokaal: T.spLocal, huggingface: T.spHub, uit: T.spOff}[s.speakers]}</p><p class="dim">${T.credit}</p><p class="dim">${T.version} ${esc(s.version)}</p>`,
   };
   for (const id in html) if (drawn["set-" + id] !== html[id] && !$(id).contains(document.activeElement)) { $(id).innerHTML = html[id]; drawn["set-" + id] = html[id]; }

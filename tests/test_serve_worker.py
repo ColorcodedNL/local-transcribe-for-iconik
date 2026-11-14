@@ -40,8 +40,10 @@ threading.Thread(target=srv.serve_forever, daemon=True).start()
 
 
 def get(path, headers=None):
+    """Zoals het venster: met de sessiecookie, en met de header erbij als POST."""
     conn = http.client.HTTPConnection("127.0.0.1", srv.server_address[1])
-    conn.request("GET", path, headers=headers or {})
+    conn.request("POST" if headers else "GET", path,
+                 headers=dict(headers or {}, Cookie=f"{serve.SESSION_COOKIE}={serve.SESSION}"))
     return conn.getresponse().status
 
 
@@ -76,7 +78,7 @@ except transcribe.Problem as problem:
 
 state = serve.app_state()
 check("het venster krijgt de status mee", state["worker"]["enabled"] is True and state["worker"]["machine"], state.get("worker"))
-check("de status bevat geen geheimen", set(state["worker"]) <= {"enabled", "last_poll", "last_asset", "error", "machine", "paused_until", "pause_reason", "login", "login_available", "iconik_language", "last_auto", "auto", "auto_on", "auto_audio", "awake"}, state["worker"])
+check("de status bevat geen geheimen", set(state["worker"]) <= {"enabled", "last_poll", "last_asset", "error", "machine", "machine_alias", "computer", "paused_until", "pause_reason", "login", "login_available", "iconik_language", "last_auto", "auto", "auto_on", "auto_audio", "awake"}, state["worker"])
 get("/worker?value=off", header)
 check("uit staat ook zo in de status", serve.app_state()["worker"]["enabled"] is False)
 
@@ -263,6 +265,22 @@ check("de voorkeur voor opdrachten op afstand blijft staan", serve.worker_enable
 serve.quit_after.clear()
 serve.quit_hook = None
 transcribe.save_config({**transcribe.load_config(), "worker_enabled": False, "auto_transcribe": False})
+
+# --- eigen naam voor deze Mac in Iconik
+real_busy = serve.busy
+serve.busy = lambda: False
+check("naam: zonder header 403", get("/machine-name?value=Montage") == 403 and not worker.machine_alias[0])
+check("naam: bewaard en meteen in gebruik", get("/machine-name?value=Montage%203", header) == 200
+      and transcribe.load_config().get("machine_name") == "Montage 3" and worker.machine_name() == "Montage 3")
+check("naam: het venster krijgt de eigen naam en de computernaam", serve.app_state()["worker"]["machine_alias"] == "Montage 3"
+      and serve.app_state()["worker"]["computer"] == worker.computer_name() and serve.app_state()["worker"]["machine"] == "Montage 3")
+serve.busy = lambda: True
+check("naam: niet tijdens een opdracht", get("/machine-name?value=Anders", header) == 200 and worker.machine_name() == "Montage 3"
+      and transcribe.load_config().get("machine_name") == "Montage 3")
+serve.busy = lambda: False
+check("naam: leeg maken geeft de computernaam terug", get("/machine-name?value=", header) == 200
+      and worker.machine_name() == worker.computer_name() and transcribe.load_config().get("machine_name") == "")
+serve.busy = real_busy
 
 print("\nALLES OK" if not fails else f"\n{fails} FOUT")
 sys.exit(1 if fails else 0)

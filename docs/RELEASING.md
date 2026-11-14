@@ -6,7 +6,7 @@ Two kinds of release, depending on what changed.
 
 Changes in the files listed in `CODE_FILES` in `tools/make_manifest.py` (all in `app/`): `app_main.py`, `transcribe.py`, `transcript.py`, `iconik.py`, `refine.py`, `refine.html`, `serve.py`, `updater.py`, `worker.py`, `resources.py`, `ui.html`, `setup_actions.py`. A new file in `app/` that the app needs goes into `CODE_FILES` too, or the code update leaves it out.
 
-1. Raise `APP_VERSION` in `app/transcribe.py`, and describe the changes in the release notes. The highlight block at the top of `README.md` only changes when a release changes what it says.
+1. Raise `APP_VERSION` in `app/transcribe.py` and the same `version` in `pyproject.toml` and in the `iconik-transcribe` block of `uv.lock` (a test compares them), and describe the changes in the release notes. The highlight block at the top of `README.md` only changes when a release changes what it says.
 2. Do the checks below.
 3. Commit.
 4. `bash scripts/build_update.sh` runs all tests first, then makes `dist/code-<version>-shell<N>.zip` and `.sig`. It refuses to build when a test fails, and refuses to sign with a key that does not match `PUBLIC_KEY` in `app/app_shell.py`.
@@ -25,6 +25,10 @@ Needed when something outside the code zip changes: the bundled Python or packag
 2. Say in the release notes that a code update does not carry packages, so older apps need the dmg.
 
 Apps with a lower shell version only see a link to the release page, not an Install button. Raise `SHELL_VERSION` only when you must: every raise sends all users to the dmg.
+
+Shell 5 checks an installed code update again at every start: `app_shell.load_code` verifies the signed zip that `updater.py` keeps next to the unpacked files (`package.zip`, `package.sig`), and the app then runs the code from memory, not from the folder. A code update installed by an older version has no kept zip; a shell 5 app ignores it and offers the update again.
+
+`build_bundle.sh` checks the finished bundle for paths of the machine it is built on and stops when it finds one; `build_ffmpeg.sh` builds with a neutral prefix for the same reason.
 
 ## Checks before every release
 

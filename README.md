@@ -8,7 +8,7 @@
 > - **Safe:** the original stays on your Mac and can be put back; a later transcription never overwrites a correction.
 > - **Two ways in:** a Refine button on every finished job, and a Refine transcript button in Iconik.
 >
-> 0.5.0 is a code update: installed apps offer it with one click. New users take the `.dmg` from the [latest release](../../releases/latest).
+> 0.5.1 is a full release: take the `.dmg` from the [latest release](../../releases/latest), also when the app is already installed. It makes the app safer (updates are checked at every start, the local receiver only answers the app itself) and Refine now opens without the storage.
 
 ![Refine: the original, the transcript blocks with their speakers, and a timeline with the text blocks and every audio track](docs/images/refine.jpg)
 
@@ -54,7 +54,7 @@ Colleagues only install the app, enter the same Client ID and sign in with their
 
 The app checks GitHub Releases every six hours and shows a banner when there is a newer version.
 
-- **Code updates** (most releases): a small signed zip with the app's code. **Install** downloads it, checks an Ed25519 signature and a checksum per file, waits until no job runs and restarts. Updates live next to the app in `~/Library/Application Support/Local Transcribe for Iconik/code/`, so the app's own signature stays valid; if one fails to start, the app falls back to the code in the bundle.
+- **Code updates** (most releases): a small signed zip with the app's code. **Install** downloads it, checks an Ed25519 signature and a checksum per file, waits until no job runs and restarts. Updates live next to the app in `~/Library/Application Support/Local Transcribe for Iconik/code/`, so the app's own signature stays valid; if one fails to start, the app falls back to the code in the bundle. From 0.5.1 the app checks the signed zip again at every start and runs the code from that zip in memory, so changing the unpacked files does nothing.
 - **Full updates** (new Python, packages, ffmpeg or models) need the new `.dmg`; the banner then links to the download page.
 
 ## Remote jobs
@@ -70,6 +70,7 @@ Iconik is the queue. The app creates the metadata fields `local_transcribe_statu
 - A Mac checks once a minute and claims one asset at a time. Tested with two Macs on one account: they split the queue without double work, and an asset of a Mac that stops, sleeps or loses its storage goes to the other. More Macs and separate accounts are not tested yet.
 - Problems with the Mac (storage not mounted, signed out, offline) put the asset back, up to three attempts, and pause that Mac for ten minutes; **Resume now** lifts the pause. Problems with the asset itself fail straight away, with the reason in the details field.
 - With remote jobs on, the app stays in the menu bar. **Open at login** starts it hidden. Quitting during a job offers **After this job**.
+- The details field names the Mac that did the work, for everyone who sees the asset. By default that is the computer name, which often holds a person's name; **Name of this Mac in Iconik** (Preferences) sets another one.
 
 ### Auto transcribe
 
@@ -87,11 +88,14 @@ Refine opens a transcript in the app window: the original on the left, the block
 - **Speakers.** Rename them in the speaker bar. Right-click selected words to move them to another speaker (the block is split), or right-click a block to move all of it.
 - **Saving.** Changes are kept as a draft on the Mac, with undo and redo. **Save to Iconik** replaces the transcript and reindexes the asset, because Iconik searches older transcripts too. The original stays on the Mac and **Put original back** restores it.
 
+- **Spelling.** The edit field checks spelling in the transcript's language while you type, and the macOS Writing Tools work in it.
+- **Without the storage.** When the original cannot be reached, Refine still opens with the text, the speakers, the draft and saving to Iconik; picture and sound are off, and the waveforms come from what an earlier job kept.
+
 A new transcription skips a corrected asset; put the original back first to transcribe again. The job list shows **Refined** and **Draft**.
 
 ## Privacy
 
-The app connects to Iconik (as the signed-in user), to Hugging Face once for the Whisper model, and to GitHub for updates. Audio, transcripts and file names never leave your Mac except as the transcript written to your own Iconik environment. Telemetry of the bundled libraries is switched off. The local receiver only answers on 127.0.0.1.
+The app connects to Iconik (as the signed-in user), to Hugging Face once for the Whisper model, and to GitHub for updates. Audio, transcripts and file names never leave your Mac except as the transcript written to your own Iconik environment. Telemetry of the bundled libraries is switched off. The local receiver only answers on 127.0.0.1, and from 0.5.1 only to the app itself: its window gets a session at start, so other programs and other users on the Mac cannot read the job list, your name or transcripts from it. The log (`~/Library/Logs/Local Transcribe for Iconik/serve.log`) holds asset titles; it starts a new file above 5 MB and keeps one old one.
 
 macOS does not tell an app which page opened an `iconiktranscribe://` link, so a web page that knows asset IDs from your environment could start jobs for them. The worst outcome is a new transcript replacing an earlier one from this app; other transcripts and corrections are never touched, and browsers ask before a site opens an app.
 

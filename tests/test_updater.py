@@ -91,6 +91,73 @@ here = Path(tempfile.mkdtemp()); (here/"manifest.json").write_text(json.dumps({"
 chosen = boot.choose_code(here, code, 1, app_shell.version_tuple)
 check("boot kiest de net geïnstalleerde code", chosen and chosen[1] == "0.2.3" and chosen[0] == code/"0.2.3", chosen)
 
+# controle bij elke start (shell 5): de ondertekende zip telt, niet de uitgepakte bestanden
+boot.log = lambda text: None
+load = lambda folder, version: app_shell.load_code(folder, version, PUB)
+def boots(code_dir): return boot.choose_code(here, code_dir, 1, app_shell.version_tuple, load)
+def installed(files=None, version="0.2.1"):
+    d = package(version, files=files); store = {"z": d, "s": sign(d)}
+    c = Path(tempfile.mkdtemp()) / "code"
+    updater.install({"version": version, "zip_url": "z", "sig_url": "s"}, "0.2.0", 1, PUB, c, get=lambda u, l: store[u])
+    return c, d
+code, data = installed()
+folder = code/"0.2.1"
+check("start: zip en handtekening zijn bewaard", (folder/"package.zip").read_bytes() == data and (folder/"package.sig").is_file())
+contents, reason = load(folder, "0.2.1")
+check("start: goede update geladen", contents and contents["app_main.py"] == b"# a" and set(contents) == set(BASE) | {"manifest.json"}, reason)
+chosen = boots(code)
+check("start: boot kiest hem met de inhoud erbij", chosen and chosen[1] == "0.2.1" and chosen[2]["serve.py"] == b"# s", chosen)
+(folder/"serve.py").write_bytes(b"import os  # aangepast"); (folder/"evil.py").write_bytes(b"x = 1")
+chosen = boots(code)
+check("start: aangepast of extra los bestand doet niet mee", chosen and chosen[2]["serve.py"] == b"# s" and "evil.py" not in chosen[2])
+(folder/"package.zip").write_bytes(data[:-1] + bytes([data[-1] ^ 1]))
+check("start: zip aangepast: bundel", boots(code) is None and "handtekening" in load(folder, "0.2.1")[1])
+(folder/"package.zip").write_bytes(data); (folder/"package.sig").write_bytes(sign(data, OTHER))
+check("start: handtekening van andere sleutel: bundel", boots(code) is None)
+other = package("0.2.1", files={**BASE, "serve.py": b"# kwaad"})
+(folder/"package.zip").write_bytes(other); (folder/"package.sig").write_bytes(sign(other, OTHER))
+check("start: eigen zip met eigen handtekening: bundel", boots(code) is None)
+(folder/"package.sig").write_bytes(b"geen base64 !!")
+check("start: handtekening is onzin: bundel", boots(code) is None)
+(folder/"package.sig").unlink(); (folder/"package.zip").unlink()
+check("start: update zonder bewaarde zip (oudere installatie): bundel", boots(code) is None and "ontbreekt" in load(folder, "0.2.1")[1])
+# een geldig ondertekende oudere versie neergezet als nieuwere: het manifest in de zip verraadt hem
+code, data = installed()
+old = code/"0.2.1"; new = code/"0.2.9"; new.mkdir()
+for f in old.iterdir(): (new/f.name).write_bytes(f.read_bytes())
+(new/"manifest.json").write_text(json.dumps({"version": "0.2.9", "requires_shell": 1, "files": {}}))
+(code/"current.json").write_text(json.dumps({"version": "0.2.9"}))
+check("start: oude zip onder een nieuwer versienummer: bundel", boots(code) is None and "versie" in load(new, "0.2.9")[1])
+code, data = installed()
+(code/"0.2.1"/"manifest.json").write_text(json.dumps({"version": "0.2.1", "requires_shell": 1, "files": {}}))
+check("start: het losse manifest telt niet", boots(code) is not None)
+code, data = installed(files={**BASE, "x.py": b"x"}, version="0.2.1")
+d = package("0.2.1", shell=2); (code/"0.2.1"/"package.zip").write_bytes(d); (code/"0.2.1"/"package.sig").write_bytes(sign(d))
+check("start: ondertekende zip vraagt nieuwere shell: bundel", boots(code) is None)
+
+# laden uit het geheugen
+code, data = installed(files={**BASE, "lt_probe.py": b"import os\nVALUE = 41 + 1\nHERE = os.path.dirname(__file__)\n", "page.html": "<p>één</p>".encode()})
+folder = code/"0.2.1"
+(folder/"lt_evil.py").write_bytes(b"VALUE = 666"); (folder/"lt_probe.py").write_bytes(b"VALUE = 666")
+contents, reason = load(folder, "0.2.1")
+before = list(sys.path)
+app_shell.use_code(contents, "0.2.1")
+try:
+    import lt_probe
+    check("geheugen: module komt uit de ondertekende zip", lt_probe.VALUE == 42, lt_probe.VALUE)
+    check("geheugen: __file__ wijst naar de app, niet naar de updatemap", Path(lt_probe.HERE) == Path(app_shell.__file__).resolve().parent, lt_probe.HERE)
+    try: import lt_evil; ok = False
+    except ModuleNotFoundError: ok = True
+    check("geheugen: een los bestand in de map is niet te laden", ok)
+    check("geheugen: de map staat niet op het zoekpad", sys.path == before and str(folder) not in sys.path)
+    check("geheugen: pagina uit de zip", app_shell.read_text("page.html") == "<p>één</p>")
+    import linecache
+    check("geheugen: bronregel voor een foutmelding", linecache.getline(lt_probe.__spec__.origin, 2, lt_probe.__dict__).strip() == "VALUE = 41 + 1")
+finally:
+    app_shell.CODE.clear()
+    sys.meta_path[:] = [f for f in sys.meta_path if type(f).__name__ != "_SignedCode"]
+check("geheugen: zonder update komt een pagina uit de app-map", app_shell.read_text("ui.html") == Path("app/ui.html").read_text(encoding="utf-8"))
+
 # find_update
 R = "ColorcodedNL/local-transcribe-for-iconik"; P = f"https://github.com/{R}/releases/download/v0.3.0/"
 def rel(tag="v0.3.0", html=f"https://github.com/{R}/releases/tag/v0.3.0", assets=None):

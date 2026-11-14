@@ -36,22 +36,22 @@ def check(name, cond, detail=""):
 
 # --- mount_reachable, met een nagemaakte /Volumes ---
 volumes = Path(tempfile.mkdtemp())
-(volumes / "Opslag" / "Archief").mkdir(parents=True)        # lege achtergebleven map, niet gekoppeld
-(volumes / "Opslag-1" / "Archief").mkdir(parents=True)
+(volumes / "Opslag" / "Projecten").mkdir(parents=True)        # lege achtergebleven map, niet gekoppeld
+(volumes / "Opslag-1" / "Projecten").mkdir(parents=True)
 (volumes / "Ander").mkdir()
 mounted = set()
 real_ismount = os.path.ismount
 os.path.ismount = lambda p: str(p) in mounted
 check("achtergebleven map telt niet als gekoppeld",
-      not transcribe.mount_reachable(volumes / "Opslag" / "Archief", volumes))
+      not transcribe.mount_reachable(volumes / "Opslag" / "Projecten", volumes))
 mounted.add(str(volumes / "Opslag"))
-check("gekoppeld volume met de map: bereikbaar", transcribe.mount_reachable(volumes / "Opslag" / "Archief", volumes))
+check("gekoppeld volume met de map: bereikbaar", transcribe.mount_reachable(volumes / "Opslag" / "Projecten", volumes))
 check("gekoppeld maar de map ontbreekt: niet bereikbaar",
       not transcribe.mount_reachable(volumes / "Opslag" / "Weg", volumes))
 mounted = {str(volumes / "Opslag-1")}
-check("opnieuw gekoppeld als Opslag-1: bereikbaar", transcribe.mount_reachable(volumes / "Opslag" / "Archief", volumes))
+check("opnieuw gekoppeld als Opslag-1: bereikbaar", transcribe.mount_reachable(volumes / "Opslag" / "Projecten", volumes))
 mounted = {str(volumes / "Ander")}
-check("ander volume telt niet mee", not transcribe.mount_reachable(volumes / "Opslag" / "Archief", volumes))
+check("ander volume telt niet mee", not transcribe.mount_reachable(volumes / "Opslag" / "Projecten", volumes))
 check("het volume zelf als mount point", transcribe.mount_reachable(volumes / "Ander", volumes))
 os.path.ismount = real_ismount
 local = Path(tempfile.mkdtemp())

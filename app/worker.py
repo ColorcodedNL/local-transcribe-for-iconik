@@ -80,8 +80,30 @@ class WorkerError(Exception):
     """Iets in de opzet klopt niet (veld of view ontbreekt, geen rechten)."""
 
 
-@functools.lru_cache(maxsize=1)
+machine_alias = [""]      # eigen naam voor deze Mac in Iconik (Voorkeuren); leeg: de computernaam
+MAX_NAME = 40
+
+
+def clean_alias(name):
+    """Een eigen naam zoals hij in het detailveld mag: leesbare tekens, geen tekens die de lijst "mislukt op"
+    breken, geen regeleinden, niet te lang."""
+    name = "".join(c for c in (name or "") if c.isprintable())
+    return " ".join(clean_name(name).split())[:MAX_NAME].strip()
+
+
+def set_machine_alias(name):
+    machine_alias[0] = clean_alias(name)
+    return machine_alias[0]
+
+
 def machine_name():
+    """De naam waaronder deze Mac in Iconik staat: de eigen naam uit Voorkeuren, anders de computernaam.
+    Iedereen die het asset ziet, ziet deze naam, en in een computernaam staat vaak de naam van een persoon."""
+    return machine_alias[0] or computer_name()
+
+
+@functools.lru_cache(maxsize=1)
+def computer_name():
     """De computernaam uit Systeeminstellingen. De hostnaam van het netwerk kan er vreemd uitzien."""
     for args in (["scutil", "--get", "ComputerName"], ["scutil", "--get", "LocalHostName"]):
         try:

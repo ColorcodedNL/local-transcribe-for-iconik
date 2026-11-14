@@ -122,6 +122,7 @@
 <li><b>Spoken language</b>: the default is <b>Detect per asset</b>. Only fix the language if all your footage is in one language. With detection on, the app expects Dutch or English: a clip detected as another language with fewer than ten words (often music or noise) is skipped.</li>
 <li><b>Allow remote jobs</b>, <b>Transcribe automatically</b> and <b>Audio files too</b>: see the sections below.</li>
 <li><b>Open at login</b>: the app starts in the menu bar when you log in to the Mac.</li>
+<li><b>Name of this Mac in Iconik</b>: the name in the details of an asset, visible to everyone who sees the asset. Empty means the computer name.</li>
 <li><b>ISG Mount Points</b>: the linked storage, see step 5.</li>
 <li><b>Models</b>: Whisper large-v3 for speech, pyannote community-1 for speakers. The speaker model is bundled with the app. The Whisper model is downloaded on the first job.</li>
 </ul>
@@ -172,9 +173,11 @@
 <h3>Opening it</h3>
 <ul>
 <li>In the app: click <b>Refine</b> on a finished job.</li>
-<li>In Iconik: choose <b>Refine transcript</b> in the menu of an asset. The app adds that button to Iconik together with Local Transcribe (step 4). The asset must be reachable on this Mac: the storage (ISG) must be connected.</li>
+<li>In Iconik: choose <b>Refine transcript</b> in the menu of an asset. The app adds that button to Iconik together with Local Transcribe (step 4).</li>
 </ul>
 <figure class="small"><img src="images/iconik-refine-menu.png" alt=""></figure>
+<figure><img src="images/refine.jpg" alt=""></figure>
+<p>When the storage (ISG) is not connected, Refine still opens: you can edit the text and the speakers and save to Iconik, but there is no picture or sound, and the waveforms only show when an earlier job on this Mac kept them.</p>
 <h3>Playback</h3>
 <p>The original plays straight from the storage. Click a block or the timeline to jump there. Space plays and pauses, the arrow keys jump a second (five with Shift), Option with an arrow jumps a block, and J, K and L work as in an editing program. The headphone button on a track plays only that track; by default you hear the mix of the tracks the app used.</p>
 <h3>Editing text</h3>

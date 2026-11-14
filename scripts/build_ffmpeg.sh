@@ -12,8 +12,15 @@ if [ ! -d "ffmpeg-$VERSION" ]; then
   tar -xf "ffmpeg-$VERSION.tar.xz"
 fi
 cd "ffmpeg-$VERSION"
-./configure --prefix="$HERE/build/ffmpeg-out" --disable-gpl --disable-nonfree --disable-autodetect \
+# ffmpeg bakt zijn prefix in het programma (zichtbaar in `ffmpeg -version` en als pad voor presets). Daarom
+# een neutrale prefix en installeren via DESTDIR, zodat het pad van de bouwmap niet in de dmg komt.
+PREFIX=/opt/local-transcribe/ffmpeg
+STAGE="$HERE/build/ffmpeg-stage"
+./configure --prefix="$PREFIX" --disable-gpl --disable-nonfree --disable-autodetect \
   --enable-zlib --disable-doc --disable-ffplay --disable-debug --disable-network
 make -j"$(sysctl -n hw.ncpu)"
-make install
+rm -rf "$STAGE" "$HERE/build/ffmpeg-out"
+make install DESTDIR="$STAGE"
+mv "$STAGE$PREFIX" "$HERE/build/ffmpeg-out"
+rm -rf "$STAGE"
 "$HERE/build/ffmpeg-out/bin/ffmpeg" -version | head -1

@@ -162,8 +162,14 @@ with sync_playwright() as p:
         settings = page.locator('.nav[data-view="settings"]')
         account = page.locator("#account")
 
-        # 1. Eerste start, nog niet ingelogd: het venster opent op Instellingen
-        page.goto(BASE + "/")
+        # 1. Eerste start, nog niet ingelogd: het venster opent op Instellingen.
+        # Zonder sessie komt een browser er niet in; het venster meldt zich eerst en krijgt de cookie.
+        outsider = browser.new_page()
+        refused = outsider.goto(BASE + "/").status
+        outsider.close()
+        check("een andere browser op deze Mac krijgt de app niet te zien", refused == 403, refused)
+        page.goto(f"{BASE}/window/open?t={serve.SESSION}")
+        page.wait_for_url(BASE + "/", timeout=5000)
         account.get_by_text("Niet ingelogd.").wait_for(timeout=5000)
         check("uitgelogd: Instellingen open met 'Niet ingelogd'", True)
 
@@ -212,6 +218,24 @@ with sync_playwright() as p:
         page.locator("#workerOn").check()
         page.wait_for_timeout(500)
         check("opdrachten op afstand aan", transcribe.load_config().get("worker_enabled") is True)
+
+        # Eigen naam voor deze Mac in Iconik: niet tijdens een opdracht, daarna wel
+        name_field = page.locator('#nameForm input[name="machine"]')
+        name_field.fill("Montage 3")
+        page.locator("#nameForm button").click()
+        page.get_by_text("Wacht tot de lopende opdracht klaar is.").wait_for(timeout=5000)
+        check("naam van de Mac: geweigerd terwijl er opdrachten wachten", not transcribe.load_config().get("machine_name"))
+        real_busy, serve.busy = serve.busy, lambda: False
+        name_field.fill("Montage 3")
+        page.locator("#nameForm button").click()
+        page.locator("#worker p.dim", has_text="Montage 3").first.wait_for(timeout=5000)
+        check("naam van de Mac: bewaard en getoond", transcribe.load_config().get("machine_name") == "Montage 3")
+        name_field.fill("")
+        page.locator("#nameForm button").click()
+        page.wait_for_timeout(500)
+        check("naam van de Mac: leeg maken geeft de computernaam terug", transcribe.load_config().get("machine_name") == ""
+              and serve.remote.machine_name() == serve.remote.computer_name())
+        serve.busy = real_busy
 
         # Auto transcribe: schakelaar en vinkje onder opdrachten op afstand, status van de meter
         page.locator("#autoOn").check()

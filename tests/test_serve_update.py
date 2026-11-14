@@ -85,11 +85,27 @@ check("dmg-update: knop Installeren doet niets", serve.update["state"] == "avail
 # --- 6. de route eist de header
 srv = ThreadingHTTPServer(("127.0.0.1", 0), serve.Handler); threading.Thread(target=srv.serve_forever, daemon=True).start()
 def get(path, headers=None):
-    c = http.client.HTTPConnection("127.0.0.1", srv.server_port, timeout=5); c.request("GET", path, headers=headers or {})
+    c = http.client.HTTPConnection("127.0.0.1", srv.server_port, timeout=5)   # zoals het venster: cookie, en POST met de header
+    c.request("POST" if headers else "GET", path, headers=dict(headers or {}, Cookie=f"{serve.SESSION_COOKIE}={serve.SESSION}"))
     r = c.getresponse(); r.read(); return r.status
 serve.update.clear(); serve.update.update(version="9.9.9", mode="code", state="available", zip_url="x", sig_url="y")
 n = len(installed)
 check("route zonder header: 403 en niets gestart", get("/update/install") == 403 and serve.update["state"] == "available")
 check("route met header: 200", get("/update/install", {"X-Local-Transcribe": "1"}) == 200)
+# --- pagina's van het venster: via app_shell (shell 5), uit de code-update als die draait
+import app_shell
+from pathlib import Path
+real_ui = Path("app/ui.html").read_text(encoding="utf-8")
+check("pagina: zonder update uit de app-map", serve.status_page("let op") == real_ui.replace('"__NOTE__"', '"let op"'))
+app_shell.CODE.update({"ui.html": b'<p>uit de zip "__NOTE__"</p>', "refine.html": b"<p>refine uit de zip</p>"})
+try:
+    check("pagina: met update uit de gecontroleerde zip", serve.status_page("x") == '<p>uit de zip "x"</p>' and serve.page_text(serve.REFINE_FILE) == "<p>refine uit de zip</p>")
+finally:
+    app_shell.CODE.clear()
+reader = app_shell.read_text; del app_shell.read_text
+try:
+    check("pagina: op een app met een oudere shell uit het bestand", serve.status_page() == real_ui.replace('"__NOTE__"', '""'))
+finally:
+    app_shell.read_text = reader
 print("ALLES OK" if not fails else f"{fails} FOUT")
 raise SystemExit(1 if fails else 0)

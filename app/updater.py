@@ -9,6 +9,8 @@ N is de SHELL_VERSION die de update nodig heeft (zie app_shell.py). Heeft deze a
 shell, dan biedt hij de dmg aan in plaats van de code-update.
 
 De code komt in Application Support, nooit in de bundel. main.py kiest bij de volgende start.
+De zip en de handtekening blijven bewaard zoals ze zijn gedownload (package.zip en package.sig): een app
+met shell 5 of hoger controleert ze bij elke start opnieuw en laadt de code daaruit.
 Alleen een zip met een kloppende handtekening wordt geopend, en alleen platte bestandsnamen uit
 het (ondertekende) manifest worden weggeschreven. Daarmee kan een zip niets buiten zijn eigen
 map schrijven, ook niet met slimme paden.
@@ -33,7 +35,9 @@ import app_shell
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
 ASSET_RE = re.compile(r"^code-(\d+\.\d+\.\d+)-shell(\d+)\.zip$")
 NAME_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]*$")
-NEVER_IN_UPDATE = {"main.py", "app_shell.py"}          # alleen met een nieuwe dmg
+PACKAGE, SIGNATURE = "package.zip", "package.sig"       # dezelfde namen als in app_shell.py (shell 5); hier los, want
+                                                        # deze code draait ook op een app met een oudere shell
+NEVER_IN_UPDATE = {"main.py", "app_shell.py", PACKAGE, SIGNATURE}   # alleen met een nieuwe dmg, of gereserveerd
 REQUIRED = {"app_main.py", "transcribe.py", "serve.py", "ui.html"}
 MAX_ZIP = 50 * 1024 * 1024
 MAX_SIGNATURE = 1024
@@ -138,14 +142,18 @@ def read_package(data, expected_version, shell_version):
     return str(version), contents
 
 
-def install_files(version, contents, code_dir=app_shell.CODE_DIR):
-    """Zet de code neer en maakt hem pas als laatste de huidige. Een afgebroken installatie verandert niets."""
+def install_files(version, contents, code_dir=app_shell.CODE_DIR, package=None, signature=None):
+    """Zet de code neer en maakt hem pas als laatste de huidige. Een afgebroken installatie verandert niets.
+    `package` en `signature`: de zip en handtekening zoals gedownload, voor de controle bij elke start."""
     code_dir.mkdir(parents=True, exist_ok=True)
     staging, final = code_dir / f".{version}.new", code_dir / version
     shutil.rmtree(staging, ignore_errors=True)
     staging.mkdir()
     for name, blob in contents.items():
         (staging / name).write_bytes(blob)
+    if package is not None and signature is not None:
+        (staging / PACKAGE).write_bytes(package)
+        (staging / SIGNATURE).write_bytes(signature)
     shutil.rmtree(final, ignore_errors=True)
     os.replace(staging, final)
 
@@ -166,10 +174,11 @@ def install(info, running_version, shell_version=app_shell.SHELL_VERSION, public
             code_dir=app_shell.CODE_DIR, get=fetch):
     """Downloadt, controleert en zet een code-update neer. Geeft de versie. Herstarten doet de aanroeper."""
     data = get(info["zip_url"], MAX_ZIP)
-    signature = get(info["sig_url"], MAX_SIGNATURE).decode("ascii", "replace")
+    raw_signature = get(info["sig_url"], MAX_SIGNATURE)
+    signature = raw_signature.decode("ascii", "replace")
     verify_signature(data, signature, public_key)
     version, contents = read_package(data, info["version"], shell_version)
     if app_shell.version_tuple(version) <= app_shell.version_tuple(running_version):
         raise UpdateError("Deze versie is niet nieuwer dan de draaiende.", "This version is not newer than the running one.")
-    install_files(version, contents, code_dir)
+    install_files(version, contents, code_dir, package=data, signature=raw_signature)
     return version

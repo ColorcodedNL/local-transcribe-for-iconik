@@ -2,10 +2,10 @@
 
 What is inside the app bundle of Local Transcribe for Iconik, and the known vulnerabilities that affect it. This lists what actually ships in the macOS bundle, not everything in `uv.lock` (which also resolves CUDA, Linux and Windows packages that are never installed on a Mac).
 
-- App version: 0.4.0 (shell as in `app/app_shell.py`), macOS 13.0 or later
-- Built from commit: 880b5be
-- Last updated: 2026-10-23
-- Last vulnerability check: 2026-10-23
+- App version: 0.5.1 (shell as in `app/app_shell.py`), macOS 13.0 or later
+- Built from: the tag `v0.5.1`
+- Last updated: 2026-11-14
+- Last vulnerability check: 2026-11-14
 
 A machine-readable version (CycloneDX 1.6) is attached to every release from 0.4.0 on as `sbom-<version>.cdx.json`, made by `scripts/build_sbom.py`. Scan it with for example `grype sbom:sbom-0.4.0.cdx.json`.
 
@@ -15,9 +15,9 @@ Found something we missed? Open an issue, or for anything sensitive use a privat
 
 | Component | Version | Source | Notes |
 | --- | --- | --- | --- |
-| CPython | 3.12.15 | uv-managed Python, copied by `scripts/build_python.sh` | |
+| CPython | 3.12.16 | uv-managed Python, copied by `scripts/build_python.sh` | |
 | OpenSSL | 3.5.9 | linked into CPython | TLS to the Iconik API, Hugging Face and GitHub (updates) |
-| Expat | 2.9.0 | linked into CPython | |
+| Expat | 2.10.0 | linked into CPython | |
 | FFmpeg (ffmpeg, ffprobe) | 9.0.2 | built from the official tarball by `scripts/build_ffmpeg.sh`, sha256 checked | `--disable-gpl --disable-nonfree --disable-autodetect --disable-network --enable-zlib`. Runs as a separate process per file |
 | zlib | 1.3.2 | bundled in the torchcodec wheel | |
 | zlib-ng (compat) | 1.3.1 | bundled in the Pillow wheel | |
@@ -45,7 +45,7 @@ colorlog==6.12.0
 contourpy==1.4.0
 cycler==0.12.1
 einops==0.8.2
-filelock==4.0.12
+filelock==4.2.10
 fonttools==4.66.1
 fsspec==2026.9.0
 googleapis-common-protos==1.75.5
@@ -79,15 +79,15 @@ narwhals==2.26.0
 networkx==3.7
 numba==0.68.0
 numpy==2.5.3
-opentelemetry-api==1.45.1
+opentelemetry-api==1.45.2
 opentelemetry-exporter-http-transport==0.66b1
 opentelemetry-exporter-otlp==1.45.1
 opentelemetry-exporter-otlp-common==0.66b1
 opentelemetry-exporter-otlp-proto-common==1.45.1
 opentelemetry-exporter-otlp-proto-http==1.45.1
 opentelemetry-proto==1.45.1
-opentelemetry-sdk==1.45.1
-opentelemetry-semantic-conventions==0.66b1
+opentelemetry-sdk==1.45.2
+opentelemetry-semantic-conventions==0.66b2
 optuna==5.0.0
 packaging==26.3
 pandas==3.0.6
@@ -121,7 +121,7 @@ rich==15.0.0
 safetensors==0.8.0
 scikit-learn==1.9.1
 scipy==1.18.1
-setuptools==84.0.0
+setuptools==84.2.1
 six==1.17.0
 sortedcontainers==2.4.0
 sympy==1.14.0
@@ -147,7 +147,7 @@ Where a vulnerability matters for this app, most relevant first:
 
 1. **FFmpeg**: parses media files from the archive. Demuxer and decoder bugs apply. Network protocols, libssh and other external libraries are not built in.
 2. **Network clients**: requests, urllib3, certifi, OpenSSL, huggingface-hub, hf-xet. Outgoing only, to Iconik, Hugging Face and GitHub.
-3. **Local web server** (`app/serve.py`, bottle through pywebview): listens on 127.0.0.1 only and checks the Host header against DNS rebinding.
+3. **Local web server** (`app/serve.py`, bottle through pywebview): listens on 127.0.0.1 only and checks the Host header against DNS rebinding. Every route except the OAuth callback and the keyed link from Iconik needs a session: a cookie only the app's own window receives at start, or the listener key for the app itself. Routes that change something are POST only and need a header a foreign page cannot send.
 4. **Updates**: signed with Ed25519 (pynacl), see `docs/RELEASING.md`.
 5. **Model loading**: torch, safetensors, pyyaml.
 
@@ -160,13 +160,18 @@ Vulnerabilities in distributed training, CUDA, server use of torch, lightning or
 | 2026-10-23 | pip-audit, all 104 packages | Python packages | Not affected | No known vulnerabilities |
 | 2026-10-23 | OpenSSL advisory of 29 Sep 2026 | OpenSSL 3.5.9 | Fixed | 3.5.9 is the fixed release |
 | 2026-10-23 | Python 3.12.15 security release | CPython 3.12.15 | Fixed | Latest 3.12 security release |
+| 2026-11-14 | Python 3.12.16 | CPython 3.12.16 | Fixed in 0.5.1 | Newest 3.12 release at build time, picked up by `uv python upgrade` in `scripts/build_python.sh`. OpenSSL stays 3.5.9 |
 | 2026-10-23 | libexpat 2.9.0 security release | Expat 2.9.0 | Fixed | 2.9.0 is the fixed release |
+| 2026-11-14 | libexpat 2.10.0 | Expat 2.10.0 | Fixed in 0.5.1 | Came with CPython 3.12.16 |
 | 2026-10-23 | CVE-2026-8461 and others fixed in 9.0 | FFmpeg 9.0.2 | Fixed | Fixed in 9.0 |
 | 2026-10-23 | CVE-2026-107678 | FFmpeg 9.0.2, MOV demuxer | Affected, no fix released | A crafted MP4 crashes ffprobe. One file fails, the app keeps running. Update to 9.0.3 when released |
 | 2026-10-23 | CVE-2026-107677 | FFmpeg 9.0.2 | Under investigation | Denial of service, component not yet clear. Update to 9.0.3 when released |
 | 2026-10-23 | CVE-2026-107676 | FFmpeg 9.0.2, HDR10+ serializer | Low | Applies to remuxing HDR metadata. The app only extracts audio |
 | 2026-10-23 | CVE-2026-107696 | FFmpeg 9.0.2, RTSP/RTP | Not affected | Built with `--disable-network` |
 | 2026-10-23 | CVE-2026-107675 | FFmpeg 9.0.2, libssh | Not affected | libssh not linked |
+| 2026-11-14 | pip-audit: 13 advisories for filelock 4.0.12 (CVE-2026-112907 and others), CVE-2026-126360 for opentelemetry-api 1.45.1, GHSA-xmj3-9gf7-h52w for setuptools 84.0.0 | Python packages | Fixed in 0.5.1 | Upgraded to filelock 4.2.10, opentelemetry-api and -sdk 1.45.2, setuptools 84.2.1. pip-audit clean after the upgrade |
+| 2026-11-14 | FFmpeg 9.0.3 | FFmpeg 9.0.2 | Not released yet | Newest tag is still n9.0.2; CVE-2026-107678 and -107677 stay open |
+| 2026-11-14 | Code updates trusted after download; local receiver readable by other local processes | App | Fixed in 0.5.1 | Signed zip verified at every start and run from memory (shell 5), session on the receiver |
 | 2026-10-23 | Supply chain | Whisper model | Fixed in 0.4.1 | Pinned to revision `49e6aa2` (`MODEL_REVISIONS` in `app/transcribe.py`). Every release checks for a newer revision and ships it after testing |
 
 ## Updating this file

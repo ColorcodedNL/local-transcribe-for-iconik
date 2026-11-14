@@ -53,10 +53,17 @@ threading.Thread(target=server.serve_forever, daemon=True).start()
 WINDOW = {"X-Local-Transcribe": "1"}
 
 
-def get(path, headers=None, host=None):
+def get(path, headers=None, host=None, session=True, method=None):
+    """Een verzoek zoals het venster het doet: met de sessiecookie, en met de header erbij als POST
+    (alles wat iets verandert). `session=False`: iets anders op deze Mac, zonder cookie."""
     c = http.client.HTTPConnection("127.0.0.1", PORT, timeout=10)
-    c.putrequest("GET", path, skip_host=True)
+    method = method or ("POST" if headers and "X-Local-Transcribe" in headers else "GET")
+    c.putrequest(method, path, skip_host=True)
     c.putheader("Host", host or f"localhost:{PORT}")
+    if session:
+        c.putheader("Cookie", f"{serve.SESSION_COOKIE}={serve.SESSION}")
+    if method == "POST":
+        c.putheader("Content-Length", "0")
     for k, v in (headers or {}).items():
         c.putheader(k, v)
     c.endheaders()
@@ -78,6 +85,44 @@ status, _, _ = get("/state", host="evil.example:%d" % PORT)
 check("andere Host-naam geweigerd (DNS-rebinding)", status == 403, status)
 status, _, _ = get("/state", host=f"127.0.0.1:{PORT}")
 check("127.0.0.1 als Host mag", status == 200, status)
+
+# Sessie: alleen het venster (cookie) en de app zelf (sleutel) komen erin
+for path in ("/", "/state", "/refine", "/refine/view?asset=abcdef12", "/refine/chunk?asset=abcdef12&t=0", "/refine/waves?asset=abcdef12", "/login"):
+    status, _, _ = get(path, session=False)
+    check(f"{path} zonder sessie geweigerd", status == 403, status)
+status, _, _ = get("/state", {"Cookie": f"{serve.SESSION_COOKIE}=verkeerd"}, session=False)
+check("verkeerde cookie geweigerd", status == 403, status)
+status, _, _ = get("/state", {serve.KEY_HEADER: "k"}, session=False)
+check("de app zelf komt erin met de sleutel", status == 200, status)
+status, _, _ = get("/state", {serve.KEY_HEADER: "fout"}, session=False)
+check("verkeerde sleutel geweigerd", status == 403, status)
+status, _, _ = get("/clear", WINDOW, session=False)
+check("iets veranderen met header maar zonder sessie geweigerd", status == 403, status)
+status, _, _ = get("/logout", WINDOW, method="GET")
+check("iets veranderen als GET geweigerd (405), ook met header en sessie", status == 405, status)
+status, _, _ = get("/window/open?t=verkeerd", session=False)
+check("/window/open met een verkeerde sessie geweigerd", status == 403, status)
+c = http.client.HTTPConnection("127.0.0.1", PORT, timeout=10)
+c.request("GET", f"/window/open?t={serve.SESSION}")
+r = c.getresponse(); r.read()
+cookie = r.getheader("Set-Cookie") or ""
+check("/window/open geeft het venster de cookie en stuurt door naar de app",
+      r.status == 303 and r.getheader("Location") == "/" and cookie.startswith(f"{serve.SESSION_COOKIE}={serve.SESSION};")
+      and "HttpOnly" in cookie and "SameSite=Lax" in cookie, (r.status, cookie))
+status, _, body = get("/window/state", session=False)
+check("tweede start ziet zonder sessie alleen dat de app er is", status == 200 and json.loads(body) == {"ok": True}, body)
+status, _, body = get("/window/state")
+check("het venster ziet de eigen toestand", status == 200 and "page" in json.loads(body), body)
+status, _, _ = get("/window/show?page=/", WINDOW, session=False, method="GET")
+check("venster naar voren halen kan zonder sessie (oudere tweede start)", status == 200, status)
+status, _, _ = get("/transcribe/fout?asset_ids=x", session=False)
+check("link uit Iconik met verkeerde sleutel geweigerd", status == 403, status)
+status, location, _ = get("/transcribe/k?asset_ids=abcdef12", session=False)
+check("link uit Iconik met de sleutel werkt zonder sessie", status == 303, (status, location))
+serve.pending_ids.clear()
+with serve.jobs_lock:
+    serve.jobs.clear()
+
 status, _, body = get("/settings?client_id=nee", WINDOW)
 check("ongeldige client-ID geeft een melding", status == 200 and not json.loads(body)["ok"], body)
 status, _, body = get("/settings?client_id=ABCDEF12-1234-1234-1234-123456789ABC", WINDOW)
@@ -257,6 +302,31 @@ for name, b in (("kopie", copy), ("ander signaal", other)):
     check(f"similarity {name}: {fast:.3f} tegen corrcoef {full:.3f}", abs(full - fast) < 0.02
           and (fast > 0.9) == (full > 0.9))
 check("stil spoor geeft 0", transcribe.similarity(np.zeros(16000, np.float32), a[:16000]) == 0.0)
+
+# --- asset-ID's voor de editor, log roteren, versie in pyproject
+for good in ("A1", "2df8d8e0-a790-11f0-9edb-4a3452efd6a5", "a_b-c"):
+    check(f"asset-ID {good} mag", serve.valid_asset_id(good))
+for bad in ("", "../../users/v1/users", "a/b", "a?b=c", "a.b", "a b", "x" * 65, None):
+    check(f"asset-ID {bad!r:.30} geweigerd", not serve.valid_asset_id(bad))
+for path in ("/refine/view?asset=../../users", "/refine/chunk?asset=a%2Fb&t=0", "/refine/waves?asset="):
+    status, _, body = get(path)
+    check(f"{path}: geweigerd zonder Iconik te vragen", status == 200 and json.loads(body) == {"error": "asset"}, body)
+status, _, body = get("/refine/save?asset=..%2Fx", {**WINDOW, "Content-Type": "application/json"})
+check("opslaan met een raar asset-ID geweigerd", status == 200 and json.loads(body) == {"error": "asset"}, body)
+
+log = tmp / "serve.log"
+log.write_text("x" * 100)
+check("log onder de grens blijft staan", serve.rotate_log(log, limit=100) is False and log.stat().st_size == 100)
+log.write_text("y" * 101)
+check("log boven de grens wordt .1", serve.rotate_log(log, limit=100) is True and not log.exists()
+      and (tmp / "serve.log.1").read_text() == "y" * 101)
+log.write_text("z" * 200)
+check("een vorige .1 wordt vervangen", serve.rotate_log(log, limit=100) is True and (tmp / "serve.log.1").read_text() == "z" * 200)
+check("geen log: niets te doen", serve.rotate_log(tmp / "bestaat-niet.log") is False)
+
+import re as _re
+project = _re.search(r'^version = "([^"]+)"', Path("pyproject.toml").read_text(), _re.M).group(1)
+check("versie in pyproject.toml is de versie van de app", project == transcribe.APP_VERSION, (project, transcribe.APP_VERSION))
 
 server.shutdown()
 print("ALLES OK" if not fails else f"{fails} FOUT(EN)")
