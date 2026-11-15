@@ -95,6 +95,14 @@ footer { display: flex; gap: 18px; align-items: center; padding: 6px 10px; borde
 #menu button:hover .cur, #menu button:focus .cur { color: #fff; }
 #menu hr { border: 0; height: 1px; background: var(--soft); margin: 5px 0; }
 #sub { white-space: pre-line; }
+/* Een ondertitel staat in beeld in precies zijn eigen regels: niet verder afbreken, de letter krimpt met het beeld mee. */
+#screen { container-type: inline-size; }
+#sub.lines { white-space: pre; max-width: 96%; font-size: clamp(10px, 3.6cqw, 18px); }
+/* De titel blijft leesbaar; een lange melding ernaast krijgt hooguit twee regels en de rest staat in de tooltip. */
+header h1 { flex-shrink: 0; max-width: 45%; }
+#status { flex: 1 1 0; min-width: 0; white-space: normal; overflow: hidden; line-height: 1.3;
+          display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+#status + .grow { display: none; }
 .bad { color: var(--bad); }
 .warm { color: var(--warm); }
 .blk.warn1 { background: color-mix(in srgb, var(--warm) 13%, transparent); }
@@ -764,7 +772,7 @@ function frame() {
     // In beeld staat de ondertitel zoals hij in het bestand komt; zonder ondertitels het blok van het transcript.
     const list = subList(), k = hasSubs() ? blockAt(t, list) : -1;
     const shown = hasSubs() ? (k >= 0 ? (list[k].chk ? list[k].chk.lines.join("\n") : list[k].display) : "") : (i >= 0 ? blocks[i].display : "");
-    if (shown !== subShown) { subShown = shown; $("sub").hidden = !shown; $("sub").textContent = shown; }
+    if (shown !== subShown) { subShown = shown; $("sub").hidden = !shown; $("sub").textContent = shown; $("sub").classList.toggle("lines", hasSubs()); }
     if (!v.paused || running) draw();
   }
   requestAnimationFrame(frame);
@@ -1551,6 +1559,7 @@ async function start() {
   if (D.offline) seek(blocks.length ? blocks[0].start : 0); else startPlayer(blocks.length ? blocks[0].start : 0);
   loadWaves();
   requestAnimationFrame(frame);
+  new MutationObserver(() => { $("status").title = $("status").textContent; }).observe($("status"), {childList: true, characterData: true, subtree: true});
   // Vanuit de opdrachtenlijst op het label Ondertitels geklikt: meteen naar die tab.
   if (new URLSearchParams(location.search).get("tab") === "subtitles" && layer.subtitles) setMode("subtitles");
 }

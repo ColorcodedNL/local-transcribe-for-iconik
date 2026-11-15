@@ -168,6 +168,15 @@ with sync_playwright() as p:
         check("telling met beide niveaus", "ondertitels" in count and "snel" in count and "niet te lezen" in count, count)
         check("uitloop is te zien in de lijst", page.locator(".blk", has_text="uitloop").count() > 0)
         check("niets is met de hand aangepast", ev("blocks.some(isTouched)") is False)
+        # In beeld staat een ondertitel in zijn eigen regels, ook in een smal venster; de titel blijft leesbaar.
+        page.set_viewport_size({"width": 820, "height": 700})
+        two = ev("blocks.findIndex(b => b.chk.lines.length === 2)")
+        page.click(f"#b{two}")
+        page.wait_for_function(f"document.getElementById('sub').textContent === blocks[{two}].chk.lines.join('\\n')", timeout=3000)
+        shape = ev("(() => { const s = document.getElementById('sub'), c = getComputedStyle(s); return [c.whiteSpace, Math.round((s.offsetHeight - 8) / (parseFloat(c.fontSize) * 1.35)), s.offsetWidth <= s.parentElement.clientWidth]; })()")
+        check("in beeld: precies twee regels, niet verder afgebroken, binnen het beeld", shape == ["pre", 2, True], shape)
+        check("de titel blijft leesbaar naast een lange melding", ev("document.getElementById('title').offsetWidth") >= 150, ev("document.getElementById('title').offsetWidth"))
+        page.set_viewport_size({"width": 1280, "height": 860})
 
         # 4. Instellingen: een andere regel verandert de waarschuwingen, niet de verdeling en niet het bestand.
         before_file = srt.read_text(encoding="utf-8")
