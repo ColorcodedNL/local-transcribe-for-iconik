@@ -1,14 +1,14 @@
 # Local Transcribe for Iconik
 
 > [!IMPORTANT]
-> **New in 0.5: Refine, a transcript editor in the app.** Watch the original, see every audio track on a timeline, and fix text and speakers. The correction goes back to Iconik as a native transcript.
+> **New in 0.6: subtitles.** Make subtitles from a transcript in Refine and save them as `.srt` or `.vtt`, next to the media or anywhere else.
 >
-> - **Edit like text:** double-click a block to type. Enter splits it at the cursor, Backspace at the start merges it with the previous one. Word timing is kept.
-> - **Speakers:** rename them, or move selected words or a whole block to another speaker with a right-click.
-> - **Safe:** the original stays on your Mac and can be put back; a later transcription never overwrites a correction.
-> - **Two ways in:** a Refine button on every finished job, and a Refine transcript button in Iconik.
+> - **By the rules you pick:** characters per line, lines, duration and reading speed, with presets for online and for television.
+> - **Fitted, never rewritten:** short sentences go together and a fast subtitle stays on screen in the silence after it. The text stays what was said.
+> - **Edit them like the transcript:** on their own lane, with orange and red for what goes too fast to read.
+> - **Or load what you have:** an existing `.srt` or `.vtt` opens in the same editor.
 >
-> 0.5.1 is a full release: take the `.dmg` from the [latest release](../../releases/latest), also when the app is already installed. It makes the app safer (updates are checked at every start, the local receiver only answers the app itself) and Refine now opens without the storage.
+> 0.6.0 is a code update: installed apps on 0.5.1 offer it with one click under Jobs. Older apps and new users take the `.dmg` from the [latest release](../../releases/latest).
 
 ![Refine: the original, the transcript blocks with their speakers, and a timeline with the text blocks and every audio track](docs/images/refine.jpg)
 
