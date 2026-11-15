@@ -43,6 +43,7 @@ tmp = Path(tempfile.mkdtemp())
 transcribe.TRANSCRIPTS_DIR = tmp / "transcripts"
 transcribe.WAVES_DIR = tmp / "waves"
 refine.DRAFTS_DIR = tmp / "refine"
+transcribe.CONFIG_PATH = tmp / "config.json"   # de export onthoudt zijn regels in de voorkeuren
 media = tmp / "clip.mov"
 # 12 s beeld met twee mono audiosporen: spoor 1 een toon, spoor 2 stil.
 subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=25:duration=12",
@@ -299,10 +300,166 @@ except transcribe.Problem:
 fake.transcriptions = [t for t in fake.transcriptions if t["id"] != "X"]
 check("labels: correctie in Iconik", refine.marks("A1")["refined"], refine.marks("A1"))
 refine.discard_draft("A1")
-check("labels: gecorrigeerd zonder concept", refine.marks("A1") == {"refined": True, "draft": False}, refine.marks("A1"))
+check("labels: gecorrigeerd zonder concept", refine.marks("A1") == {"refined": True, "draft": False, "subtitles": False}, refine.marks("A1"))
 refine.save_draft("A1", json.dumps({"transcript": edited, "edits": 1}))
-check("labels: gecorrigeerd met concept", refine.marks("A1") == {"refined": True, "draft": True}, refine.marks("A1"))
-check("labels: onbekend asset", refine.marks("NIETS") == {"refined": False, "draft": False})
+check("labels: gecorrigeerd met concept", refine.marks("A1") == {"refined": True, "draft": True, "subtitles": False}, refine.marks("A1"))
+check("labels: onbekend asset", refine.marks("NIETS") == {"refined": False, "draft": False, "subtitles": False})
+
+# --- ondertitels: bewust maken, bewaren als bestand, bewerken, inpassen ---
+transcribe.SIDECARS_FILE = tmp / "sidecars.json"
+asked = []
+
+
+def chooser(answer):
+    def choose(folder, name):
+        asked.append((folder, name))
+        return answer
+    return choose
+
+
+def body(**values):
+    return json.dumps(values)
+
+
+settings = refine.view("A1")["export"]
+check("ondertitels: begint met de voorkeuze voor streaming, .srt naast de media",
+      settings["preset"] == "streaming" and settings["rules"]["max_chars"] == 42 and settings["rules"]["linger"] == 1
+      and settings["formats"] == "srt" and settings["place"] == "media", settings)
+check("ondertitels: er zijn er geen tot iemand ze maakt", refine.view("A1")["subtitles"] is None and refine.load_subtitles("A1") is None)
+seen = refine.preview_subtitles("A1", body(rules={}))
+check("ondertitels: de voorvertoning telt zonder iets te bewaren",
+      seen["cues"] >= 1 and "without_linger" in seen and refine.load_subtitles("A1") is None and not (media.parent / "clip.srt").exists(), seen)
+for call, what in ((lambda: refine.save_subtitles("A1", body(transcript={}, edits=1)), "bewaren"),
+                   (lambda: refine.write_subtitles("A1"), "schrijven"), (lambda: refine.fit_subtitles("A1", body()), "inpassen")):
+    try:
+        call()
+        check(f"ondertitels: {what} zonder ondertitels geweigerd", False)
+    except refine.RefineError:
+        check(f"ondertitels: {what} zonder ondertitels geweigerd", True)
+
+made = refine.make_subtitles("A1", body(rules={"max_chars": 30}, formats="srt", place="media"), chooser("x"))
+srt_path = media.parent / "clip.srt"
+check("maken: de laag, met de regels, niets met de hand aangepast en nog niet verouderd",
+      made["rules"]["max_chars"] == 30 and made["edits"] == 0 and made["stale"] is False and not any(made["touched"])
+      and len(made["touched"]) == len(made["transcript"]["segments"]) >= 1, made.get("rules"))
+check("maken: het bestand staat naast de media, zonder bewaarvenster",
+      [(f["name"], f["state"]) for f in made["files"]] == [("clip.srt", "written")] and srt_path.read_text(encoding="utf-8").startswith("1\n00:00:")
+      and asked == [] and made["target"] == {"formats": "srt", "place": "media", "base": str(media), "names": ["clip.srt"]}, made["files"])
+check("maken: uit het concept zoals het in Refine staat, zonder sprekernamen in .srt", "Spreker" not in srt_path.read_text(encoding="utf-8"))
+check("maken: de keuzes zijn onthouden voor de volgende keer",
+      refine.subtitle_settings()["rules"]["max_chars"] == 30 and refine.subtitle_settings()["formats"] == "srt")
+check("maken: de opdrachtenlijst toont dat er ondertitels zijn", refine.marks("A1")["subtitles"] is True)
+check("maken: de laag komt terug bij het openen", refine.view("A1")["subtitles"]["target"]["names"] == ["clip.srt"])
+
+hand = json.loads(json.dumps(made["transcript"]))
+hand["segments"][0]["words"] = [["Ingekort", hand["segments"][0]["start"], hand["segments"][0]["end"], 1]]
+refine.save_subtitles("A1", body(transcript=hand, touched=[True] + [False] * (len(hand["segments"]) - 1), edits=1, rules=made["rules"]))
+kept = refine.load_subtitles("A1")
+check("bewerken: de laag is bewaard op deze Mac, het bestand nog niet bijgewerkt",
+      kept["edits"] == 1 and kept["touched"][0] is True and kept["target"]["base"] == str(media) and "Ingekort" not in srt_path.read_text(encoding="utf-8"), kept["edits"])
+wrote = refine.write_subtitles("A1")
+check("bewaren: het bestand bijgewerkt, niets meer te bewaren",
+      wrote["files"][0]["state"] == "written" and "Ingekort" in srt_path.read_text(encoding="utf-8") and wrote["edits"] == 0, wrote["files"])
+try:
+    refine.save_subtitles("A1", body(transcript={"segments": "onzin"}, edits=1))
+    check("bewerken: onzin wordt niet bewaard", False)
+except (ValueError, KeyError, TypeError, AttributeError):
+    check("bewerken: onzin wordt niet bewaard", refine.load_subtitles("A1")["edits"] == 0)
+
+fitted = refine.fit_subtitles("A1", body(rules=dict(made["rules"], linger=0)))
+check("inpassen: wat met de hand is aangepast blijft staan",
+      fitted["touched"][0] is True and fitted["transcript"]["segments"][0]["words"][0][0] == "Ingekort" and fitted["rules"]["linger"] == 0, fitted["touched"])
+
+srt_path.write_text("door iemand anders bewerkt", encoding="utf-8")
+refine.save_subtitles("A1", body(transcript=fitted["transcript"], touched=fitted["touched"], edits=2, rules=fitted["rules"]))
+blocked = refine.write_subtitles("A1")
+check("bewaren: een bestand dat daarna door iemand is gewijzigd blijft staan, de wijzigingen blijven open",
+      (blocked["files"][0]["state"], blocked["files"][0]["detail"]) == ("kept", "exists") and blocked["edits"] == 2
+      and srt_path.read_text(encoding="utf-8") == "door iemand anders bewerkt", blocked["files"])
+(tmp / "uit").mkdir(exist_ok=True)
+check("andere plek: annuleren in het bewaarvenster verandert niets",
+      refine.write_subtitles("A1", chooser(None), elsewhere=True) == {"cancelled": True} and refine.load_subtitles("A1")["target"]["place"] == "media")
+moved = refine.write_subtitles("A1", chooser(str(tmp / "uit" / "elders")), elsewhere=True)
+check("andere plek: bewaarvenster opent naast het origineel met de naam van de media", asked[-1] == (str(media.parent), "clip.srt"), asked[-1])
+check("andere plek: geschreven waar iemand koos, de extensie aangevuld, en dat is voortaan de plek",
+      moved["files"][0]["name"] == "elders.srt" and (tmp / "uit" / "elders.srt").is_file() and moved["target"]["place"] == "other"
+      and moved["target"]["names"] == ["elders.srt"] and moved["edits"] == 0, moved["target"])
+
+changed = json.loads(json.dumps(refine.load_draft("A1")["transcript"]))
+changed["segments"][0]["words"][0][0] = "Anders"
+refine.save_draft("A1", json.dumps({"transcript": changed, "edits": 2}))
+check("verouderd zodra het transcript verandert, de ondertitels zelf blijven staan",
+      refine.load_subtitles("A1")["stale"] is True and refine.load_subtitles("A1")["transcript"]["segments"][0]["words"][0][0] == "Ingekort")
+check("opnieuw maken: annuleren in het bewaarvenster laat de oude laag staan",
+      refine.make_subtitles("A1", body(rules={}, formats="both", place="other"), chooser(None)) == {"cancelled": True}
+      and refine.load_subtitles("A1")["touched"][0] is True)
+again = refine.make_subtitles("A1", body(rules={}, formats="both", place="other"), chooser(str(tmp / "uit" / "nieuw.vtt")))
+check("opnieuw maken: vers verdeeld uit het transcript van nu, het handwerk is weg",
+      again["stale"] is False and not any(again["touched"]) and "Anders" in (tmp / "uit" / "nieuw.srt").read_text(encoding="utf-8"), again["files"])
+check("opnieuw maken: allebei de formaten op de gekozen plek, .vtt met sprekers",
+      [(f["name"], f["state"]) for f in again["files"]] == [("nieuw.srt", "written"), ("nieuw.vtt", "written")]
+      and "<v " in (tmp / "uit" / "nieuw.vtt").read_text(encoding="utf-8"), again["files"])
+try:
+    refine.make_subtitles("A1", body(rules={}, formats="srt", place="other"), None)
+    check("maken: een andere plek zonder venster geeft een leesbare fout", False)
+except refine.RefineError:
+    check("maken: een andere plek zonder venster geeft een leesbare fout", True)
+try:
+    refine.make_subtitles("A2", body(rules={}, formats="srt", place="media"), chooser("x"))
+    check("maken: naast de media kan niet zonder origineel", False)
+except refine.RefineError as error:
+    check("maken: naast de media kan niet zonder origineel", refine.load_subtitles("A2") is None, str(error))
+away = refine.make_subtitles("A2", body(rules={}, formats="srt", place="other"), chooser(str(tmp / "uit" / "zonder-origineel.srt")))
+check("maken: zonder origineel wel op een andere plek, het bewaarvenster zonder map",
+      asked[-1][0] is None and asked[-1][1].endswith(".srt") and away["files"][0]["state"] == "written", asked[-1])
+refine.discard_subtitles("A1")
+# --- een bestaand bestand inladen ---
+srt_path.write_text("1\n00:00:01,000 --> 00:00:02,000\nHallo daar\n\n2\n00:00:05,000 --> 00:00:06,500\nJa, door iemand anders gemaakt.\n", encoding="utf-8")
+check("inladen: wat naast de media staat wordt aangeboden", refine.view("A1")["export"]["existing"] == ["clip.srt"], refine.view("A1")["export"]["existing"])
+loaded = refine.import_subtitles("A1", body(rules={}, name="clip.srt"), None)
+check("inladen: de ondertitels uit het bestand, als met de hand gemaakt, met de sprekers uit het transcript",
+      [" ".join(w[0] for w in s["words"]) for s in loaded["transcript"]["segments"]] == ["Hallo daar", "Ja, door iemand anders gemaakt."]
+      and all(loaded["touched"]) and [s["speaker"] for s in loaded["transcript"]["segments"]] == ["1", "2"]
+      and loaded["files"][0]["state"] == "loaded" and loaded["target"] == {"formats": "srt", "place": "media", "base": str(media), "names": ["clip.srt"]}, loaded["target"])
+shorter = json.loads(json.dumps(loaded["transcript"]))
+shorter["segments"][1]["words"] = shorter["segments"][1]["words"][:1]
+refine.save_subtitles("A1", body(transcript=shorter, touched=loaded["touched"], edits=1, rules=loaded["rules"]))
+check("inladen: Bewaren schrijft terug naar het bestand dat is ingeladen",
+      refine.write_subtitles("A1")["files"][0]["state"] == "written" and "iemand anders" not in srt_path.read_text(encoding="utf-8") and "Hallo daar" in srt_path.read_text(encoding="utf-8"))
+check("inladen: inpassen blijft van ingeladen ondertitels af", refine.fit_subtitles("A1", body(rules={}))["changed"] is False)
+for name in ("../geheim.srt", "clip.mov", "bestaat-niet.vtt"):
+    try:
+        refine.import_subtitles("A1", body(name=name), None)
+        check(f"inladen: {name} geweigerd", False)
+    except refine.RefineError:
+        check(f"inladen: {name} geweigerd", True)
+picked = tmp / "uit" / "los bestand.vtt"
+picked.write_text("WEBVTT\n\n00:00:01.000 --> 00:00:02.000\n<v Spreker 2>Los bestand\n", encoding="utf-8")
+opened = []
+other_file = refine.import_subtitles("A1", body(rules={}), lambda folder: (opened.append(folder), str(picked))[1])
+check("inladen: een ander bestand kiezen opent naast het origineel, en dat bestand is daarna de plek",
+      opened == [str(media.parent)] and other_file["target"]["place"] == "other" and other_file["target"]["names"] == ["los bestand.vtt"]
+      and other_file["transcript"]["segments"][0]["speaker"] == "2", other_file["target"])
+check("inladen: annuleren bij het kiezen verandert niets",
+      refine.import_subtitles("A1", body(rules={}), lambda folder: None) == {"cancelled": True} and refine.load_subtitles("A1")["target"]["names"] == ["los bestand.vtt"])
+(tmp / "uit" / "leeg.srt").write_text("geen ondertitels hier", encoding="utf-8")
+(tmp / "uit" / "plaatje.png").write_bytes(b"png")
+for bad, what in ((tmp / "uit" / "leeg.srt", "een bestand zonder ondertitels"), (tmp / "uit" / "plaatje.png", "een ander soort bestand"), (tmp / "uit" / "weg.srt", "een bestand dat er niet is")):
+    try:
+        refine.import_subtitles("A1", body(rules={}), lambda folder, bad=bad: str(bad))
+        check(f"inladen: {what} geweigerd", False)
+    except refine.RefineError:
+        check(f"inladen: {what} geweigerd, de ondertitels blijven", refine.load_subtitles("A1")["target"]["names"] == ["los bestand.vtt"])
+try:
+    refine.import_subtitles("A1", body(rules={}), None)
+    check("inladen: kiezen zonder venster geeft een leesbare fout", False)
+except refine.RefineError:
+    check("inladen: kiezen zonder venster geeft een leesbare fout", True)
+refine.discard_subtitles("A1")
+check("verwijderen: het label in de opdrachtenlijst is weg", refine.marks("A1")["subtitles"] is False)
+check("verwijderen: de laag weg, de bestanden blijven staan",
+      refine.load_subtitles("A1") is None and (tmp / "uit" / "nieuw.srt").is_file() and refine.view("A1")["subtitles"] is None)
+refine.save_draft("A1", json.dumps({"transcript": edited, "edits": 1}))   # terug naar het concept van hierboven
 
 print("ALLES OK" if not fails else f"{fails} FOUT")
 sys.exit(1 if fails else 0)

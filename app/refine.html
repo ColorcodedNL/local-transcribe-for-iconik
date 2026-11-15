@@ -8,13 +8,13 @@
 :root {
   --window: #f5f6f7; --surface: #ffffff; --line: #d9dde2; --soft: #eceef1; --head: #fafbfc;
   --text: #1c1f23; --muted: #6a727d; --accent: #1a6fe0; --pick: #eaf2fd;
-  --wave: #8f98a3; --wave-off: #c9ced5; --play: #c9412b; --bad: #c9412b; --video: #0d0f12;
+  --wave: #8f98a3; --wave-off: #c9ced5; --play: #c9412b; --bad: #c9412b; --warm: #a86a00; --video: #0d0f12;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --window: #1d2025; --surface: #262a30; --line: #343941; --soft: #2e333a; --head: #2a2e35;
     --text: #e8eaed; --muted: #8d95a0; --accent: #4c9dff; --pick: #1f3350;
-    --wave: #7d8692; --wave-off: #464c56; --play: #e5634d; --bad: #e5634d; --video: #000;
+    --wave: #7d8692; --wave-off: #464c56; --play: #e5634d; --bad: #e5634d; --warm: #e8a33d; --video: #000;
   }
 }
 * { box-sizing: border-box; }
@@ -55,7 +55,7 @@ header h1 { margin: 0; font-size: 18px; font-weight: 650; letter-spacing: -.015e
 .blk.pick { background: var(--pick); box-shadow: inset 3px 0 0 var(--accent); }
 .blk.now .txt { font-weight: 550; }
 .blk .nr { color: var(--muted); font-size: 11px; padding-top: 1px; }
-.blk .meta { display: flex; gap: 8px; align-items: baseline; font-size: 11px; color: var(--muted); min-width: 0; }
+.blk .meta { display: flex; flex-wrap: wrap; gap: 0 8px; align-items: baseline; font-size: 11px; color: var(--muted); min-width: 0; }
 .blk .who { display: inline-flex; align-items: center; gap: 4px; color: var(--text); }
 .blk .txt { grid-column: 2; font-size: 13.5px; line-height: 1.4; -webkit-user-select: text; user-select: text; }
 .low { text-decoration: underline wavy color-mix(in srgb, var(--bad) 70%, transparent); text-underline-offset: 3px; }
@@ -94,6 +94,69 @@ footer { display: flex; gap: 18px; align-items: center; padding: 6px 10px; borde
 #menu .cur { color: var(--muted); font-size: 11px; margin-left: auto; }
 #menu button:hover .cur, #menu button:focus .cur { color: #fff; }
 #menu hr { border: 0; height: 1px; background: var(--soft); margin: 5px 0; }
+#sub { white-space: pre-line; }
+.bad { color: var(--bad); }
+.warm { color: var(--warm); }
+.blk.warn1 { background: color-mix(in srgb, var(--warm) 13%, transparent); }
+.blk.warn2 { background: color-mix(in srgb, var(--bad) 12%, transparent); }
+.blk.warn1.pick { background: color-mix(in srgb, var(--warm) 13%, var(--pick)); }
+.blk.warn2.pick { background: color-mix(in srgb, var(--bad) 12%, var(--pick)); }
+#modebar { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-bottom: 1px solid var(--line); background: var(--head); }
+#modebar .btn { padding: 2px 9px; font-size: 12px; flex: none; }
+.seg { display: inline-flex; flex: none; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; background: var(--surface); }
+.seg button { all: unset; padding: 3px 12px; font-size: 12.5px; white-space: nowrap; }
+.seg button[aria-selected="true"], .seg button.on { background: var(--accent); color: #fff; font-weight: 550; }
+.seg #subMore { padding: 3px 9px; border-left: 1px solid color-mix(in srgb, #fff 35%, var(--accent)); }
+.seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+#subAdd { flex: none; border: 1px dashed var(--line); background: none; color: var(--accent); border-radius: 7px; padding: 3px 12px; font-size: 12.5px; }
+#count .dot { width: 9px; height: 9px; border-radius: 2px; display: inline-block; margin-right: 5px; }
+#count button { all: unset; color: var(--accent); margin-left: auto; }
+#count button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#rules { padding: 8px 10px 9px; border-bottom: 1px solid var(--line); font-size: 12px; }
+#rules .foot { margin-top: 8px; color: var(--muted); font-size: 11px; line-height: 1.35; white-space: normal; }
+#setForm .sect, #makeBox .sect { font-size: 11px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); margin: 2px 0 6px; }
+#setForm .row { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+#setForm select { font: inherit; flex: 1; min-width: 0; }
+#setForm .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 16px; margin-bottom: 10px; }
+#setForm .grid label { display: flex; align-items: center; gap: 6px; min-width: 0; }
+#setForm .grid label > span:first-child { flex: 1; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#setForm .unit { width: 40px; flex: none; color: var(--muted); font-size: 11px; }
+#setForm input[type=number] { width: 52px; flex: none; font: inherit; font-size: 12px; color: var(--text); background: var(--window); border: 1px solid var(--line); border-radius: 5px;
+             padding: 1px 4px; text-align: right; -webkit-user-select: text; user-select: text; }
+#setForm .opt { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 7px; }
+#setForm .opt input[type=checkbox] { margin: 3px 0 0; flex: none; }
+#setForm .opt .what { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+#rules #setForm .opt small { display: none; }   /* onder Instellingen compact: de uitleg staat in het maakvenster en in de tooltip */
+#setForm input:disabled { opacity: .45; }
+#setForm .opt small { color: var(--muted); font-size: 11px; line-height: 1.35; }
+#setForm .opt .amt { flex: none; display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11px; white-space: nowrap; }
+#makeBack { position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,.45); display: flex; align-items: flex-start; justify-content: center; padding-top: 6vh; overflow-y: auto; }
+#makeBox { width: 520px; max-width: calc(100vw - 32px); background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 24px 60px rgba(0,0,0,.45);
+           padding: 18px 20px 16px; font-size: 13px; margin-bottom: 24px; }
+#makeBox h2 { margin: 0; font-size: 16px; font-weight: 650; }
+#makeBox p { margin: 4px 0 14px; color: var(--muted); }
+#makeBox hr { border: 0; height: 1px; background: var(--soft); margin: 12px 0; }
+#makeBox .srow { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 7px; }
+#makeBox .srow > span:first-child { width: 90px; flex: none; }
+#makeBox .srow label { display: inline-flex; align-items: center; gap: 6px; margin-right: 12px; }
+#makeBox .srow .col { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+#makeBox .srow .col label { margin: 0; }
+#makeBox .srow small { color: var(--muted); font-size: 11px; }
+#makeBox.load #setFitHead, #makeBox.load #setForm .opt, #makeBox.load #mkNewOnly { display: none; }
+#makeBox #mkLoadNote { margin: 10px 0 12px; font-size: 12px; }
+#mkCount { background: var(--window); border: 1px solid var(--soft); border-radius: 8px; padding: 8px 12px; display: flex; align-items: center; gap: 14px; margin: 12px 0; min-height: 20px; }
+#mkCount .dot { width: 9px; height: 9px; border-radius: 2px; display: inline-block; margin-right: 5px; }
+#mkCount .last { margin-left: auto; color: var(--muted); font-size: 12px; }
+#makeBox .end { display: flex; justify-content: flex-end; gap: 8px; }
+#makeBox .end .btn { padding: 6px 14px; }
+#subMenu { position: fixed; z-index: 20; min-width: 250px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+        box-shadow: 0 10px 28px rgba(0,0,0,.25); padding: 5px; font-size: 13px; }
+#subMenu button { all: unset; box-sizing: border-box; width: 100%; padding: 6px 9px; border-radius: 5px; }
+#subMenu button:hover, #subMenu button:focus { background: var(--accent); color: #fff; }
+#subMenu button.danger { color: var(--bad); }
+#subMenu button.danger:hover, #subMenu button.danger:focus { background: var(--bad); color: #fff; }
+#subMenu hr { border: 0; height: 1px; background: var(--soft); margin: 5px 0; }
+.lane-pick { cursor: default; }
 [hidden] { display: none !important; }
 </style>
 </head>
@@ -106,10 +169,38 @@ footer { display: flex; gap: 18px; align-items: center; padding: 6px 10px; borde
   <span class="grow"></span>
   <button class="icon" id="undo" disabled><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6 4 2.5 7.5 6 11M3 7.5h6.5a4 4 0 0 1 0 8H8"/></svg></button>
   <button class="icon" id="redo" disabled><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M10 4l3.5 3.5L10 11M13 7.5H6.5a4 4 0 0 0 0 8H8"/></svg></button>
+  <button class="btn primary" id="writeBtn" hidden></button>
   <button class="btn danger" id="discard" hidden></button>
   <button class="btn" id="restore" hidden></button>
   <button class="btn primary" id="save" disabled></button>
 </header>
+<div id="makeBack" hidden>
+  <div id="makeBox" role="dialog" aria-modal="true" aria-labelledby="mkTitle">
+    <h2 id="mkTitle"></h2>
+    <p id="mkIntro"></p>
+    <div class="srow" id="mkHowRow"><span id="mkHowLabel"></span><span class="col">
+      <label><input type="radio" name="mkHow" value="new"> <span id="mkNew"></span></label>
+      <span class="col" id="mkLoadList"></span>
+      <label><input type="radio" name="mkHow" value="pick"> <span id="mkPick"></span></label></span></div>
+    <hr>
+    <div id="mkForm"></div>
+    <div id="mkNewOnly">
+    <hr>
+    <div class="sect" id="mkSaveHead"></div>
+    <div class="srow"><span id="mkFileLabel"></span><span>
+      <label><input type="radio" name="mkFmt" value="srt"> .srt</label>
+      <label><input type="radio" name="mkFmt" value="vtt"> .vtt</label>
+      <label><input type="radio" name="mkFmt" value="both"> <span id="mkBoth"></span></label></span></div>
+    <div class="srow"><span id="mkPlaceLabel"></span><span class="col">
+      <label><input type="radio" name="mkPlace" value="media"> <span id="mkMedia"></span> <small id="mkMediaName"></small></label>
+      <label><input type="radio" name="mkPlace" value="other"> <span id="mkOther"></span></label></span></div>
+    <div id="mkCount" aria-live="polite"></div>
+    </div>
+    <p id="mkLoadNote" hidden></p>
+    <div class="end"><button class="btn" id="mkCancel"></button><button class="btn primary" id="mkGo"></button></div>
+  </div>
+</div>
+<div id="subMenu" role="menu" hidden></div>
 <div id="error" hidden></div>
 <div id="upper">
   <section id="left">
@@ -130,6 +221,33 @@ footer { display: flex; gap: 18px; align-items: center; padding: 6px 10px; borde
     </div>
   </section>
   <section id="right">
+    <div id="modebar">
+      <div class="seg" role="tablist"><button id="modeT" role="tab" data-mode="transcript"></button><button id="modeS" role="tab" data-mode="subtitles" hidden></button><button id="subMore" aria-haspopup="menu" hidden>⋯</button></div>
+      <button id="subAdd"></button>
+      <span class="grow"></span>
+      <button class="btn" id="rulesBtn" aria-expanded="false" hidden></button>
+      <button class="btn" id="fitBtn" hidden></button>
+    </div>
+    <div id="rules" hidden>
+      <div id="setForm">
+        <div class="sect" id="setRulesHead"></div>
+        <div class="row"><select id="exPreset" aria-label=""></select></div>
+        <div class="grid">
+          <label><span id="exL_max_chars"></span><input type="number" id="ex_max_chars"><span class="unit"></span></label>
+          <label><span id="exL_max_lines"></span><input type="number" id="ex_max_lines"><span class="unit"></span></label>
+          <label><span id="exL_min_ms"></span><input type="number" id="ex_min_ms" step="0.1"><span class="unit" id="exU_min_ms"></span></label>
+          <label><span id="exL_max_ms"></span><input type="number" id="ex_max_ms" step="0.5"><span class="unit" id="exU_max_ms"></span></label>
+          <label><span id="exL_gap_ms"></span><input type="number" id="ex_gap_ms" step="10"><span class="unit">ms</span></label>
+          <label><span id="exL_cps"></span><input type="number" id="ex_cps"><span class="unit" id="exU_cps"></span></label>
+        </div>
+        <div class="sect" id="setFitHead"></div>
+        <div class="opt"><input type="checkbox" id="ex_linger" aria-labelledby="exL_linger"><span class="what"><span id="exL_linger"></span><small id="exH_linger"></small></span>
+          <span class="amt"><span id="exP_linger"></span><input type="number" id="ex_linger_ms" step="0.5" aria-labelledby="exL_linger exP_linger"><span id="exU_linger_ms"></span></span></div>
+        <div class="opt"><input type="checkbox" id="ex_merge" aria-labelledby="exL_merge"><span class="what"><span id="exL_merge"></span><small id="exH_merge"></small></span>
+          <span class="amt"><span id="exP_merge"></span><input type="number" id="ex_merge_gap_ms" step="0.1" aria-labelledby="exL_merge exP_merge"><span id="exU_merge_gap_ms"></span></span></div>
+      </div>
+      <div class="foot" id="subNote"></div>
+    </div>
     <div id="speakers"></div>
     <div id="count"></div>
     <div id="list"></div>
@@ -179,6 +297,38 @@ const TEXT = {
     from: { mac: "kopie op deze Mac", iconik: "uit Iconik" }, source: (e, o) => `Bron: ${e}, ${o}`,
     note: "Dubbelklik op tekst om te bewerken, Enter splitst · rechtsklik voor sprekers · Opslaan vervangt het transcript in Iconik, het origineel blijft op deze Mac",
     origin: name => `Origineel via opslag (ISG) · ${name}`, originOff: name => `Origineel niet bereikbaar · ${name}`,
+    exPreset: "Voorkeuze",
+    exPresets: {streaming: "Online en streaming (42 tekens)", broadcast: "Televisie, teletekst (37 tekens)", custom: "Eigen waarden"},
+    exLabels: {max_chars: "Tekens per regel", max_lines: "Regels", min_ms: "Kortste duur", max_ms: "Langste duur",
+               gap_ms: "Tussenruimte", cps: "Leessnelheid"},
+    seconds: "sec", cpsUnit: "t/s",
+    setRules: "Regels", setFit: "Inpassen",
+    linger: "Uitloop in de stilte", lingerHelp: "Een ondertitel blijft staan na het laatste woord, tot hij te lezen is. Nooit over de volgende heen.", lingerPre: "max",
+    mergeOpt: "Korte zinnen van dezelfde spreker samen", mergeHelp: "Alleen als er geen pauze tussen zit en het binnen de regels past.", mergePre: "pauze tot",
+    modeT: "Transcript", modeS: "Ondertitels", subLane: "Ondertitels", subAdd: "+ Ondertitels", subMore: "Meer over deze ondertitels",
+    settings: "Instellingen", fit: "Inpassen", fitTitle: "Past samenvoegen en uitloop opnieuw toe. Wat je met de hand aanpaste blijft staan.",
+    fitDone: "Opnieuw ingepast. Bewaar om het bestand bij te werken.", fitNothing: "Inpassen veranderde niets.",
+    subs: n => `${n} ${n === 1 ? "ondertitel" : "ondertitels"}`, countFast: n => `${n} snel`, countBad: n => `${n} niet te lezen`, countGood: n => `${n} goed`,
+    noWarn: "geen waarschuwingen", warnNext: "Volgende ›", withoutLinger: n => `zonder uitloop: ${n}`,
+    warnNames: {fast: "snel", unreadable: "niet te lezen", wide: "past niet", short: "te kort", long: "te lang", overlap: "overlapt"},
+    lingered: s => `+${s} uitloop`,
+    subSaved: names => `Bewaard: ${names}`, subUnsaved: n => `${n} ${n === 1 ? "wijziging" : "wijzigingen"} nog niet in het bestand`,
+    subSettingsNote: "Een andere regel verandert hier de waarschuwingen en de regelbreuken. Inpassen past samenvoegen en uitloop opnieuw toe; wat je met de hand aanpaste blijft staan.",
+    subStale: "Het transcript is veranderd nadat deze ondertitels zijn gemaakt. Maak ze opnieuw via ⋯ als je de wijzigingen erin wilt.",
+    write: "Bewaren", writing: "Bewaren...",
+    fileWritten: (name, n) => `Bewaard: ${name} · ${n} ondertitels`, fileExists: name => `${name} bestaat al en is niet van deze app, of is daarna gewijzigd: niet overschreven. Kies een andere plek via ⋯.`,
+    fileFailed: (name, why) => `${name} bewaren lukte niet: ${why}`, fileEmpty: "Er is geen tekst om te bewaren.",
+    mkTitle: "Ondertitels maken", mkAgain: "Ondertitels opnieuw maken",
+    mkIntro: "Het transcript wordt verdeeld over ondertitels en blijft zelf zoals het is. Daarna pas je ze aan in de tab Ondertitels.",
+    mkAgainIntro: "De ondertitels worden opnieuw verdeeld uit het transcript. Wat je er met de hand aan veranderde gaat verloren.",
+    mkHow: "Ondertitels", mkNew: "Nieuw maken uit het transcript", mkLoad: name => `Inladen: ${name}`, mkPick: "Een ander bestand inladen...",
+    mkLoadGo: "Inladen", mkLoadBusy: "Inladen...",
+    mkLoadNote: "De ondertitels komen zoals ze in het bestand staan. Sprekers en woordtiming komen waar het kan uit het transcript. Bewaren schrijft daarna naar hetzelfde bestand.",
+    fileLoaded: (name, n) => `Ingeladen: ${name} · ${n} ondertitels`,
+    mkSave: "Bewaren", mkFile: "Bestand", mkBoth: "allebei", mkPlace: "Plek", mkMedia: "Naast de media", mkOther: "Andere plek kiezen...",
+    mkOffline: "origineel niet bereikbaar", mkCancel: "Annuleren", mkGo: "Maken en bewaren", mkBusy: "Maken...", mkCounting: "Tellen...",
+    menuAgain: "Opnieuw maken uit het transcript...", menuElsewhere: "Op een andere plek bewaren...", menuDelete: "Ondertitels verwijderen...", menuDeleteSure: "Zeker weten? Klik nogmaals",
+    subNote: "Ondertitels: dubbelklik om in te korten, Enter splitst, randen verslepen op de tijdlijn · W springt naar de volgende waarschuwing · het transcript verandert niet",
     notes: {},
   },
   en: {
@@ -206,15 +356,112 @@ const TEXT = {
     from: { mac: "copy on this Mac", iconik: "from Iconik" }, source: (e, o) => `Source: ${e}, ${o}`,
     note: "Double-click text to edit, Enter splits · right-click for speakers · Saving replaces the transcript in Iconik, the original stays on this Mac",
     origin: name => `Original via storage (ISG) · ${name}`, originOff: name => `Original not reachable · ${name}`,
+    exPreset: "Preset",
+    exPresets: {streaming: "Online and streaming (42 characters)", broadcast: "Television, teletext (37 characters)", custom: "Own values"},
+    exLabels: {max_chars: "Characters per line", max_lines: "Lines", min_ms: "Shortest", max_ms: "Longest",
+               gap_ms: "Gap", cps: "Reading speed"},
+    seconds: "sec", cpsUnit: "c/s",
+    setRules: "Rules", setFit: "Fitting",
+    linger: "Linger in the silence", lingerHelp: "A subtitle stays after the last word until it can be read. Never over the next one.", lingerPre: "max",
+    mergeOpt: "Short sentences of the same speaker together", mergeHelp: "Only when there is no pause between them and it fits the rules.", mergePre: "pause up to",
+    modeT: "Transcript", modeS: "Subtitles", subLane: "Subtitles", subAdd: "+ Subtitles", subMore: "More about these subtitles",
+    settings: "Settings", fit: "Fit", fitTitle: "Applies merging and lingering again. What you changed by hand stays.",
+    fitDone: "Fitted again. Save to update the file.", fitNothing: "Fitting changed nothing.",
+    subs: n => `${n} ${n === 1 ? "subtitle" : "subtitles"}`, countFast: n => `${n} fast`, countBad: n => `${n} unreadable`, countGood: n => `${n} good`,
+    noWarn: "no warnings", warnNext: "Next ›", withoutLinger: n => `without lingering: ${n}`,
+    warnNames: {fast: "fast", unreadable: "unreadable", wide: "does not fit", short: "too short", long: "too long", overlap: "overlaps"},
+    lingered: s => `+${s} linger`,
+    subSaved: names => `Saved: ${names}`, subUnsaved: n => `${n} ${n === 1 ? "change" : "changes"} not in the file yet`,
+    subSettingsNote: "Another rule changes the warnings and the line breaks here. Fit applies merging and lingering again; what you changed by hand stays.",
+    subStale: "The transcript changed after these subtitles were made. Make them again through ⋯ if you want the changes in.",
+    write: "Save", writing: "Saving...",
+    fileWritten: (name, n) => `Saved: ${name} · ${n} subtitles`, fileExists: name => `${name} already exists and is not from this app, or was changed afterwards: not overwritten. Choose another place through ⋯.`,
+    fileFailed: (name, why) => `Saving ${name} failed: ${why}`, fileEmpty: "There is no text to save.",
+    mkTitle: "Make subtitles", mkAgain: "Make subtitles again",
+    mkIntro: "The transcript is divided into subtitles and stays as it is. After that you adjust them in the Subtitles tab.",
+    mkAgainIntro: "The subtitles are divided again from the transcript. What you changed in them by hand is lost.",
+    mkHow: "Subtitles", mkNew: "Make new from the transcript", mkLoad: name => `Load: ${name}`, mkPick: "Load another file...",
+    mkLoadGo: "Load", mkLoadBusy: "Loading...",
+    mkLoadNote: "The subtitles come in as they are in the file. Speakers and word timing come from the transcript where possible. Save then writes to the same file.",
+    fileLoaded: (name, n) => `Loaded: ${name} · ${n} subtitles`,
+    mkSave: "Save", mkFile: "File", mkBoth: "both", mkPlace: "Place", mkMedia: "Next to the media", mkOther: "Choose another place...",
+    mkOffline: "original not reachable", mkCancel: "Cancel", mkGo: "Make and save", mkBusy: "Making...", mkCounting: "Counting...",
+    menuAgain: "Make again from the transcript...", menuElsewhere: "Save in another place...", menuDelete: "Delete subtitles...", menuDeleteSure: "Are you sure? Click again",
+    subNote: "Subtitles: double-click to shorten, Enter splits, drag the edges on the timeline · W jumps to the next warning · the transcript does not change",
     notes: {"geluid": "audio", "stil": "silent", "tijdcode of toon": "timecode or tone", "eigen microfoon": "dedicated microphone", "gekozen spoor": "chosen track"},
   },
 };
 const COLORS = ["#1a6fe0", "#f0a54a", "#2e9a48", "#b05cc8", "#d9534f", "#17a2b8", "#8a6d3b", "#6c757d"];
-const DARK_INK = new Set(["#f0a54a"]);
+const ORANGE = "#e0a030";   // een ondertitel die sneller gaat dan de leessnelheid
+const SLATE = "#5f6b7a";    // een ondertitel waar niets mee is
+const DARK_INK = new Set(["#f0a54a", ORANGE]);
 const $ = id => document.getElementById(id);
 const esc = t => String(t ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 const ASSET = new URLSearchParams(location.search).get("asset") || "";
 let T = TEXT.en, lang = "en", D = null, blocks = [], speakerOf = {}, fps = 25, dur = 0;
+// Twee lagen met dezelfde editor: het transcript en de ondertitels. De laag die bewerkt wordt staat in
+// blocks/history/future/edits; de andere wacht in layer[...] en staat gedimd op de tijdlijn.
+let mode = "transcript", R = null, subStale = false, subTarget = null, switching = false, rulesOpen = false;
+const emptyLayer = () => ({blocks: [], history: [], future: [], edits: 0, savedAt: ""});
+// Ondertitels zijn er pas als iemand ze maakt: tot dan is layer.subtitles leeg (null).
+const layer = {transcript: emptyLayer(), subtitles: null};
+const hasSubs = () => mode === "subtitles" || layer.subtitles !== null;
+const subList = () => mode === "subtitles" ? blocks : layer.subtitles ? layer.subtitles.blocks : [];
+// Met de hand aangepast: de ondertitel is niet meer zoals het maken of inpassen hem achterliet (b.o).
+const sig = b => [b.start.toFixed(3), b.end.toFixed(3), b.speaker, b.display].join("|");
+const isTouched = b => b.o !== sig(b);
+
+// --- regelbreuk en waarschuwingen van een ondertitel: dezelfde keuzes als app/subtitles.py (layout, report) ---
+const SENT_END = /[.!?…]["'”’»)\]]*$/, CLAUSE_END = /[,;:]["'”’»)\]]*$/;
+const WEAK = new Set(["de", "het", "een", "en", "of", "van", "in", "op", "te", "met", "voor", "naar", "om", "dat", "die",
+  "the", "a", "an", "and", "or", "to", "on", "at", "for", "with", "that"]);
+function greedy(texts, width) {
+  const lines = []; let line = "";
+  for (const text of texts) {
+    if (line && line.length + 1 + text.length > width) { lines.push(line); line = text; }
+    else line = line ? line + " " + text : text;
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+function layoutLines(texts, rules) {
+  const width = rules.max_chars, most = rules.max_lines, whole = texts.join(" ");
+  if (whole.length <= width || most === 1 || texts.length < 2) return [whole];
+  if (most === 2) {
+    let best = null;
+    for (let i = 1; i < texts.length; i++) {
+      const first = texts.slice(0, i).join(" "), second = texts.slice(i).join(" ");
+      if (first.length > width || second.length > width) continue;
+      const last = texts[i - 1];
+      let score = Math.abs(first.length - second.length);
+      if (SENT_END.test(last) || CLAUSE_END.test(last)) score -= 12;
+      if (WEAK.has(last.toLowerCase().replace(/^["'“‘«(]+|["'“‘«(]+$/g, ""))) score += 16;
+      if (!best || score < best[0]) best = [score, [first, second]];
+    }
+    if (best) return best[1];
+  }
+  for (let narrow = Math.max(1, Math.ceil(whole.length / most)); narrow <= width; narrow++) {
+    const lines = greedy(texts, narrow);
+    if (lines.length <= most) return lines;
+  }
+  return greedy(texts, width);
+}
+// Niveau 1 (oranje): sneller dan de leessnelheid, te kort of te lang. Niveau 2 (rood): niet te lezen, past niet
+// binnen de regels of loopt over de volgende heen. Zelfde keuzes als subtitles.warnings.
+function check(b, nextB) {
+  const texts = b.display.split(" ").filter(Boolean), lines = layoutLines(texts, R);
+  const chars = lines.reduce((n, l) => n + l.length, 0) + lines.length - 1, d = Math.max(b.end - b.start, 0.001);
+  const warn = [], cps = chars / d;
+  if (cps > R.cps * 1.5) warn.push("unreadable"); else if (cps > R.cps) warn.push("fast");
+  if (lines.length > R.max_lines || lines.some(l => l.length > R.max_chars)) warn.push("wide");
+  if (d * 1000 < R.min_ms - 1) warn.push("short");
+  if (d * 1000 > R.max_ms + 1) warn.push("long");
+  if (nextB && nextB.start < b.end - 0.001) warn.push("overlap");
+  const level = warn.some(x => x === "unreadable" || x === "wide" || x === "overlap") ? 2 : warn.length ? 1 : 0;
+  const linger = b.words.length ? Math.max(0, b.end - b.words[b.words.length - 1].end) : 0;   // blijft staan na het laatste woord
+  return {lines, cps, warn, level, linger};
+}
+function audit(list) { list.forEach((b, i) => b.chk = check(b, list[i + 1])); }
 
 // --- tijd ---
 const pad = n => String(n).padStart(2, "0");
@@ -316,18 +563,27 @@ function playIcon() {
 }
 
 // --- blokken en lijst ---
-let picked = -1, nowAt = -1;
-function blockAt(t) {
-  let lo = 0, hi = blocks.length - 1, hit = -1;
-  while (lo <= hi) { const m = (lo + hi) >> 1; if (blocks[m].start <= t) { hit = m; lo = m + 1; } else hi = m - 1; }
-  return hit >= 0 && t <= blocks[hit].end ? hit : -1;
+let picked = -1, nowAt = -1, subShown = "";
+function blockAt(t, list = blocks) {
+  let lo = 0, hi = list.length - 1, hit = -1;
+  while (lo <= hi) { const m = (lo + hi) >> 1; if (list[m].start <= t) { hit = m; lo = m + 1; } else hi = m - 1; }
+  return hit >= 0 && t <= list[hit].end ? hit : -1;
 }
 function renderList() {
+  const sub = mode === "subtitles";
   const html = blocks.map((b, i) => {
     const sp = speakerOf[b.speaker] || {name: b.speaker, color: COLORS[0]};
-    const words = b.text && !b.words.length ? esc(b.text)
-      : b.words.map((w, k) => `<span class="w${w.score < 0.5 ? " low" : ""}" data-w="${k}">${esc(w.text)}</span>`).join(" ");
-    return `<div class="blk" id="b${i}" data-i="${i}"><span class="nr">${i + 1}</span><span class="meta"><span class="mono">${tc(b.start)} → ${tc(b.end)}</span><span>${secs(b.end - b.start)}</span><span class="who"><i class="sw" style="background:${sp.color}"></i>${esc(sp.name)}</span></span><span class="txt">${words}</span></div>`;
+    // Ondertitels: de regels zoals ze in beeld komen, met erbij wat niet aan de regels voldoet.
+    const breaks = new Set();
+    if (sub) { let n = 0; for (const line of b.chk.lines.slice(0, -1)) { n += line.split(" ").length; breaks.add(n); } }
+    const words = b.text && !b.words.length ? (sub ? b.chk.lines.map(esc).join("<br>") : esc(b.text))
+      : b.words.map((w, k) => `${breaks.has(k) ? "<br>" : k ? " " : ""}<span class="w${w.score < 0.5 ? " low" : ""}" data-w="${k}">${esc(w.text)}</span>`).join("");
+    const level = sub ? b.chk.level : 0, tone = ["", "warm", "bad"];
+    const fast = sub && b.chk.warn.find(x => x === "fast" || x === "unreadable");
+    const extra = !sub ? "" : `<span${fast ? ` class="${tone[fast === "fast" ? 1 : 2]}"` : ""}>${Math.round(b.chk.cps)} ${T.cpsUnit}</span>`
+      + b.chk.warn.map(x => `<span class="${tone[x === "fast" || x === "short" || x === "long" ? 1 : 2]}">${T.warnNames[x]}</span>`).join("")
+      + (b.chk.linger >= 0.1 ? `<span>${T.lingered(secs(b.chk.linger))}</span>` : "");
+    return `<div class="blk${level ? " warn" + level : ""}" id="b${i}" data-i="${i}"><span class="nr${level ? " " + tone[level] : ""}">${i + 1}</span><span class="meta"><span class="mono">${tc(b.start)} → ${tc(b.end)}</span><span>${secs(b.end - b.start)}</span>${extra}<span class="who"><i class="sw" style="background:${sp.color}"></i>${esc(sp.name)}</span></span><span class="txt">${words}</span></div>`;
   }).join("");
   $("list").innerHTML = html;
 }
@@ -352,13 +608,17 @@ const cv = $("canvas"), ctx = cv.getContext("2d");
 const RULER = 20, TEXT_H = 46, SPK = 14, TRACK = 36;
 let viewStart = 0, span = 60, peaks = {}, waveRate = 50, follow = true, css = {};
 function laneTops() {
-  const tops = {ruler: 0, text: RULER, spk: RULER + TEXT_H, tracks: RULER + TEXT_H + SPK};
+  // De ondertitels staan bovenaan zodra ze er zijn: dat is dan de baan waarin gewerkt wordt.
+  const subs = hasSubs(), lanes = subs ? 2 : 1;
+  const tops = {ruler: 0, sub: subs ? RULER : null, text: RULER + (subs ? TEXT_H : 0), spk: RULER + lanes * TEXT_H, tracks: RULER + lanes * TEXT_H + SPK};
   tops.height = tops.tracks + TRACK * D.tracks.length;
   return tops;
 }
+// De lane van de laag die bewerkt wordt: [boven, onder].
+function activeLane() { const tops = laneTops(), top = mode === "transcript" ? tops.text : tops.sub; return [top, top + TEXT_H]; }
 function readColors() {
   const st = getComputedStyle(document.documentElement);
-  ["--line", "--soft", "--head", "--text", "--muted", "--wave", "--wave-off", "--play", "--accent", "--surface", "--pick"].forEach(k => css[k] = st.getPropertyValue(k).trim());
+  ["--line", "--soft", "--head", "--text", "--muted", "--wave", "--wave-off", "--play", "--accent", "--surface", "--pick", "--bad"].forEach(k => css[k] = st.getPropertyValue(k).trim());
 }
 function sizeCanvas() {
   const tops = laneTops(), w = $("canvasBox").clientWidth, dpr = window.devicePixelRatio || 1;
@@ -388,7 +648,7 @@ function draw() {
   // lijnen tussen de lanes
   ctx.fillStyle = css["--head"]; ctx.fillRect(0, 0, w, RULER);
   ctx.fillStyle = css["--soft"];
-  [RULER, tops.spk, tops.tracks].concat(D.tracks.map((_, i) => tops.tracks + TRACK * (i + 1))).forEach(y => ctx.fillRect(0, y - 1, w, 1));
+  [RULER, RULER + TEXT_H, tops.spk, tops.tracks].concat(D.tracks.map((_, i) => tops.tracks + TRACK * (i + 1))).forEach(y => ctx.fillRect(0, y - 1, w, 1));
   // liniaal
   const step = niceStep(w);
   ctx.font = "10px ui-monospace, Menlo, monospace"; ctx.textBaseline = "middle";
@@ -397,28 +657,10 @@ function draw() {
     ctx.fillStyle = css["--line"]; ctx.fillRect(x, 0, 1, RULER);
     ctx.fillStyle = css["--muted"]; ctx.fillText(tc(s).slice(step < 1 ? 3 : 0, step < 1 ? 11 : 8), x + 4, RULER / 2);
   }
-  // blokken
-  const first = Math.max(0, blockAt(viewStart) >= 0 ? blockAt(viewStart) : blocks.findIndex(b => b.end >= viewStart));
+  // blokken: de laag die bewerkt wordt in kleur, de andere gedimd
   ctx.font = "11px -apple-system, BlinkMacSystemFont, sans-serif";
-  for (let i = first; i >= 0 && i < blocks.length; i++) {
-    const b = blocks[i]; if (b.start > viewStart + span) break;
-    const x0 = xOf(b.start, w), x1 = xOf(b.end, w), bw = Math.max(x1 - x0, 2);
-    const sp = speakerOf[b.speaker] || {color: COLORS[0]};
-    ctx.fillStyle = sp.color;
-    roundRect(x0, tops.text + 6, bw, TEXT_H - 12, 4); ctx.fill();
-    if (i === picked) {
-      ctx.strokeStyle = css["--text"]; ctx.lineWidth = 2; roundRect(x0 - 2, tops.text + 4, bw + 4, TEXT_H - 8, 5); ctx.stroke();
-      ctx.fillStyle = css["--text"];      // handvatten om de randen te verslepen
-      ctx.fillRect(x0 - 2, tops.text + 12, 4, TEXT_H - 24); ctx.fillRect(x0 + bw - 2, tops.text + 12, 4, TEXT_H - 24);
-    }
-    if (bw > 40) {
-      ctx.save(); ctx.beginPath(); ctx.rect(x0 + 6, tops.text + 6, bw - 12, TEXT_H - 12); ctx.clip();
-      ctx.fillStyle = DARK_INK.has(sp.color) ? "#1c1f23" : "#ffffff"; ctx.textBaseline = "top";
-      wrap(b.display, x0 + 6, tops.text + 10, bw - 12, 13, 2);
-      ctx.restore();
-    }
-    ctx.globalAlpha = 0.6; ctx.fillStyle = sp.color; ctx.fillRect(x0, tops.spk + 3, bw, SPK - 6); ctx.globalAlpha = 1;
-  }
+  if (tops.sub !== null) drawLane(subList(), tops.sub, mode === "subtitles", w, tops.spk);
+  drawLane(mode === "transcript" ? blocks : layer.transcript.blocks, tops.text, mode === "transcript", w, tops.spk);
   // golfvormen
   D.tracks.forEach((tr, k) => {
     const y = tops.tracks + TRACK * k, mid = y + TRACK / 2, data = peaks[tr.n];
@@ -442,6 +684,39 @@ function draw() {
     ctx.beginPath(); ctx.moveTo(x - 5, 0); ctx.lineTo(x + 5, 0); ctx.lineTo(x, 8); ctx.fill();
   }
 }
+function drawLane(list, y, active, w, spkY) {
+  let i = list.findIndex(b => b.end >= viewStart);
+  for (; i >= 0 && i < list.length; i++) {
+    const b = list[i]; if (b.start > viewStart + span) break;
+    const x0 = xOf(b.start, w), x1 = xOf(b.end, w), bw = Math.max(x1 - x0, 2);
+    const sp = speakerOf[b.speaker] || {color: COLORS[0]};
+    ctx.globalAlpha = active ? 1 : 0.4;
+    const level = b.chk ? b.chk.level : 0;    // voldoet niet aan de regels: het hele blok oranje (snel) of rood (niet te lezen)
+    // Ondertitels: grijs is goed, oranje snel, rood niet te lezen. De spreker staat in de baan eronder; zijn
+    // kleur hier zou op een waarschuwing lijken (spreker 2 is oranje).
+    const fill = !b.chk ? sp.color : level === 2 ? css["--bad"] : level === 1 ? ORANGE : SLATE;
+    ctx.fillStyle = fill;
+    roundRect(x0, y + 6, bw, TEXT_H - 12, 4); ctx.fill();
+    if (b.chk && b.chk.linger >= 0.1) {       // de uitloop: het stuk na het laatste woord, iets donkerder
+      const xl = Math.max(x0, xOf(b.end - b.chk.linger, w));
+      ctx.fillStyle = "rgba(0,0,0,.3)"; ctx.fillRect(xl, y + 6, x0 + bw - xl, TEXT_H - 12);
+    }
+    if (active && i === picked) {
+      ctx.strokeStyle = css["--text"]; ctx.lineWidth = 2; roundRect(x0 - 2, y + 4, bw + 4, TEXT_H - 8, 5); ctx.stroke();
+      ctx.fillStyle = css["--text"];      // handvatten om de randen te verslepen
+      ctx.fillRect(x0 - 2, y + 12, 4, TEXT_H - 24); ctx.fillRect(x0 + bw - 2, y + 12, 4, TEXT_H - 24);
+    }
+    if (bw > 40) {
+      ctx.save(); ctx.beginPath(); ctx.rect(x0 + 6, y + 6, bw - 12, TEXT_H - 12); ctx.clip();
+      ctx.fillStyle = DARK_INK.has(fill) ? "#1c1f23" : "#ffffff"; ctx.textBaseline = "top";
+      if (b.chk) b.chk.lines.slice(0, 2).forEach((line, k) => ctx.fillText(line, x0 + 6, y + 10 + k * 13));
+      else wrap(b.display, x0 + 6, y + 10, bw - 12, 13, 2);
+      ctx.restore();
+    }
+    if (active) { ctx.globalAlpha = 0.6; ctx.fillStyle = sp.color; ctx.fillRect(x0, spkY + 3, bw, SPK - 6); }
+    ctx.globalAlpha = 1;
+  }
+}
 function roundRect(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, w, h, r) : ctx.rect(x, y, w, h); }
 function wrap(text, x, y, maxW, lineH, maxLines) {
   const words = text.split(" "); let line = "", n = 0;
@@ -455,8 +730,11 @@ function wrap(text, x, y, maxW, lineH, maxLines) {
 cv.addEventListener("click", e => {
   if (suppressClick) return;
   const r = cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top, tops = laneTops();
-  const t = viewStart + x / r.width * span;
-  if (y >= tops.text && y < tops.spk) { const i = blockAt(t); if (i >= 0) { pick(i, false); } }
+  const t = viewStart + x / r.width * span, [top, bottom] = activeLane();
+  if (y >= top && y < bottom) { const i = blockAt(t); if (i >= 0) { pick(i, false); } }
+  else if (hasSubs() && y >= RULER && y < tops.spk) {   // de andere laag: daarheen wisselen
+    setMode(mode === "transcript" ? "subtitles" : "transcript").then(() => { const i = blockAt(t); if (i >= 0) pick(i, false); });
+  }
   follow = true; seek(t);
 });
 $("canvasBox").addEventListener("wheel", e => {
@@ -482,8 +760,11 @@ function frame() {
     if (i !== nowAt) {
       mark("now", i, nowAt); nowAt = i;
       if (i >= 0 && !v.paused) $("b" + i)?.scrollIntoView({block: "nearest"});
-      const sub = $("sub"); sub.hidden = i < 0; if (i >= 0) sub.textContent = blocks[i].display;
     }
+    // In beeld staat de ondertitel zoals hij in het bestand komt; zonder ondertitels het blok van het transcript.
+    const list = subList(), k = hasSubs() ? blockAt(t, list) : -1;
+    const shown = hasSubs() ? (k >= 0 ? (list[k].chk ? list[k].chk.lines.join("\n") : list[k].display) : "") : (i >= 0 ? blocks[i].display : "");
+    if (shown !== subShown) { subShown = shown; $("sub").hidden = !shown; $("sub").textContent = shown; }
     if (!v.paused || running) draw();
   }
   requestAnimationFrame(frame);
@@ -492,7 +773,8 @@ function frame() {
 // --- sporen ---
 function renderLabels() {
   const tops = laneTops();
-  let html = `<div style="height:${RULER}px"></div><div style="height:${TEXT_H}px;color:var(--text);font-weight:600">${T.text}</div><div style="height:${SPK}px">${T.speakerLane}</div>`;
+  const lane = (m, name) => `<div class="lane-pick" data-mode="${m}" style="height:${TEXT_H}px${m === mode ? ";color:var(--text);font-weight:600" : ""}">${name}</div>`;
+  let html = `<div style="height:${RULER}px"></div>${hasSubs() ? lane("subtitles", T.subLane) : ""}${lane("transcript", T.modeT)}<div style="height:${SPK}px">${T.speakerLane}</div>`;
   html += D.tracks.map(tr => {
     const state = (tr.label ? note(tr.label) + " · " : "") + (tr.used ? T.used : T.skipped);
     return `<div style="height:${TRACK}px"><button class="listen"${D.offline ? " hidden" : ""} data-n="${tr.n}" aria-pressed="${solo === tr.n}" title="${T.listen}" aria-label="${T.listen}: ${T.track(tr.n)}"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2.5 10V8a5.5 5.5 0 0 1 11 0v2"/><rect x="2" y="9.5" width="3" height="4.5" rx="1"/><rect x="11" y="9.5" width="3" height="4.5" rx="1"/></svg></button><span class="lane-name"><b>${T.track(tr.n)}</b><span class="${tr.used ? "used" : ""}">${esc(state)}</span></span></div>`;
@@ -502,6 +784,7 @@ function renderLabels() {
   $("hear").textContent = D.offline ? T.noSound : solo ? T.solo(solo) : T.mix(used);
 }
 $("labels").addEventListener("click", e => {
+  const lanePick = e.target.closest("[data-mode]"); if (lanePick) { setMode(lanePick.dataset.mode); return; }
   const b = e.target.closest(".listen"); if (!b || D.offline) return;
   const n = +b.dataset.n; solo = solo === n ? 0 : n;
   renderLabels(); startPlayer(now()); draw();
@@ -526,7 +809,7 @@ async function loadWaves() {
 
 // --- toetsen ---
 document.addEventListener("keydown", e => {
-  if (e.target.closest("input:not([type=range]), textarea, [contenteditable]")) return;
+  if (e.target.closest("input:not([type=range]), textarea, select, [contenteditable]")) return;
   const t = now();
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
   if (e.key === "Enter" && picked >= 0) { e.preventDefault(); startEdit(picked); return; }
@@ -534,6 +817,7 @@ document.addEventListener("keydown", e => {
     if (e.key === "s" || e.key === "S") { e.preventDefault(); splitAtPlayhead(); return; }
     if (e.key === "m" || e.key === "M") { e.preventDefault(); mergeNext(); return; }
     if (e.key === "n" || e.key === "N") { e.preventDefault(); newBlock(); return; }
+    if (e.key === "w" || e.key === "W") { e.preventDefault(); nextWarning(); return; }
   }
   if (e.code === "Space") { e.preventDefault(); toggle(); }
   else if (e.key === "ArrowLeft" && e.altKey) { e.preventDefault(); stepBlock(-1); }
@@ -559,10 +843,24 @@ function showError(text) { $("error").textContent = text; $("error").hidden = fa
 // --- bewerken: alles in het geheugen, als concept bewaard op deze Mac (refine.save_draft) ---
 let speakers = [], history = [], future = [], edits = 0, saveTimer = null, savedAt = "", discardArmed = 0, restoreArmed = 0, busy = false;
 const HEADERS = {"X-Local-Transcribe": "1", "Content-Type": "application/json"};
+function toBlocks(tr) {
+  return tr.segments.map(s => {
+    const b = {start: s.start / 1000, end: s.end / 1000, speaker: String(s.speaker), text: s.text || "",
+      words: (s.words || []).map(w => ({text: w[0], start: w[1] / 1000, end: w[2] / 1000, score: w[3]}))};
+    b.display = b.text || b.words.map(w => w.text).join(" ");
+    return b;
+  });
+}
 function fromDict(tr) {
   speakers = tr.speakers.map(s => ({id: String(s.id), name: s.name}));
-  blocks = tr.segments.map(s => ({start: s.start / 1000, end: s.end / 1000, speaker: String(s.speaker), text: s.text || "",
-    words: (s.words || []).map(w => ({text: w[0], start: w[1] / 1000, end: w[2] / 1000, score: w[3]}))}));
+  blocks = toBlocks(tr);
+}
+// De ondertitels uit wat de app teruggeeft: touched zegt per blok of iemand het met de hand aanpaste.
+function subBlocks(state) {
+  const list = toBlocks(state.transcript);
+  list.forEach((b, i) => b.o = state.touched && state.touched[i] ? "" : sig(b));
+  audit(list);
+  return list;
 }
 function toDict() {
   const ms = x => Math.round(x * 1000);
@@ -572,8 +870,9 @@ function toDict() {
       words: b.words.map(w => [w.text, ms(w.start), ms(w.end), w.score])}, b.text ? {text: b.text} : {})),
   });
 }
-const snapshot = () => JSON.stringify({speakers, blocks});
-function restore(text) { const o = JSON.parse(text); speakers = o.speakers; blocks = o.blocks; }
+// De sprekers horen bij het transcript: de ondertitels nemen ze over en zetten ze bij ongedaan maken niet terug.
+const snapshot = () => JSON.stringify(mode === "subtitles" ? {blocks} : {speakers, blocks});
+function restore(text) { const o = JSON.parse(text); if (o.speakers) speakers = o.speakers; blocks = o.blocks; }
 // Elke wijziging gaat hierdoorheen: vooraf een momentopname voor ongedaan maken, daarna alles bijwerken.
 function change(fn, keep) {
   const before = snapshot();
@@ -592,30 +891,299 @@ function updated(save, keep) {
   blocks.sort((a, b) => a.start - b.start || a.end - b.end);
   speakerOf = {}; speakers.forEach((s, i) => speakerOf[s.id] = {name: s.name, color: COLORS[i % COLORS.length]});
   picked = keep ? blocks.indexOf(keep) : Math.min(picked, blocks.length - 1); nowAt = -1;
+  const sub = mode === "subtitles";
+  if (sub) audit(blocks);
   renderSpeakers(); renderList(); mark("pick", picked, -1);
   const wordCount = blocks.reduce((n, b) => n + b.words.length, 0);
-  $("count").innerHTML = `<span>${T.blocks(blocks.length)}</span><span>${T.words(wordCount)}</span>`;
+  const fast = sub ? blocks.filter(b => b.chk.level === 1).length : 0, bad = sub ? blocks.filter(b => b.chk.level === 2).length : 0;
+  $("count").innerHTML = !sub ? `<span>${T.blocks(blocks.length)}</span><span>${T.words(wordCount)}</span>`
+    : `<span>${T.subs(blocks.length)}</span>` + (fast ? `<span><i class="dot" style="background:${ORANGE}"></i>${T.countFast(fast)}</span>` : "")
+      + (bad ? `<span><i class="dot" style="background:var(--bad)"></i>${T.countBad(bad)}</span>` : "")
+      + (fast + bad ? `<button id="warnNext">${T.warnNext}</button>` : `<span>${T.noWarn}</span>`);
   $("undo").disabled = !history.length; $("redo").disabled = !future.length;
-  $("discard").hidden = !edits; $("discard").textContent = T.discard; discardArmed = 0;
-  $("status").textContent = edits ? T.changes(edits) : (D.refined ? T.refinedState : T.clean);
-  $("save").disabled = !edits || busy; $("save").textContent = T.save;
-  $("restore").hidden = !(D.refined && D.original_kept) || edits > 0; $("restore").textContent = T.restore; restoreArmed = 0;
+  // Opslaan in Iconik, weggooien en terugzetten gaan over het transcript; Bewaren over het bestand van de ondertitels.
+  $("discard").hidden = sub || !edits; $("discard").textContent = T.discard; discardArmed = 0;
+  $("status").textContent = sub ? (edits ? T.subUnsaved(edits) : subTarget ? T.subSaved(subTarget.names.join(", ")) : "") : edits ? T.changes(edits) : (D.refined ? T.refinedState : T.clean);
+  $("save").hidden = sub; $("save").disabled = !edits || busy; $("save").textContent = T.save;
+  $("restore").hidden = sub || !(D.refined && D.original_kept) || edits > 0; $("restore").textContent = T.restore; restoreArmed = 0;
+  $("writeBtn").hidden = !sub; $("writeBtn").textContent = T.write; $("writeBtn").disabled = busy;
+  modeUi();
   draw();
   if (save) scheduleSave();
 }
 function scheduleSave() { clearTimeout(saveTimer); saveTimer = setTimeout(saveDraft, 700); }
+let saving = 0;   // concepten die onderweg zijn naar de app
 async function saveDraft() {
   clearTimeout(saveTimer); saveTimer = null;
+  const sub = mode === "subtitles";
+  saving++;
   try {
-    const r = await fetch(`/refine/draft?asset=${encodeURIComponent(ASSET)}`, {method: "POST", headers: HEADERS,
-      body: JSON.stringify({transcript: toDict(), edits})});
-    // Geen JSON terug: meestal een app die nog met oudere code draait (opnieuw gebouwd zonder herstart).
-    if (!(r.headers.get("Content-Type") || "").startsWith("application/json")) throw new Error(`HTTP ${r.status}. ${T.restart}`);
-    const j = await r.json();
-    if (j.error) throw new Error(j.error);
+    const body = sub ? {transcript: toDict(), touched: blocks.filter(b => b.words.length || b.text.trim()).map(isTouched), edits, rules: R}
+      : {transcript: toDict(), edits};
+    const j = await call(sub ? "/refine/subtitles/draft" : "/refine/draft", body);
     savedAt = j.saved_at;
-  } catch (e) { $("status").textContent = T.saveFail(e.message || e); }
+  } catch (e) { $("status").textContent = T.saveFail(e.message || e); return; }
+  finally { saving--; }
+  // Het transcript is veranderd: ondertitels die er al zijn blijven staan en melden dat.
+  if (!sub && layer.subtitles) subStale = true;
 }
+// Een verzoek aan de app dat JSON terugstuurt. Geen JSON: meestal een app die nog met oudere code draait.
+async function call(path, body) {
+  const r = await fetch(`${path}?asset=${encodeURIComponent(ASSET)}`, {method: "POST", headers: HEADERS, body: JSON.stringify(body || {})});
+  if (!(r.headers.get("Content-Type") || "").startsWith("application/json")) throw new Error(`HTTP ${r.status}. ${T.restart}`);
+  const j = await r.json(); if (j.error) throw new Error(j.error); return j;
+}
+
+// --- de twee lagen: wisselen ---
+async function setMode(m) {
+  if (m === mode || busy || switching || !layer[m]) return;
+  switching = true;
+  try {
+    if (document.activeElement?.isContentEditable) document.activeElement.blur();
+    await new Promise(r => setTimeout(r, 0));          // een open tekstveld rondt eerst af
+    if (saveTimer) await saveDraft();
+    closeMenu(); closeSubMenu();
+    layer[mode] = {blocks, history, future, edits, savedAt};
+    mode = m;
+    ({blocks, history, future, edits, savedAt} = layer[m]);
+    layer[m] = m === "subtitles" ? null : layer[m];   // de ondertitels staan nu in blocks; hasSubs() kijkt naar mode
+    picked = -1;
+    updated(false); renderLabels();
+    const i = blockAt(now()); if (i >= 0) pick(i, false);
+  } finally { switching = false; }
+}
+// Na maken, inpassen of bewaren: wat de app teruggeeft wordt de laag ondertitels.
+function takeSubs(state, keepHistory) {
+  R = state.rules; D.export.rules = R;       // eerst de regels: de waarschuwingen rekenen ermee
+  const list = subBlocks(state), had = hasSubs();
+  subTarget = state.target; subStale = state.stale;
+  if (mode === "subtitles") { blocks = list; edits = state.edits; savedAt = state.saved_at; if (!keepHistory) { history = []; future = []; } }
+  else layer.subtitles = Object.assign(emptyLayer(), {blocks: list, edits: state.edits, savedAt: state.saved_at});
+  if (!had) { sizeCanvas(); renderLabels(); }
+}
+function fileStatus(files) {
+  // Wat er met de bestanden gebeurde, in de statusregel: geschreven, blijven staan of mislukt.
+  const parts = files.map(f => f.state === "written" ? T.fileWritten(f.name, f.cues) : f.state === "loaded" ? T.fileLoaded(f.name, f.cues) : f.detail === "exists" ? T.fileExists(f.name)
+    : f.detail === "empty" ? T.fileEmpty : T.fileFailed(f.name, f.detail));
+  const good = files.length > 0 && files.every(f => f.state === "written" || f.state === "loaded");
+  $("status").innerHTML = `<span class="${good ? "ok" : "bad"}" style="white-space:normal">${esc(parts.join(" · "))}</span>`;
+}
+function modeUi() {
+  const sub = mode === "subtitles", subs = hasSubs();
+  $("modeT").setAttribute("aria-selected", !sub); $("modeS").setAttribute("aria-selected", sub);
+  $("modeS").hidden = !subs; $("subMore").hidden = !subs; $("subMore").classList.toggle("on", sub); $("subAdd").hidden = subs;
+  $("rulesBtn").hidden = !sub; $("fitBtn").hidden = !sub; $("rules").hidden = !sub || !rulesOpen;
+  $("rulesBtn").setAttribute("aria-expanded", rulesOpen); $("rulesBtn").textContent = `${T.settings} ${rulesOpen ? "▾" : "▸"}`;
+  $("subNote").textContent = !sub ? "" : subStale ? T.subStale : T.subSettingsNote;
+  $("subNote").className = "foot" + (sub && subStale ? " bad" : "");
+  $("note").textContent = sub ? T.subNote : T.note;
+  if (R) $("exPreset").value = presetName();
+}
+function nextWarning() {
+  if (mode !== "subtitles" || !blocks.length) return;
+  const from = picked >= 0 ? picked : blockAt(now());
+  for (let n = 1; n <= blocks.length; n++) {
+    const i = (from + n + blocks.length) % blocks.length;
+    if (blocks[i].chk.level) { follow = true; pick(i, true); return; }
+  }
+}
+
+// --- instellingen van de ondertitels: één formulier, in het maakvenster en daarna onder Instellingen ---
+const EX_KEYS = ["max_chars", "max_lines", "min_ms", "max_ms", "gap_ms", "cps"];
+const FIT_TIMES = ["linger_ms", "merge_gap_ms"], FIT_FLAGS = ["linger", "merge"];
+const EX_SECONDS = new Set(["min_ms", "max_ms", "linger_ms", "merge_gap_ms"]);
+const presetName = () => Object.keys(D.export.presets).find(n => EX_KEYS.every(k => D.export.presets[n][k] === R[k])) || "custom";
+function rulesFill(rules) {
+  for (const k of EX_KEYS.concat(FIT_TIMES)) if (k in rules) $("ex_" + k).value = EX_SECONDS.has(k) ? rules[k] / 1000 : rules[k];
+  for (const k of FIT_FLAGS) if (k in rules) $("ex_" + k).checked = !!rules[k];
+  for (const k of FIT_FLAGS) $("ex_" + (k === "linger" ? "linger_ms" : "merge_gap_ms")).disabled = !$("ex_" + k).checked;
+}
+function rulesRead() {            // wat er in de velden staat, binnen de grenzen; een leeg veld houdt de oude waarde
+  const rules = Object.assign({}, R);
+  for (const k of EX_KEYS.concat(FIT_TIMES)) {
+    const value = parseFloat($("ex_" + k).value), [low, high] = D.export.limits[k];
+    if (isFinite(value)) rules[k] = Math.max(low, Math.min(high, Math.round(EX_SECONDS.has(k) ? value * 1000 : value)));
+  }
+  for (const k of FIT_FLAGS) rules[k] = $("ex_" + k).checked ? 1 : 0;
+  rules.max_ms = Math.max(rules.max_ms, rules.min_ms + 500);
+  return rules;
+}
+let rulesTimer = null;
+function rulesChanged() {
+  R = rulesRead(); D.export.rules = R;
+  $("exPreset").value = presetName();
+  for (const k of FIT_FLAGS) $("ex_" + (k === "linger" ? "linger_ms" : "merge_gap_ms")).disabled = !$("ex_" + k).checked;
+  clearTimeout(rulesTimer);
+  rulesTimer = setTimeout(() => {
+    if (!$("makeBack").hidden) { if (!$("makeBox").classList.contains("load")) countPreview(); }                  // in het maakvenster: de telling is de voorvertoning
+    else if (mode === "subtitles") { updated(false, blocks[picked]); scheduleSave(); }   // daarna: waarschuwingen en regelbreuken
+  }, 300);
+}
+function rulesSetup() {
+  $("modeT").textContent = T.modeT; $("modeS").textContent = T.modeS; $("subAdd").textContent = T.subAdd;
+  $("subMore").setAttribute("aria-label", T.subMore); $("subMore").title = T.subMore;
+  $("fitBtn").textContent = T.fit; $("fitBtn").title = T.fitTitle;
+  $("setRulesHead").textContent = T.setRules; $("setFitHead").textContent = T.setFit;
+  $("exU_min_ms").textContent = $("exU_max_ms").textContent = $("exU_linger_ms").textContent = $("exU_merge_gap_ms").textContent = T.seconds;
+  $("exU_cps").textContent = T.cpsUnit;
+  $("exL_linger").textContent = T.linger; $("exH_linger").textContent = T.lingerHelp; $("exL_linger").title = T.lingerHelp; $("exL_merge").title = T.mergeHelp; $("exP_linger").textContent = T.lingerPre;
+  $("exL_merge").textContent = T.mergeOpt; $("exH_merge").textContent = T.mergeHelp; $("exP_merge").textContent = T.mergePre;
+  $("exPreset").setAttribute("aria-label", T.exPreset);
+  $("exPreset").innerHTML = [...Object.keys(D.export.presets), "custom"].map(n => `<option value="${n}">${esc(T.exPresets[n] || n)}</option>`).join("");
+  for (const k of EX_KEYS) { $("exL_" + k).textContent = T.exLabels[k]; $("exL_" + k).title = T.exLabels[k]; }
+  for (const k of EX_KEYS.concat(FIT_TIMES)) {
+    const [low, high] = D.export.limits[k], input = $("ex_" + k);
+    input.min = EX_SECONDS.has(k) ? low / 1000 : low; input.max = EX_SECONDS.has(k) ? high / 1000 : high;
+    input.oninput = rulesChanged;
+  }
+  for (const k of FIT_FLAGS) $("ex_" + k).onchange = rulesChanged;
+  rulesFill(R);
+}
+$("modebar").addEventListener("click", e => { const b = e.target.closest("[data-mode]"); if (b) setMode(b.dataset.mode); });
+$("rulesBtn").onclick = () => { rulesOpen = !rulesOpen; modeUi(); };
+$("count").addEventListener("click", e => { if (e.target.id === "warnNext") nextWarning(); });
+$("exPreset").onchange = () => { const preset = D.export.presets[$("exPreset").value]; if (preset) { rulesFill(preset); rulesChanged(); } };
+$("setForm").addEventListener("keydown", e => e.stopPropagation());   // typen in de velden is geen sneltoets
+
+// --- ondertitels maken: regels, inpassen en waar het bestand komt; de telling is de voorvertoning ---
+let countRun = 0;
+async function countPreview() {
+  const my = ++countRun;
+  $("mkCount").textContent = T.mkCounting;
+  try {
+    if (saveTimer) await saveDraft();          // tellen op het transcript zoals het nu staat
+    const j = await call("/refine/subtitles/preview", {rules: R});
+    if (my !== countRun) return;
+    $("mkCount").innerHTML = `<b>${T.subs(j.cues)}</b><span>${T.countGood(j.good)}</span>`
+      + (j.fast ? `<span><i class="dot" style="background:${ORANGE}"></i>${T.countFast(j.fast)}</span>` : "")
+      + (j.bad ? `<span><i class="dot" style="background:var(--bad)"></i>${T.countBad(j.bad)}</span>` : "")
+      + (R.linger && j.without_linger !== j.fast + j.bad ? `<span class="last">${T.withoutLinger(j.without_linger)}</span>` : "");
+  } catch (e) { if (my === countRun) $("mkCount").textContent = T.failed(e.message || e); }
+}
+function openMake() {
+  const again = hasSubs();
+  closeMenu(); closeSubMenu();
+  $("mkTitle").textContent = again ? T.mkAgain : T.mkTitle; $("mkIntro").textContent = again ? T.mkAgainIntro : T.mkIntro;
+  $("mkSaveHead").textContent = T.mkSave; $("mkFileLabel").textContent = T.mkFile; $("mkBoth").textContent = T.mkBoth;
+  $("mkPlaceLabel").textContent = T.mkPlace; $("mkMedia").textContent = T.mkMedia; $("mkOther").textContent = T.mkOther;
+  $("mkCancel").textContent = T.mkCancel; $("mkGo").textContent = T.mkGo; $("mkGo").disabled = false;
+  const formats = subTarget ? subTarget.formats : D.export.formats;
+  let place = subTarget ? subTarget.place : D.export.place;
+  // Zonder origineel is er geen plek naast de media: dan alleen het bewaarvenster.
+  const media = document.querySelector('input[name="mkPlace"][value="media"]');
+  media.disabled = D.offline; if (D.offline) place = "other";
+  const stem = D.media_name.replace(/\.[^.]*$/, "");
+  $("mkMediaName").textContent = D.offline ? T.mkOffline : stem ? stem + (formats === "vtt" ? ".vtt" : ".srt") : "";
+  for (const r of document.getElementsByName("mkFmt")) r.checked = r.value === formats;
+  for (const r of document.getElementsByName("mkPlace")) r.checked = r.value === place;
+  // Staat er al een bestand naast de media, dan is inladen de eerste keuze: zo raakt bestaand werk niet zomaar weg.
+  // Bij opnieuw maken is dat bestand het eigen werk van daarnet; dan blijft nieuw maken de keuze.
+  const found = D.export.existing || [];
+  $("mkHowLabel").textContent = T.mkHow; $("mkNew").textContent = T.mkNew; $("mkPick").textContent = T.mkPick; $("mkLoadNote").textContent = T.mkLoadNote;
+  $("mkLoadList").innerHTML = found.map(name => `<label><input type="radio" name="mkHow" value="load:${esc(name)}"> <span>${esc(T.mkLoad(name))}</span></label>`).join("");
+  const how = !again && found.length ? "load:" + found[0] : "new";
+  for (const r of document.getElementsByName("mkHow")) r.checked = r.value === how;
+  $("mkForm").appendChild($("setForm")); rulesFill(R);
+  $("makeBack").hidden = false; $("mkGo").focus();
+  makeHow();
+}
+function makeHow() {             // nieuw maken of inladen: wat het venster toont en wat de knop doet
+  const load = (picked_("mkHow") || "new") !== "new";
+  $("makeBox").classList.toggle("load", load); $("mkLoadNote").hidden = !load;
+  $("mkGo").textContent = load ? T.mkLoadGo : T.mkGo;
+  if (load) countRun++; else countPreview();
+}
+function closeMake() {
+  if ($("makeBack").hidden) return;
+  $("makeBack").hidden = true; countRun++;
+  $("rules").insertBefore($("setForm"), $("subNote"));     // het formulier terug onder Instellingen
+}
+const picked_ = name => [...document.getElementsByName(name)].find(r => r.checked)?.value;
+$("subAdd").onclick = openMake;
+$("mkCancel").onclick = closeMake;
+$("makeBack").addEventListener("mousedown", e => { if (e.target === $("makeBack")) closeMake(); });
+$("makeBack").addEventListener("keydown", e => { if (e.key === "Escape") closeMake(); e.stopPropagation(); });
+$("makeBack").addEventListener("change", e => {
+  if (e.target.name === "mkHow") { makeHow(); return; }
+  if (e.target.name !== "mkFmt" || D.offline) return;
+  const stem = D.media_name.replace(/\.[^.]*$/, ""); $("mkMediaName").textContent = stem ? stem + (picked_("mkFmt") === "vtt" ? ".vtt" : ".srt") : "";
+});
+$("mkGo").onclick = async () => {
+  if (busy) return;
+  const how = picked_("mkHow") || "new", load = how !== "new";
+  busy = true; $("mkGo").disabled = true; $("mkGo").textContent = load ? T.mkLoadBusy : T.mkBusy;
+  try {
+    if (saveTimer) await saveDraft();
+    R = rulesRead();
+    const j = load ? await call("/refine/subtitles/import", {rules: R, name: how.startsWith("load:") ? how.slice(5) : ""})
+      : await call("/refine/subtitles/make", {rules: R, formats: picked_("mkFmt") || "srt", place: picked_("mkPlace") || "media"});
+    busy = false;
+    if (j.cancelled) { $("mkGo").disabled = false; $("mkGo").textContent = load ? T.mkLoadGo : T.mkGo; return; }   // venster geannuleerd
+    closeMake();
+    takeSubs(j);
+    if (mode === "subtitles") { picked = -1; updated(false); } else await setMode("subtitles");
+    fileStatus(j.files);
+  } catch (e) { busy = false; closeMake(); updated(false); $("status").textContent = T.failed(e.message || e); }
+};
+
+// --- bewaren, inpassen en het menu achter de puntjes ---
+$("writeBtn").onclick = async () => {
+  if (busy) return;
+  busy = true; $("writeBtn").disabled = true; $("writeBtn").textContent = T.writing;
+  try {
+    if (saveTimer) await saveDraft();
+    const j = await call("/refine/subtitles/write");
+    busy = false; edits = j.edits; subTarget = j.target; updated(false, blocks[picked]); fileStatus(j.files);
+  } catch (e) { busy = false; updated(false); $("status").textContent = T.failed(e.message || e); }
+};
+$("fitBtn").onclick = async () => {
+  if (busy) return;
+  busy = true;
+  try {
+    await saveDraft();                       // de app past in wat er nu staat
+    const j = await call("/refine/subtitles/fit", {rules: R});
+    busy = false; takeSubs(j); picked = -1; updated(false); flash(j.changed ? T.fitDone : T.fitNothing);
+  } catch (e) { busy = false; updated(false); $("status").textContent = T.failed(e.message || e); }
+};
+let deleteArmed = 0;
+function closeSubMenu() { $("subMenu").hidden = true; clearTimeout(deleteArmed); deleteArmed = 0; }
+$("subMore").onclick = () => {
+  const menu = $("subMenu");
+  if (!menu.hidden) { closeSubMenu(); return; }
+  menu.innerHTML = `<button role="menuitem" data-act="again">${T.menuAgain}</button><button role="menuitem" data-act="elsewhere">${T.menuElsewhere}</button><hr><button role="menuitem" class="danger" data-act="delete">${T.menuDelete}</button>`;
+  menu.hidden = false;
+  const at = $("subMore").getBoundingClientRect();
+  menu.style.top = at.bottom + 4 + "px"; menu.style.left = Math.max(8, Math.min(at.left, innerWidth - menu.offsetWidth - 8)) + "px";
+  menu.querySelector("button").focus();
+};
+document.addEventListener("mousedown", e => { if (!e.target.closest("#subMenu, #subMore")) closeSubMenu(); });
+$("subMenu").addEventListener("keydown", e => { if (e.key === "Escape") closeSubMenu(); e.stopPropagation(); });
+$("subMenu").onclick = async e => {
+  const act = e.target.closest("button")?.dataset.act; if (!act || busy) return;
+  if (act === "again") { closeSubMenu(); openMake(); return; }
+  if (act === "delete" && !deleteArmed) {
+    e.target.textContent = T.menuDeleteSure; deleteArmed = setTimeout(closeSubMenu, 4000); return;
+  }
+  closeSubMenu();
+  busy = true;
+  try {
+    if (act === "elsewhere") {
+      if (mode !== "subtitles") { busy = false; await setMode("subtitles"); busy = true; }
+      if (saveTimer) await saveDraft();
+      const j = await call("/refine/subtitles/write-as");
+      busy = false;
+      if (j.cancelled) { updated(false, blocks[picked]); return; }
+      edits = j.edits; subTarget = j.target; updated(false, blocks[picked]); fileStatus(j.files);
+    } else {                                  // verwijderen: de laag weg, een bestand dat er al is blijft staan
+      clearTimeout(saveTimer); saveTimer = null;
+      await call("/refine/subtitles/discard");
+      busy = false;
+      if (mode === "subtitles") await setMode("transcript");
+      layer.subtitles = null; subTarget = null; subStale = false; rulesOpen = false;
+      sizeCanvas(); renderLabels(); updated(false);
+    }
+  } catch (err) { busy = false; updated(false); $("status").textContent = T.failed(err.message || err); }
+};
 function undo() { if (!history.length) return; future.push(snapshot()); restore(history.pop()); edits = Math.max(0, edits - 1); updated(true); }
 function redo() { if (!future.length) return; history.push(snapshot()); restore(future.pop()); edits++; updated(true); }
 $("undo").onclick = undo; $("redo").onclick = redo;
@@ -655,10 +1223,12 @@ function newSpeaker() {
   const s = {id: String(n), name: `${T.speakerWord} ${n}`}; speakers.push(s); return s.id;
 }
 function renderSpeakers() {
-  $("speakers").innerHTML = speakers.map(s => `<span class="chip" data-sp="${esc(s.id)}" title="${T.rename}"><i class="sw" style="background:${speakerOf[s.id].color}"></i><span class="nm">${esc(s.name)}</span></span>`).join("")
-    + `<button class="addsp" id="addsp">${T.addSpeaker}</button>`;
+  const own = mode === "transcript";   // namen en nieuwe sprekers horen bij het transcript
+  $("speakers").innerHTML = speakers.map(s => `<span class="chip" data-sp="${esc(s.id)}"${own ? ` title="${T.rename}"` : ' style="cursor:default"'}><i class="sw" style="background:${speakerOf[s.id].color}"></i><span class="nm">${esc(s.name)}</span></span>`).join("")
+    + (own ? `<button class="addsp" id="addsp">${T.addSpeaker}</button>` : "");
 }
 $("speakers").addEventListener("click", e => {
+  if (mode !== "transcript") return;
   if (e.target.id === "addsp") { change(() => { newSpeaker(); }); return; }
   const chip = e.target.closest(".chip"); if (!chip || chip.querySelector("input")) return;
   const s = speakers.find(x => x.id === chip.dataset.sp), nm = chip.querySelector(".nm");
@@ -831,7 +1401,7 @@ function openMenu(x, y, i, range) {
   const head = range ? T.selected(range[1] - range[0] + 1, esc(cur)) : T.wholeBlock(esc(cur));
   menu.innerHTML = `<div class="h">${head}</div><div class="h" style="font-weight:600;padding-top:0">${T.assignTo}</div>`
     + speakers.map(s => `<button data-to="${esc(s.id)}"><i class="sw" style="background:${speakerOf[s.id].color}"></i>${esc(s.name)}${s.id === b.speaker ? `<span class="cur">${T.current}</span>` : ""}</button>`).join("")
-    + `<button data-to="new"><i class="sw" style="border:1px dashed var(--muted)"></i>${T.newSpeaker}</button><hr>`
+    + (mode === "transcript" ? `<button data-to="new"><i class="sw" style="border:1px dashed var(--muted)"></i>${T.newSpeaker}</button>` : "") + "<hr>"
     + `<button data-act="edit">${T.editText}</button><button data-act="delete">${T.deleteBlock}</button>`;
   menu.hidden = false;
   const w = menu.offsetWidth, h = menu.offsetHeight;
@@ -862,8 +1432,8 @@ $("list").addEventListener("contextmenu", e => {
 });
 cv.addEventListener("contextmenu", e => {
   const r = cv.getBoundingClientRect(), tops = laneTops(), y = e.clientY - r.top;
-  const i = blockAt(viewStart + (e.clientX - r.left) / r.width * span);
-  if (i < 0 || y < tops.text || y >= tops.spk) return;
+  const i = blockAt(viewStart + (e.clientX - r.left) / r.width * span), [top, bottom] = activeLane();
+  if (i < 0 || y < top || y >= bottom) return;
   e.preventDefault(); pick(i, false); openMenu(e.clientX, e.clientY, i, null);   // op de tijdlijn alleen hele blokken
 });
 
@@ -902,8 +1472,8 @@ $("splitBtn").onclick = splitAtPlayhead; $("mergeBtn").onclick = mergeNext; $("n
 let drag = null, suppressClick = false;
 const EDGE = 6;
 function edgeAt(x, y) {
-  const tops = laneTops(), w = cv.clientWidth;
-  if (y < tops.text || y >= tops.spk) return null;
+  const [top, bottom] = activeLane(), w = cv.clientWidth;
+  if (y < top || y >= bottom) return null;
   let best = null;
   blocks.forEach((b, i) => {
     if (b.end < viewStart || b.start > viewStart + span) return;
@@ -962,6 +1532,10 @@ async function start() {
   const tr = D.transcript;
   fromDict(D.draft ? D.draft.transcript : tr);
   if (D.draft) { edits = D.draft.edits || 0; savedAt = D.draft.saved_at; }
+  // Ondertitels zijn er alleen als iemand ze voor dit asset heeft gemaakt.
+  R = D.export.rules;
+  if (D.subtitles) takeSubs(D.subtitles);
+  rulesSetup();
   updated(false);
   if (D.draft) $("status").textContent = T.draftFrom(D.draft.saved_at.replace("T", " ").slice(0, 16)) + " · " + T.changes(edits);
   $("total").textContent = "/ " + tc(dur);
@@ -977,6 +1551,8 @@ async function start() {
   if (D.offline) seek(blocks.length ? blocks[0].start : 0); else startPlayer(blocks.length ? blocks[0].start : 0);
   loadWaves();
   requestAnimationFrame(frame);
+  // Vanuit de opdrachtenlijst op het label Ondertitels geklikt: meteen naar die tab.
+  if (new URLSearchParams(location.search).get("tab") === "subtitles" && layer.subtitles) setMode("subtitles");
 }
 start();
 </script>

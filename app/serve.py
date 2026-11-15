@@ -56,6 +56,8 @@ pending_login = {}        # state -> verifier, voor een inlog die onderweg is
 pending_ids = []          # opdrachten die wachten tot er is ingelogd
 window_state = {"n": 0, "page": "/"}   # wat het venster van de app moet tonen
 show_hook = None  # de app zet hier een functie neer die het venster toont
+save_hook = None  # idem: toont het bewaarvenster van macOS (map, naam) en geeft het gekozen pad of None
+open_hook = None  # idem: laat iemand een ondertitelbestand kiezen (map) en geeft het pad of None
 restart_hook = None  # idem, om opnieuw te starten na een code-update
 
 
@@ -799,11 +801,28 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply_json({"ok": True})
             if url.path == "/refine/save":
                 return self.reply_json(refine.save_to_iconik(asset_id))
-            if url.path == "/refine/restore":
-                return self.reply_json(refine.restore_original(asset_id))
-            if url.path == "/refine/originals/clear":
-                refine.clear_originals()
-                return self.reply_json(refine.originals_info())
+            if url.path.startswith("/refine/subtitles/"):
+                action = url.path.rsplit("/", 1)[1]
+                if size > (refine.DRAFT_LIMIT if action == "draft" else 4096):
+                    return self.send_error(413)
+                body = self.rfile.read(size) if size else b""
+                if action == "preview":
+                    return self.reply_json(refine.preview_subtitles(asset_id, body))
+                if action == "make":        # ook het bewaarvenster, als iemand een andere plek kiest
+                    return self.reply_json(refine.make_subtitles(asset_id, body, save_hook))
+                if action == "import":      # een bestaand .srt of .vtt inladen
+                    return self.reply_json(refine.import_subtitles(asset_id, body, open_hook))
+                if action == "draft":
+                    return self.reply_json({"saved_at": refine.save_subtitles(asset_id, body)})
+                if action == "write":
+                    return self.reply_json(refine.write_subtitles(asset_id))
+                if action == "write-as":
+                    return self.reply_json(refine.write_subtitles(asset_id, save_hook, elsewhere=True))
+                if action == "fit":
+                    return self.reply_json(refine.fit_subtitles(asset_id, body))
+                if action == "discard":
+                    refine.discard_subtitles(asset_id)
+                    return self.reply_json({"ok": True})
         except (refine.RefineError, Problem, ValueError, KeyError, TypeError) as error:
             return self.reply_json({"error": str(error) or type(error).__name__})
         return self.send_error(404)

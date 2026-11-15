@@ -58,6 +58,7 @@ except OSError:
 KEYCHAIN_SERVICE = APP_NAME
 BULK_LIMIT = 500
 CONFIG_PATH = SUPPORT_DIR / "config.json"
+SIDECARS_FILE = SUPPORT_DIR / "sidecars.json"   # welke ondertitelbestanden de app zelf schreef (pad en hash)
 PAGE_SIZE = 100
 ENGINE_NAME = "mlx-whisper"  # hieraan herkent --replace de transcripten van dit script
 REFINED_ENGINE = "local-transcribe-refined"   # een transcript dat iemand in Refine heeft gecorrigeerd

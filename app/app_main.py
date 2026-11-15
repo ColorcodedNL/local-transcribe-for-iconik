@@ -74,6 +74,41 @@ def show(page=None):
     reconcile()
 
 
+def choose_save_path(folder, name):
+    """Het bewaarvenster van macOS, voor de export uit Refine. Geeft het gekozen pad of None (geannuleerd).
+    Wordt aangeroepen vanuit een draad van de ontvanger; pywebview toont het venster op de hoofddraad."""
+    if window is None:
+        return None
+    import webview
+    kind = getattr(getattr(webview, "FileDialog", None), "SAVE", None) or getattr(webview, "SAVE_DIALOG", None)
+    try:
+        chosen = window.create_file_dialog(kind, directory=folder or "", save_filename=name)
+    except Exception as error:
+        print(f"Bewaarvenster lukte niet: {type(error).__name__}: {error}")
+        return None
+    if chosen and not isinstance(chosen, str):
+        chosen = chosen[0]
+    return str(chosen) if chosen else None
+
+
+def choose_subtitle_file(folder):
+    """Laat iemand een .srt- of .vtt-bestand kiezen om in Refine in te laden. Geeft het pad of None."""
+    if window is None:
+        return None
+    import webview
+    kind = getattr(getattr(webview, "FileDialog", None), "OPEN", None) or getattr(webview, "OPEN_DIALOG", None)
+    chosen = None
+    for types in (("Subtitles (*.srt;*.vtt)",), ()):     # lukt het filter niet in deze versie, dan zonder
+        try:
+            chosen = window.create_file_dialog(kind, directory=folder or "", allow_multiple=False, file_types=types)
+            break
+        except Exception as error:
+            print(f"Bestand kiezen lukte niet: {type(error).__name__}: {error}")
+    if chosen and not isinstance(chosen, str):
+        chosen = chosen[0]
+    return str(chosen) if chosen else None
+
+
 def local_get(path, timeout=60):
     """GET op de eigen ontvanger, zonder doorverwijzingen te volgen. Geeft (status, Location)."""
     connection = http.client.HTTPConnection("127.0.0.1", PORT, timeout=timeout)
@@ -636,6 +671,8 @@ def main():
     text_tools(objc, AppKit, BrowserView)
     serve.show_hook = show  # een tweede exemplaar kan zo het venster naar voren halen
     serve.restart_hook = restart  # na een code-update
+    serve.save_hook = choose_save_path  # ondertitels bewaren uit Refine
+    serve.open_hook = choose_subtitle_file  # ondertitels inladen in Refine
     from PyObjCTools import AppHelper
     serve.quit_hook = lambda: AppHelper.callAfter(AppKit.NSApp.terminate_, None)   # "Na deze opdracht"
 

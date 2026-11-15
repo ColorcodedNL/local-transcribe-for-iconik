@@ -10,6 +10,7 @@ De audio is de mix van de gebruikte sporen, of één spoor als iemand dat wil ho
 De golfvormen per spoor (50 punten per seconde) komen uit het bestand dat een opdracht bewaart
 (waves/); ontbreekt dat, dan rekent een draad ze hier uit en houdt de voortgang bij.
 """
+import hashlib
 import json
 import subprocess
 import threading
@@ -18,6 +19,7 @@ from pathlib import Path
 
 import numpy as np
 
+import subtitles
 import transcribe as core
 import transcript as tmodel
 
@@ -159,7 +161,248 @@ def view(asset_id):
         "tracks": [{"n": n, "label": s["labels"][n], "used": n in s["used"]} for n in range(1, len(s["tracks"]) + 1)],
         "chunk": CHUNK_SECONDS, "lang": core.app_language(), "draft": load_draft(asset_id),
         "refined": bool(doc.source.get("refined")), "original_kept": _original_path(asset_id).is_file(),
+        "export": dict(subtitle_settings(), existing=existing_subtitles(asset_id)), "subtitles": load_subtitles(asset_id),
     }
+
+
+# --- ondertitels: een eigen laag naast het transcript ---
+# Ondertitels zijn er pas als iemand ze maakt (make_subtitles): het transcript verdeeld en ingepast volgens
+# de regels, bewaard als laag op deze Mac (refine/<asset>.subtitles.json) en meteen als bestand geschreven,
+# naast de media of op een plek die iemand in het bewaarvenster kiest. Daarna verdeelt de app niets meer
+# vanzelf: verandert het transcript, dan meldt de laag dat (stale) en kiest iemand zelf voor opnieuw maken.
+
+def _subtitles_path(asset_id):
+    return DRAFTS_DIR / core.safe_name(asset_id, ".subtitles.json")
+
+
+def _current_doc(asset_id):
+    """Het transcript zoals het nu in Refine staat: het concept, anders het bewaarde."""
+    draft = load_draft(asset_id)
+    return tmodel.from_dict(draft["transcript"]) if draft else open_session(asset_id)["doc"]
+
+
+def _stamp(doc):
+    """Verandert zodra de tekst, de tijden of de sprekers van de blokken veranderen."""
+    rows = [[s.start, s.end, s.speaker, s.display_text()] for s in doc.segments]
+    return hashlib.sha256(json.dumps(rows, ensure_ascii=False).encode()).hexdigest()[:16]
+
+
+def subtitle_settings():
+    """Wat het maakvenster toont: de regels en de keuzes van de vorige keer, de voorkeuzes en de grenzen."""
+    kept = core.load_config().get("subtitles") or {}
+    rules = subtitles.clean_rules(kept.get("rules"))
+    return {"rules": rules, "preset": subtitles.preset_of(rules), "presets": subtitles.PRESETS, "limits": subtitles.LIMITS,
+            "formats": kept.get("formats") if kept.get("formats") in subtitles.CHOICES else "srt",
+            "place": "other" if kept.get("place") == "other" else "media"}
+
+
+def existing_subtitles(asset_id):
+    """De namen van ondertitelbestanden die al naast de media staan (clip.srt, clip.vtt), om in te laden."""
+    try:
+        session = open_session(asset_id)
+        if session["offline"] or not session["media"]:
+            return []
+        media = Path(session["media"])
+        return [media.with_suffix(f".{fmt}").name for fmt in subtitles.FORMATS if media.with_suffix(f".{fmt}").is_file()]
+    except (RefineError, OSError):
+        return []
+
+
+def _remember(**values):
+    core.update_config(lambda config: config.setdefault("subtitles", {}).update(values))
+
+
+def preview_subtitles(asset_id, raw):
+    """De telling voor het maakvenster: hoeveel ondertitels dit worden en hoeveel er te snel zijn."""
+    rules = subtitles.clean_rules(json.loads(raw or b"{}").get("rules"))
+    return subtitles.preview(_current_doc(asset_id), rules)
+
+
+def load_subtitles(asset_id):
+    """De laag van deze Mac, of None als niemand ondertitels maakte. stale: het transcript is sindsdien veranderd."""
+    try:
+        data = json.loads(_subtitles_path(asset_id).read_text())
+        doc = tmodel.from_dict(data["transcript"])
+        target = data["target"]
+        if target["formats"] not in subtitles.CHOICES or not target["base"]:
+            return None
+        stale = data.get("stamp") != _stamp(_current_doc(asset_id))
+    except (OSError, ValueError, KeyError, TypeError, RefineError):
+        return None
+    touched = [bool(x) for x in (data.get("touched") or [])][:len(doc.segments)]
+    touched += [False] * (len(doc.segments) - len(touched))
+    base = Path(target["base"])
+    return {"transcript": data["transcript"], "touched": touched, "edits": int(data.get("edits") or 0),
+            "saved_at": data.get("saved_at") or "", "rules": subtitles.clean_rules(data.get("rules")),
+            "stamp": data.get("stamp") or "", "stale": stale,
+            "target": {"formats": target["formats"], "place": "other" if target.get("place") == "other" else "media",
+                       "base": str(base), "names": [base.with_suffix(f".{fmt}").name for fmt in subtitles.CHOICES[target["formats"]]]}}
+
+
+def _store(asset_id, lay, touched, rules, stamp, target, edits):
+    _write_json(_subtitles_path(asset_id), {
+        "saved_at": time.strftime("%Y-%m-%dT%H:%M:%S"), "edits": int(edits), "rules": rules, "stamp": stamp,
+        "target": {"formats": target["formats"], "place": target["place"], "base": target["base"]},
+        "touched": [bool(x) for x in touched], "transcript": tmodel.to_dict(lay)})
+
+
+def _export_name(text):
+    """Een bestandsnaam uit een titel: zonder tekens die in een pad iets betekenen."""
+    name = "".join(" " if c in '/:\\' or ord(c) < 32 else c for c in str(text or "")).strip(" .")
+    return " ".join(name.split())[:120] or "transcript"
+
+
+def _choose_base(asset_id, formats, place, choose):
+    """Waar de bestanden komen: (pad, door iemand zelf gekozen formaten), of (None, ()) als het bewaarvenster
+    is geannuleerd. Naast de media: het mediabestand zelf, de extensie wordt die van het formaat."""
+    session = open_session(asset_id)
+    media = Path(session["media"]) if session["media"] else None
+    reachable = media is not None and not session["offline"]
+    if place == "media":
+        if not reachable:
+            raise RefineError(core.L("Het origineel is niet bereikbaar. Kies een andere plek, of koppel de opslag (ISG).",
+                                     "The original is not reachable. Choose another place, or connect the storage (ISG)."))
+        return media, ()
+    if choose is None:
+        raise RefineError(core.L("Een plek kiezen kan alleen vanuit het venster van de app.",
+                                 "Choosing a place only works from the app's window."))
+    first = subtitles.CHOICES[formats][0]
+    stem = media.stem if media is not None and media.stem else _export_name(session["doc"].source.get("title") or asset_id)
+    chosen = choose(str(media.parent) if reachable else None, f"{_export_name(stem)}.{first}")
+    if not chosen:
+        return None, ()
+    path = Path(chosen)
+    if path.suffix.lower() not in (".srt", ".vtt"):
+        path = path.with_name(f"{path.name}.{first}")
+    return path, (first,)
+
+
+def _write_files(asset_id, lay, target, rules, confirmed=()):
+    lay.speakers = _current_doc(asset_id).speakers     # de namen van nu, ook als ze na het maken zijn gewijzigd
+    return subtitles.write_files(lay, target["base"], target["formats"], rules, core.SIDECARS_FILE, confirmed)
+
+
+def _state(asset_id, files=None):
+    return dict(load_subtitles(asset_id) or {}, files=files or [])
+
+
+def make_subtitles(asset_id, raw, choose):
+    """Maakt de ondertitels: verdeelt het transcript, past in, bewaart de laag en schrijft het bestand.
+    raw: {"rules", "formats": srt | vtt | both, "place": media | other}. Vervangt een eerdere laag."""
+    data = json.loads(raw or b"{}")
+    rules = subtitles.clean_rules(data.get("rules"))
+    formats = data.get("formats") if data.get("formats") in subtitles.CHOICES else "srt"
+    place = "other" if data.get("place") == "other" else "media"
+    doc = _current_doc(asset_id)
+    lay = subtitles.layer(doc, rules)
+    if not lay.segments:
+        raise RefineError(core.L("Dit transcript heeft geen tekst.", "This transcript has no text."))
+    base, confirmed = _choose_base(asset_id, formats, place, choose)
+    if base is None:
+        return {"cancelled": True}
+    _remember(rules=rules, formats=formats, place=place)
+    target = {"formats": formats, "place": place, "base": str(base)}
+    _store(asset_id, lay, [False] * len(lay.segments), rules, _stamp(doc), target, 0)
+    return _state(asset_id, _write_files(asset_id, lay, target, rules, confirmed))
+
+
+def import_subtitles(asset_id, raw, choose):
+    """Laadt een bestaand .srt- of .vtt-bestand in als de ondertitels. raw: {"rules", "name"}: de naam van een
+    bestand naast de media, of leeg om er een te kiezen (choose(map) toont het venster en geeft het pad of None).
+    Sprekers en woordtiming komen waar het kan uit het transcript. Bewaren schrijft daarna naar dit bestand."""
+    data = json.loads(raw or b"{}")
+    rules = subtitles.clean_rules(data.get("rules"))
+    session = open_session(asset_id)
+    media = Path(session["media"]) if session["media"] else None
+    reachable = media is not None and not session["offline"]
+    name = str(data.get("name") or "")
+    if name:
+        if name not in existing_subtitles(asset_id):
+            raise RefineError(core.L("Dat bestand staat niet naast de media.", "That file is not next to the media."))
+        path = media.with_name(name)
+    else:
+        if choose is None:
+            raise RefineError(core.L("Een bestand kiezen kan alleen vanuit het venster van de app.",
+                                     "Choosing a file only works from the app's window."))
+        chosen = choose(str(media.parent) if reachable else None)
+        if not chosen:
+            return {"cancelled": True}
+        path = Path(chosen)
+    fmt = path.suffix.lower().lstrip(".")
+    if fmt not in subtitles.FORMATS:
+        raise RefineError(core.L("Alleen .srt en .vtt kunnen worden ingeladen.", "Only .srt and .vtt can be loaded."))
+    try:
+        if path.stat().st_size > subtitles.MAX_IMPORT:
+            raise RefineError(core.L("Dat bestand is te groot voor ondertitels.", "That file is too large for subtitles."))
+        found = subtitles.parse(path.read_bytes())
+    except OSError as error:
+        raise RefineError(core.L(f"Inladen lukte niet: {error.strerror or error}", f"Loading failed: {error.strerror or error}"))
+    if not found:
+        raise RefineError(core.L("In dat bestand staan geen ondertitels.", "There are no subtitles in that file."))
+    doc = _current_doc(asset_id)
+    lay = subtitles.import_layer(found, doc)
+    beside = reachable and path.parent == media.parent and path.stem == media.stem
+    target = {"formats": fmt, "place": "media" if beside else "other", "base": str(media if beside else path)}
+    subtitles.adopt(path, core.SIDECARS_FILE)
+    _remember(rules=rules)
+    # Alles telt als met de hand gemaakt: inpassen blijft ervan af.
+    _store(asset_id, lay, [True] * len(lay.segments), rules, _stamp(doc), target, 0)
+    return _state(asset_id, [{"name": path.name, "path": str(path), "state": "loaded", "detail": "", "cues": len(lay.segments)}])
+
+
+def save_subtitles(asset_id, raw):
+    """Bewaart de laag die het scherm stuurt op deze Mac (nog niet in het bestand):
+    {"transcript", "touched", "edits", "rules"}. De plek en de stempel blijven die van het maken."""
+    data = json.loads(raw)
+    kept = load_subtitles(asset_id)
+    if kept is None:
+        raise RefineError(core.L("Er zijn geen ondertitels om te bewaren.", "There are no subtitles to save."))
+    lay = tmodel.from_dict(data["transcript"])        # controleert de opbouw; gooit bij onzin
+    touched = list(data.get("touched") or [])[:len(lay.segments)]
+    touched += [True] * (len(lay.segments) - len(touched))
+    rules = subtitles.clean_rules(data.get("rules"))
+    _store(asset_id, lay, touched, rules, kept["stamp"], kept["target"], int(data.get("edits") or 0))
+    return load_subtitles(asset_id)["saved_at"]
+
+
+def write_subtitles(asset_id, choose=None, elsewhere=False):
+    """Schrijft de laag opnieuw naar zijn bestand (Bewaren), of naar een plek die iemand nu kiest."""
+    kept = load_subtitles(asset_id)
+    if kept is None:
+        raise RefineError(core.L("Er zijn geen ondertitels om te bewaren.", "There are no subtitles to save."))
+    lay, target, confirmed = tmodel.from_dict(kept["transcript"]), kept["target"], ()
+    if elsewhere:
+        base, confirmed = _choose_base(asset_id, target["formats"], "other", choose)
+        if base is None:
+            return {"cancelled": True}
+        target = {"formats": target["formats"], "place": "other", "base": str(base)}
+    files = _write_files(asset_id, lay, target, kept["rules"], confirmed)
+    done = any(f["state"] == "written" for f in files)
+    if done or elsewhere:
+        _store(asset_id, lay, kept["touched"], kept["rules"], kept["stamp"], target, 0 if done else kept["edits"])
+    return _state(asset_id, files)
+
+
+def fit_subtitles(asset_id, raw):
+    """Past de laag opnieuw in met deze regels (samenvoegen, uitloop). Wat met de hand is aangepast blijft staan."""
+    kept = load_subtitles(asset_id)
+    if kept is None:
+        raise RefineError(core.L("Er zijn geen ondertitels om in te passen.", "There are no subtitles to fit."))
+    rules = subtitles.clean_rules(json.loads(raw or b"{}").get("rules"))
+    before = tmodel.from_dict(kept["transcript"])
+    lay, touched = subtitles.fit_layer(before, kept["touched"], rules)
+    changed = tmodel.to_dict(lay)["segments"] != tmodel.to_dict(before)["segments"]
+    _remember(rules=rules)
+    _store(asset_id, lay, touched, rules, kept["stamp"], kept["target"], kept["edits"] + (1 if changed else 0))
+    return dict(_state(asset_id), changed=changed)
+
+
+def discard_subtitles(asset_id):
+    """Haalt de laag weg. Een bestand dat al geschreven is, blijft staan."""
+    try:
+        _subtitles_path(asset_id).unlink()
+    except FileNotFoundError:
+        pass
 
 
 def _audio_args(session, solo):
@@ -436,9 +679,10 @@ _marks_cache = {}   # pad van de kopie -> (mtime, gecorrigeerd)
 
 def marks(asset_id):
     """Wat de opdrachtenlijst bij een asset toont: {"refined": correctie staat in Iconik, "draft": concept op
-    deze Mac}. Het venster vraagt dit elke seconde, dus de kopie alleen opnieuw lezen als die veranderde."""
+    deze Mac, "subtitles": iemand maakte hier ondertitels}. Het venster vraagt dit elke seconde, dus de kopie
+    alleen opnieuw lezen als die veranderde."""
     if not asset_id:
-        return {"refined": False, "draft": False}
+        return {"refined": False, "draft": False, "subtitles": False}
     copy = core.TRANSCRIPTS_DIR / core.safe_name(asset_id, ".json")
     refined = False
     try:
@@ -451,4 +695,4 @@ def marks(asset_id):
             _marks_cache[copy] = (mtime, refined)
     except (OSError, ValueError, AttributeError):
         pass
-    return {"refined": refined, "draft": _draft_path(asset_id).is_file()}
+    return {"refined": refined, "draft": _draft_path(asset_id).is_file(), "subtitles": _subtitles_path(asset_id).is_file()}
