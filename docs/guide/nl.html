@@ -70,6 +70,7 @@
 <figure class="half"><img src="images/iconik-sign-in.jpg" alt=""></figure>
 <p>Daarna vraagt Iconik of Local Transcribe toegang mag krijgen. Controleer dat het Local Transcribe is dat erom vraagt en klik op <b>Allow access</b>. Daarna staat linksonder <b>Ingelogd bij Iconik</b>.</p>
 <figure class="half"><img src="images/iconik-allow-access.jpg" alt=""></figure>
+<p>De app bewaart je inlog in de sleutelhanger van macOS. Na het installeren van een nieuwe versie vraagt macOS bij het starten om het wachtwoord van je sleutelhanger: kies <b>Sta altijd toe</b>. Met <b>Sta toe</b> komt de vraag twee keer.</p>
 
 <h2>Stap 4: de knoppen in Iconik zetten</h2>
 <p>Na het inloggen controleert de app of de knoppen <b>Local Transcribe</b> en <b>Refine transcript</b> al in deze Iconik-omgeving staan. Zo niet, dan verschijnt bovenaan <b>Opdrachten</b> een gele melding. Klik op <b>Zet de knoppen in Iconik</b>. Dit hoeft maar één keer, voor alle gebruikers tegelijk, en vraagt rechten om knoppen aan te maken.</p>
@@ -196,6 +197,28 @@
 <p>Elke wijziging wordt meteen als concept op deze Mac bewaard. Je kunt Refine verlaten en later verder gaan; ongedaan maken en opnieuw kan met Cmd+Z en Shift+Cmd+Z. Onder Opdrachten staat dan het label <b>Concept</b>.</p>
 <p>Met <b>Opslaan in Iconik</b> vervangt de correctie het transcript in Iconik, en laat de app Iconik het asset opnieuw indexeren. Iconik toont alleen het nieuwste transcript maar doorzoekt ze allemaal; een origineel ernaast zou weggecorrigeerde woorden vindbaar houden. Het origineel blijft daarom op deze Mac, en met <b>Origineel terugzetten</b> zet je het terug. Onder Opdrachten staat daarna <b>Gecorrigeerd</b>. Onder Voorkeuren, bij Refine, zie je hoeveel originelen er bewaard zijn en kun je ze weggooien; daarna kan geen origineel meer terug.</p>
 <p>Een nieuwe transcriptie slaat een gecorrigeerd asset over, met de reden erbij. Wil je toch opnieuw transcriberen, zet dan eerst in Refine het origineel terug.</p>
+
+<h2 class="new">Ondertitels</h2>
+<p>Een blok in het transcript is zo lang als iemand praat. Een ondertitel moet te lezen zijn: twee korte regels, lang genoeg in beeld. In Refine maak je ondertitels uit het transcript als tweede laag en bewaar je ze als bestand. Het transcript zelf verandert niet, en er worden geen ondertitels gemaakt zolang jij er niet om vraagt.</p>
+<h3>Maken</h3>
+<p>Klik op <b>+ Ondertitels</b> naast de tab Transcript. Het venster dat opent heeft drie delen:</p>
+<ul>
+<li><b>Regels.</b> Kies een voorkeuze of vul eigen waarden in: tekens per regel, regels, kortste en langste duur, de ruimte tussen ondertitels en de leessnelheid. Er is niet één standaard. <b>Online en streaming</b> (42 tekens) is wat streamingdiensten gebruiken; <b>Televisie, teletekst</b> (37 tekens) is de gewoonte bij omroepen.</li>
+<li><b>Inpassen.</b> Met <b>Uitloop in de stilte</b> blijft een ondertitel die te snel gaat staan na het laatste woord, nooit over de volgende heen. <b>Korte zinnen van dezelfde spreker samen</b> zet "Ja, zeker." bij de zin erna, alleen als er geen pauze tussen zit.</li>
+<li><b>Bewaren.</b> Kies .srt, .vtt of allebei, en waar het bestand komt: naast de media (het bestand krijgt de naam van het mediabestand) of een andere plek die je zelf kiest. Iconik koppelt een ondertitelbestand naast de media aan het asset als de naam overeenkomt.</li>
+</ul>
+<p>De regel onderaan telt wat je krijgt: hoeveel ondertitels, hoeveel er snel zijn en hoeveel niet te lezen, en wat dat zonder uitloop zou zijn. De tekst wordt nooit ingekort, dus snelle spraak blijft een waarschuwing. Klik op <b>Maken en bewaren</b>.</p>
+<p>Staat er al een .srt of .vtt naast de media, dan biedt het venster aan om die <b>in te laden</b>, en je kunt ook een ander bestand inladen. De ondertitels komen zoals ze in het bestand staan; sprekers en woordtiming komen uit het transcript waar de tekst overeenkomt.</p>
+<h3>Bewerken</h3>
+<p>Na het maken staat de tab <b>Ondertitels</b> open en hebben de ondertitels een eigen baan op de tijdlijn, boven het transcript. Alles uit Refine werkt op de tab waar je in staat: typen, splitsen, samenvoegen, randen verslepen, ongedaan maken en opnieuw. Onder de video zie je de ondertitel zoals hij in het bestand komt.</p>
+<ul>
+<li><b>Grijs</b> is goed. <b>Oranje</b> is sneller dan de leessnelheid, te kort of te lang. <b>Rood</b> is niet te lezen, past niet binnen de regels of loopt over de volgende heen. Met <b>Volgende</b> (of W) spring je naar de volgende waarschuwing; kort de tekst in of geef de ondertitel meer tijd.</li>
+<li><b>Instellingen</b> toont dezelfde regels. Een andere regel verandert de waarschuwingen en de regelbreuken. <b>Inpassen</b> past samenvoegen en uitloop opnieuw toe en laat staan wat je met de hand hebt aangepast.</li>
+<li><b>Bewaren</b> schrijft het bestand opnieuw op dezelfde plek. Tot die tijd staan je wijzigingen op deze Mac.</li>
+<li>De puntjes naast de tab: <b>Opnieuw maken uit het transcript</b> (wat je met de hand veranderde gaat verloren), <b>Op een andere plek bewaren</b> en <b>Ondertitels verwijderen</b>. Verwijderen haalt ze uit de app; een bestand dat al geschreven is blijft staan.</li>
+</ul>
+<p>Verander je daarna het transcript, dan blijven de ondertitels zoals ze zijn en melden ze dat het transcript is veranderd. Maak ze opnieuw als je de wijzigingen erin wilt.</p>
+<p>De app overschrijft geen ondertitelbestand dat hij niet zelf schreef of dat iemand daarna heeft gewijzigd. Laad dat bestand in, of bewaar op een andere plek. Onder Opdrachten staat bij een afgeronde opdracht met ondertitels het label <b>Ondertitels</b>; klik erop om ze te openen.</p>
 
 <h2 class="new">Als het niet werkt</h2>
 <table>

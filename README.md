@@ -48,6 +48,8 @@ A full job uses about 9 GB of memory at its peak, whatever the length. 16 GB is 
 3. An Iconik admin creates an application under **Admin, Application tokens, New application**: type **Browser or device app**, redirect URI `http://localhost:8765/oauth/callback`, scopes `assets:read`, `assets:write`, `collections:read`, `user_impersonation`.
 4. Enter the Client ID in the app, sign in to Iconik and click **Add the buttons to Iconik** when the app asks. That is needed once per Iconik environment.
 
+The app keeps your Iconik login in the macOS keychain. After installing a new `.dmg`, macOS asks for your keychain password when the app starts: choose **Always Allow**. With **Allow** it asks twice.
+
 Colleagues only install the app, enter the same Client ID and sign in with their own account. The `.dmg` contains a step-by-step guide with screenshots in English and Dutch; the same guides are in [`docs/`](docs/).
 
 ## Updates
@@ -92,6 +94,18 @@ Refine opens a transcript in the app window: the original on the left, the block
 - **Without the storage.** When the original cannot be reached, Refine still opens with the text, the speakers, the draft and saving to Iconik; picture and sound are off, and the waveforms come from what an earlier job kept.
 
 A new transcription skips a corrected asset; put the original back first to transcribe again. The job list shows **Refined** and **Draft**.
+
+### Subtitles
+
+A transcript block is as long as someone talks; a subtitle has to be readable. **+ Subtitles** in Refine makes subtitles from the transcript as a second layer, and saves them as `.srt`, `.vtt` or both. The transcript itself does not change.
+
+- **Rules.** A preset, or your own values: characters per line, lines, shortest and longest duration, the gap between subtitles and the reading speed. There is no single standard, so the presets are the two common ones: online and streaming (42 characters) and television with teletext (37 characters).
+- **Fitting.** Short sentences of the same speaker go together when there is no pause between them, and a subtitle that goes too fast stays on screen in the silence after it. The text is never shortened; the window counts how many subtitles are still too fast before you make them.
+- **Where the file goes.** Next to the media (`clip.mxf` gets `clip.srt`), or another place you pick. Iconik links a subtitle file to the asset when the name matches. A file the app did not write itself, or that was changed afterwards, is not overwritten unless you pick it yourself.
+- **Editing.** The Subtitles tab uses the same editor as the transcript, on its own lane above it. Orange is faster than the reading speed, red is unreadable or does not fit the rules. Shorten the text, split and merge, drag the edges; **Save** writes the file again and **Fit** applies merging and lingering again without touching what you changed by hand.
+- **Existing subtitles.** An `.srt` or `.vtt` that is already there can be loaded instead. Speakers and word timing come from the transcript where the text matches.
+
+Subtitles are only made when you ask for them, and they are not written to Iconik as a transcript. When the transcript changes afterwards, the subtitles stay and say so. The job list shows **Subtitles**; click it to open them.
 
 ## Privacy
 
@@ -140,6 +154,7 @@ bash scripts/run_tests.sh       # all tests, also run by the two build scripts a
 | `app/transcript.py` | The app's own transcript model and file format |
 | `app/iconik.py` | The Iconik connector: open an asset, find the media, write and read transcripts |
 | `app/refine.py`, `refine.html` | Refine: player pieces, waveforms, drafts, saving and restoring |
+| `app/subtitles.py` | Subtitles: dividing a transcript by rules, fitting, warnings, reading and writing `.srt` and `.vtt` |
 | `app/worker.py`, `resources.py` | Remote jobs and auto transcribe, and the room check |
 | `app/updater.py` | Code updates |
 | `app/ui.html` | The window (jobs and preferences), in English and Dutch |
@@ -150,8 +165,6 @@ Logs: `~/Library/Logs/Local Transcribe for Iconik/serve.log`.
 
 ## Roadmap
 
-- Spelling check in Refine, with the macOS spelling checker
-- Export to `.srt` and `.vtt`, also for Iconik assets
 - A standalone mode: import local files or watch a folder, without Iconik
 - Translation, as a second transcript in the target language
 - Learn from corrections: better results per language and dialect, so users can improve untested languages themselves

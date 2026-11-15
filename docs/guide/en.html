@@ -70,6 +70,7 @@
 <figure class="half"><img src="images/iconik-sign-in.jpg" alt=""></figure>
 <p>Iconik then asks whether Local Transcribe may have access. Check that it is Local Transcribe asking and click <b>Allow access</b>. The status at the bottom left then says <b>Logged in to Iconik</b>.</p>
 <figure class="half"><img src="images/iconik-allow-access.jpg" alt=""></figure>
+<p>The app keeps your login in the macOS keychain. After you install a new version, macOS asks for your keychain password when the app starts: choose <b>Always Allow</b>. With <b>Allow</b> it asks twice.</p>
 
 <h2>Step 4: add the buttons to Iconik</h2>
 <p>After logging in the app checks whether the <b>Local Transcribe</b> and <b>Refine transcript</b> buttons already exist in this Iconik environment. If not, a yellow notice appears at the top of <b>Jobs</b>. Click <b>Add the buttons to Iconik</b>. This is needed only once, for all users at the same time, and requires the right to create Custom Actions.</p>
@@ -196,6 +197,28 @@
 <p>Every change is kept as a draft on this Mac right away. You can leave Refine and carry on later; undo and redo with Cmd+Z and Shift+Cmd+Z. The job list then shows <b>Draft</b>.</p>
 <p><b>Save to Iconik</b> replaces the transcript in Iconik with the correction, and the app asks Iconik to reindex the asset. Iconik shows only the newest transcript but searches all of them; keeping the original next to it would leave corrected words findable. So the original stays on this Mac, and <b>Put original back</b> restores it. The job list then shows <b>Refined</b>. Under Preferences, at Refine, you see how many originals are kept and can clear them; after that no original can be put back.</p>
 <p>A new transcription skips a corrected asset and says why. To transcribe it again, put the original back in Refine first.</p>
+
+<h2 class="new">Subtitles</h2>
+<p>A transcript block is as long as someone talks. A subtitle has to be readable: two short lines, long enough on screen. In Refine you make subtitles from the transcript as a second layer and save them as a file. The transcript itself does not change, and nothing makes subtitles unless you ask for it.</p>
+<h3>Making them</h3>
+<p>Click <b>+ Subtitles</b> next to the Transcript tab. The window that opens has three parts:</p>
+<ul>
+<li><b>Rules.</b> Pick a preset or fill in your own values: characters per line, lines, shortest and longest duration, the gap between subtitles and the reading speed. There is no single standard. <b>Online and streaming</b> (42 characters) is what streaming services use; <b>Television, teletext</b> (37 characters) is the broadcast habit.</li>
+<li><b>Fitting.</b> <b>Linger in the silence</b> lets a subtitle that goes too fast stay on screen after the last word, never over the next one. <b>Short sentences of the same speaker together</b> puts "Yes, sure." with the sentence after it, only when there is no pause between them.</li>
+<li><b>Save.</b> Choose .srt, .vtt or both, and where the file goes: next to the media (the file gets the name of the media file) or another place you pick. Iconik links a subtitle file next to the media to the asset when the name matches.</li>
+</ul>
+<p>The line at the bottom counts what you will get: how many subtitles, how many are fast and how many unreadable, and what that would be without lingering. The text is never shortened, so fast speech stays a warning. Click <b>Make and save</b>.</p>
+<p>If an .srt or .vtt is already next to the media, the window offers to <b>load</b> it instead, and you can load any other file as well. The subtitles come in as they are in the file; speakers and word timing come from the transcript where the text matches.</p>
+<h3>Working on them</h3>
+<p>After making, the <b>Subtitles</b> tab is open and the subtitles have their own lane on the timeline, above the transcript. Everything from Refine works on the tab you are in: typing, splitting, merging, dragging the edges, undo and redo. Under the video you see the subtitle as it will be in the file.</p>
+<ul>
+<li><b>Grey</b> is fine. <b>Orange</b> is faster than the reading speed, too short or too long. <b>Red</b> is unreadable, does not fit the rules or overlaps the next one. <b>Next</b> (or W) jumps to the next warning; shorten the text or give the subtitle more time.</li>
+<li><b>Settings</b> shows the same rules. Another rule changes the warnings and the line breaks. <b>Fit</b> applies merging and lingering again and leaves alone what you changed by hand.</li>
+<li><b>Save</b> writes the file again in the same place. Changes are kept on this Mac in the meantime.</li>
+<li>The dots next to the tab: <b>Make again from the transcript</b> (what you changed by hand is lost), <b>Save in another place</b> and <b>Delete subtitles</b>. Deleting removes them from the app; a file that was already written stays.</li>
+</ul>
+<p>When you change the transcript afterwards, the subtitles stay as they are and say that the transcript changed. Make them again if you want the changes in.</p>
+<p>The app does not overwrite a subtitle file it did not write itself, or one that someone changed afterwards. Load that file, or save in another place. In the job list a finished job with subtitles shows <b>Subtitles</b>; click it to open them.</p>
 
 <h2 class="new">If something does not work</h2>
 <table>
