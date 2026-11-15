@@ -278,6 +278,8 @@ with sync_playwright() as p:
         label = page.locator("[data-subtitles]")
         label.wait_for(timeout=5000)
         check("opdrachtenlijst: het label Ondertitels staat bij de opdracht", label.inner_text() == "Ondertitels")
+        look = label.evaluate("el => { const s = getComputedStyle(el); return [s.borderTopWidth, s.fontSize, s.paddingTop]; }")
+        check("opdrachtenlijst: het ziet eruit als een label, met een rand en in het kleine lettertype", look == ["1px", "11px", "0px"], look)
         label.click()
         page.wait_for_function("typeof mode !== 'undefined' && D && mode === 'subtitles'", timeout=15000)
         check("opdrachtenlijst: het label opent Refine meteen in de ondertitels", ev("blocks[0].display") == "Toen we aankwamen," and "tab=subtitles" in page.url)
