@@ -2,9 +2,9 @@
 
 What is inside the app bundle of Local Transcribe for Iconik, and the known vulnerabilities that affect it. This lists what actually ships in the macOS bundle, not everything in `uv.lock` (which also resolves CUDA, Linux and Windows packages that are never installed on a Mac).
 
-- App version: 0.5.1 (shell as in `app/app_shell.py`), macOS 13.0 or later
-- Built from: the tag `v0.5.1`
-- Last updated: 2026-11-14
+- App version: 0.6.0 (shell as in `app/app_shell.py`), macOS 13.0 or later
+- Built from: the tag `v0.6.0`
+- Last updated: 2026-11-16
 - Last vulnerability check: 2026-11-14
 
 A machine-readable version (CycloneDX 1.6) is attached to every release from 0.4.0 on as `sbom-<version>.cdx.json`, made by `scripts/build_sbom.py`. Scan it with for example `grype sbom:sbom-0.4.0.cdx.json`.
