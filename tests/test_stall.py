@@ -81,6 +81,11 @@ serve.last_progress[0] = time.monotonic() - serve.STALL_SECONDS - 5
 check("langer dan de grens niets gemeld: vastgelopen", serve.progress_ok() is False)
 serve.listen("progress", fraction=0.5)
 check("een voortgangsmelding zet de klok terug", serve.progress_ok() is True)
+serve.last_progress[0] = time.monotonic() - serve.STALL_SECONDS - 5
+before = dict(serve.current[0])
+serve.listen("alive")
+check("een teken van leven tijdens het lezen zet de klok terug en verandert de opdracht niet",
+      serve.progress_ok() is True and serve.current[0] == before)
 
 serve.current[0] = fresh_job(duration=4 * serve.STALL_SECONDS)
 serve.last_progress[0] = time.monotonic() - serve.STALL_SECONDS - 5

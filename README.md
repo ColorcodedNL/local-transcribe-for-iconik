@@ -8,7 +8,7 @@
 > - **Edit them like the transcript:** on their own lane, with orange and red for what goes too fast to read.
 > - **Or load what you have:** an existing `.srt` or `.vtt` opens in the same editor.
 >
-> 0.6.0 is a code update: installed apps on 0.5.1 offer it with one click under Jobs. Older apps and new users take the `.dmg` from the [latest release](../../releases/latest).
+> 0.6 is a code update: installed apps on 0.5.1 or newer offer it with one click under Jobs. Older apps and new users take the `.dmg` from the [latest release](../../releases/latest).
 
 ![Refine: the original, the transcript blocks with their speakers, and a timeline with the text blocks and every audio track](docs/images/refine.jpg)
 

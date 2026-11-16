@@ -45,7 +45,7 @@ DEFAULT_HOST = "https://app.iconik.io"
 REDIRECT_URI = "http://localhost:8765/oauth/callback"
 OAUTH_SCOPE = "assets:read assets:write collections:read user_impersonation"
 APP_NAME = "Local Transcribe for Iconik"
-APP_VERSION = "0.6.0"  # ook het versienummer van de app-bundel (build_bundle.sh leest het hier)
+APP_VERSION = "0.6.1"  # ook het versienummer van de app-bundel (build_bundle.sh leest het hier)
 RELEASES_REPO = "ColorcodedNL/local-transcribe-for-iconik"  # hier kijkt de app of er een nieuwere versie is
 OLD_APP_NAME = "Iconik Transcribe"  # de naam tot oktober 2026; voorkeuren en inlog verhuizen mee
 SUPPORT_DIR = Path.home() / "Library" / "Application Support" / APP_NAME
@@ -153,6 +153,8 @@ def tell(kind, **data):
         _local.tracks = data.get("tracks")
     events = getattr(_local, "events", None)
     if events is not None:
+        if kind == "alive":
+            return   # vooruit lezen is niet de lopende opdracht: niet bewaren
         events.append((kind, data))
         return
     if LISTENER:
@@ -831,6 +833,7 @@ def media_seconds(path):
 
 
 PCM_BLOCK = 64 * 1024 * 1024  # bytes per extra blok als de duur onbekend of te krap is
+ALIVE_EVERY = 10              # seconden tussen twee tekens van leven tijdens het lezen
 
 
 def pcm_block(size):
@@ -846,7 +849,11 @@ def read_pcm(command, channels, seconds=None):
 
     Met subprocess.run(capture_output=True) stond de hele uitvoer eerst als bytes in het geheugen
     en daarna nog eens als een samengevoegde kopie: bij 12 sporen van anderhalf uur ruim 4 GB.
-    Met de duur vooraf is er één tabel van de juiste grootte. Geeft (samples, returncode, stderr)."""
+    Met de duur vooraf is er één tabel van de juiste grootte. Geeft (samples, returncode, stderr).
+
+    Zolang er audio binnenkomt meldt het lezen elke ALIVE_EVERY seconden dat het nog leeft. Een groot
+    bestand over een trage verbinding (40 GB over wifi) leest langer dan de waakhond geduld heeft,
+    en zonder die melding lijkt dat op vastlopen. Levert ffmpeg niets meer, dan komt er ook geen melding."""
     frame = 2 * channels
     size = int((seconds + 5) * SAMPLE_RATE) * frame if seconds else PCM_BLOCK // frame * frame
     blocks, current, used = [], pcm_block(size), 0
@@ -854,6 +861,7 @@ def read_pcm(command, channels, seconds=None):
         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=errors)
         try:
             view = memoryview(current).cast("B")
+            alive = time.monotonic()
             while True:
                 if used == len(view):
                     blocks.append(current)
@@ -863,6 +871,9 @@ def read_pcm(command, channels, seconds=None):
                 if not read:
                     break
                 used += read
+                if time.monotonic() - alive >= ALIVE_EVERY:
+                    alive = time.monotonic()
+                    tell("alive")
             view.release()
         finally:
             process.stdout.close()

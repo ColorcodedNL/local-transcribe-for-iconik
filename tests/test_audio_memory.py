@@ -95,6 +95,18 @@ if shutil.which("ffmpeg") and shutil.which("ffprobe"):
         check("te krappe schatting: gelijk", same(new, reference))
         transcribe.media_seconds, transcribe.PCM_BLOCK = saved_seconds, saved_block
 
+        # Tijdens het lezen een teken van leven, zodat de waakhond een trage leesactie niet afbreekt.
+        signs, saved_tell, saved_every = [], transcribe.tell, transcribe.ALIVE_EVERY
+        transcribe.tell = lambda kind, **data: signs.append(kind)
+        transcribe.ALIVE_EVERY = 0
+        new = transcribe.read_all_tracks(path, tracks)
+        check("lezen meldt dat het leeft, en leest hetzelfde", "alive" in signs and same(new, reference), signs[:5])
+        signs.clear()
+        transcribe.ALIVE_EVERY = 3600
+        transcribe.read_all_tracks(path, tracks)
+        check("een korte leesactie meldt niets extra", "alive" not in signs, signs[:5])
+        transcribe.tell, transcribe.ALIVE_EVERY = saved_tell, saved_every
+
         old_one = np.frombuffer(subprocess.run(
             ["ffmpeg", "-nostdin", "-v", "error", "-i", str(path), "-vn", "-map", "0:a:1",
              "-ac", "1", "-ar", str(SR), "-f", "s16le", "-"], capture_output=True).stdout, np.int16)
