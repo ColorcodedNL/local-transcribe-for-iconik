@@ -109,6 +109,17 @@ cookie = r.getheader("Set-Cookie") or ""
 check("/window/open geeft het venster de cookie en stuurt door naar de app",
       r.status == 303 and r.getheader("Location") == "/" and cookie.startswith(f"{serve.SESSION_COOKIE}={serve.SESSION};")
       and "HttpOnly" in cookie and "SameSite=Lax" in cookie, (r.status, cookie))
+# Een pagina die de app zelf opent (een klik in Iconik bij een koude start) gaat langs /window/open.
+def opened(page):
+    c = http.client.HTTPConnection("127.0.0.1", PORT, timeout=10)
+    c.request("GET", serve.window_url(page))
+    r = c.getresponse(); r.read()
+    return r.status, r.getheader("Location"), (r.getheader("Set-Cookie") or "").startswith(f"{serve.SESSION_COOKIE}=")
+check("een eigen pagina openen geeft de cookie en stuurt naar die pagina",
+      opened("/refine?asset=abc&tab=subtitles") == (303, "/refine?asset=abc&tab=subtitles", True), opened("/refine?asset=abc&tab=subtitles"))
+check("zonder pagina naar de app", opened("") == (303, "/", True) and opened("/login") == (303, "/login", True))
+check("nooit naar een ander adres", all(opened(p)[1] == "/" for p in ("//evil.example/x", "https://evil.example", "/\\evil.example", "/a\r\nSet-Cookie: x=1")),
+      [opened(p)[1] for p in ("//evil.example/x", "https://evil.example", "/\\evil.example")])
 status, _, body = get("/window/state", session=False)
 check("tweede start ziet zonder sessie alleen dat de app er is", status == 200 and json.loads(body) == {"ok": True}, body)
 status, _, body = get("/window/state")

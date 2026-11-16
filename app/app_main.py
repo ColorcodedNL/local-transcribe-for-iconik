@@ -68,7 +68,7 @@ def show(page=None):
     if window is None:
         return
     if page:
-        window.load_url(BASE + page)
+        window.load_url(BASE + serve.window_url(page))   # langs /window/open: zeker met de cookie
     hidden = False
     window.show()
     reconcile()
@@ -679,7 +679,7 @@ def main():
     storage = SUPPORT / "webview"
     storage.mkdir(parents=True, exist_ok=True)
     # Het venster meldt zich met de sessie van deze start en krijgt de cookie; daarna gaat het naar de app.
-    window = webview.create_window(APP_NAME, f"{BASE}/window/open?t={serve.SESSION}", width=980, height=620, min_size=(640, 360))
+    window = webview.create_window(APP_NAME, BASE + serve.window_url(), width=980, height=620, min_size=(640, 360))
     window.events.closing += on_closing
     # Niet in privemodus: zo blijft de inlog bij Iconik in dit venster bewaard.
     threading.Thread(target=watch_settings, daemon=True).start()

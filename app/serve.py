@@ -25,7 +25,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 import requests
 
@@ -51,6 +51,13 @@ KEY_FILE = transcribe.CONFIG_PATH.parent / "key"
 # ingelogde gebruiker, transcripten en beeld niet meer opvragen op poort 8765.
 SESSION = secrets.token_urlsafe(32)
 SESSION_COOKIE = "lt_session"
+
+
+def window_url(page="/"):
+    """Het adres waarmee de app haar eigen venster naar een pagina stuurt: altijd langs /window/open, zodat
+    het venster de cookie zeker heeft. Start de app door een klik in Iconik, dan komt de pagina van die
+    klik soms voor het eerste openen klaar is; rechtstreeks laden gaf dan 403 in het venster."""
+    return f"/window/open?t={SESSION}&next={quote(page or '/', safe='')}"
 KEY_HEADER = "X-Local-Transcribe-Key"
 pending_login = {}        # state -> verifier, voor een inlog die onderweg is
 pending_ids = []          # opdrachten die wachten tot er is ingelogd
@@ -752,12 +759,15 @@ class Handler(BaseHTTPRequestHandler):
         given, key = self.headers.get(KEY_HEADER) or "", settings.get("key") or ""
         return bool(given and key) and secrets.compare_digest(given.encode(), key.encode())
 
-    def open_window(self, token):
-        """Het venster van de app meldt zich met SESSION en krijgt de cookie. Daarna gaat het naar de app."""
+    def open_window(self, token, target=""):
+        """Het venster van de app meldt zich met SESSION en krijgt de cookie. Daarna gaat het naar de app,
+        of naar de pagina in next (alleen een eigen pad, nooit een ander adres)."""
         if not secrets.compare_digest((token or "").encode(), SESSION.encode()):
             return self.send_error(403)
+        if not target.startswith("/") or target.startswith("//") or "\\" in target or any(ord(c) < 32 for c in target):
+            target = "/"
         self.send_response(303)
-        self.send_header("Location", "/")
+        self.send_header("Location", target)
         # Lax: de cookie gaat mee als Iconik na het inloggen terugstuurt naar /oauth/callback en door naar /.
         self.send_header("Set-Cookie", f"{SESSION_COOKIE}={SESSION}; Path=/; HttpOnly; SameSite=Lax")
         self.send_header("Cache-Control", "no-store")
@@ -832,7 +842,8 @@ class Handler(BaseHTTPRequestHandler):
         if not self.host_ok():
             return self.send_error(403)
         if url.path == "/window/open":
-            return self.open_window(parse_qs(url.query).get("t", [""])[0])
+            query = parse_qs(url.query)
+            return self.open_window(query.get("t", [""])[0], query.get("next", [""])[0])
         # Open zonder sessie: de terugkeer van het inloggen (heeft zijn eigen state), de link uit Iconik
         # (heeft de sleutel in het pad), en de twee routes waarmee een tweede start van de app kijkt of er al
         # een exemplaar draait en het venster naar voren haalt. Die laatste twee blijven open voor een oudere

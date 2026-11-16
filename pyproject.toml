@@ -1,6 +1,6 @@
 [project]
 name = "iconik-transcribe"
-version = "0.6.1"
+version = "0.6.2"
 description = "Local transcription for Iconik on Apple Silicon (Whisper large-v3 via MLX, pyannote)"
 readme = "README.md"
 requires-python = ">=3.12"
