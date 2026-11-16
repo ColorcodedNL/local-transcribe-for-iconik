@@ -100,7 +100,11 @@ if shutil.which("ffmpeg") and shutil.which("ffprobe"):
         transcribe.tell = lambda kind, **data: signs.append(kind)
         transcribe.ALIVE_EVERY = 0
         new = transcribe.read_all_tracks(path, tracks)
-        check("lezen meldt dat het leeft, en leest hetzelfde", "alive" in signs and same(new, reference), signs[:5])
+        # Meer dan een paar keer: het lezen moet onderweg melden, niet één keer als alles binnen is.
+        # (Met de duur vooraf is de tabel zo groot als het bestand; één leesopdracht die wacht tot
+        # de tabel vol is meldt precies één keer, en dan grijpt de waakhond toch in.)
+        check("lezen meldt onderweg dat het leeft, en leest hetzelfde",
+              signs.count("alive") > 5 and same(new, reference), signs.count("alive"))
         signs.clear()
         transcribe.ALIVE_EVERY = 3600
         transcribe.read_all_tracks(path, tracks)

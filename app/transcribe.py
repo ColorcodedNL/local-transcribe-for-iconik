@@ -834,6 +834,7 @@ def media_seconds(path):
 
 PCM_BLOCK = 64 * 1024 * 1024  # bytes per extra blok als de duur onbekend of te krap is
 ALIVE_EVERY = 10              # seconden tussen twee tekens van leven tijdens het lezen
+PCM_READ = 1024 * 1024        # hooguit zoveel bytes per keer uit de pijp van ffmpeg
 
 
 def pcm_block(size):
@@ -867,7 +868,9 @@ def read_pcm(command, channels, seconds=None):
                     blocks.append(current)
                     current, used = pcm_block(PCM_BLOCK), 0
                     view = memoryview(current).cast("B")
-                read = process.stdout.readinto(view[used:])
+                # readinto1: wat er nu is. Gewoon readinto wacht tot de hele tabel vol is, en bij een
+                # bekende duur is dat het hele bestand: dan komt er onderweg geen teken van leven.
+                read = process.stdout.readinto1(view[used:used + PCM_READ])
                 if not read:
                     break
                 used += read
