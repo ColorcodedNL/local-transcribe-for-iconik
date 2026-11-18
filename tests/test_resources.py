@@ -5,6 +5,7 @@ Draaien: python3 -B tests/test_resources.py
 import sys
 
 sys.path.insert(0, "app")
+import platform_mac  # noqa: E402
 import resources  # noqa: E402
 
 results = []
@@ -17,7 +18,7 @@ def check(label, ok, detail=""):
 
 # --- uitlezen van macOS-uitvoer
 outputs = {}
-resources._run = lambda args: outputs.get(args[0], "")
+platform_mac._run = lambda args: outputs.get(args[0], "")   # de metingen staan in de platformlaag
 
 outputs["pmset"] = "Now drawing from 'AC Power'\n -InternalBattery-0 (id=1)\t100%; charged; 0:00 remaining present: true\n"
 check("netstroom herkend", resources.on_mains_power() is True)

@@ -31,7 +31,8 @@ def check(name, cond, detail=""):
     print(("OK   " if cond else "FOUT ") + name + (f"  [{detail}]" if detail and not cond else ""))
 
 
-# Alle namen op het hoogste niveau van transcribe.py vlak voor de splitsing (commit e7a4f0b).
+# Alle namen op het hoogste niveau van transcribe.py vlak voor de splitsing (commit e7a4f0b), behalve
+# _footprint: dat is system.process_footprint geworden (platformlaag).
 OLD_NAMES = """
 argparse base64 builtins hashlib json mmap os re secrets subprocess sys tempfile threading time
 pkg_version Path np requests tmodel DEFAULT_HOST REDIRECT_URI OAUTH_SCOPE INTERNAL_NAME DISPLAY_NAME
@@ -39,7 +40,7 @@ APP_VERSION RELEASES_REPO OLD_APP_NAME SUPPORT_DIR KEYCHAIN_SERVICE BULK_LIMIT C
 SIDECARS_FILE PAGE_SIZE ENGINE_NAME REFINED_ENGINE SAMPLE_RATE TRACK_SILENT_DB TIMECODE_REGULARITY
 TIMECODE_SHARE TRACK_COPY_CORRELATION MIC_ACTIVE_DB MIC_DOMINANT_DB MIC_MIN_DOMINANCE
 MIC_MIN_MARGIN_DB DIARIZATION_MODEL _BUNDLE_RES _BUNDLED_SPEAKER_MODEL LOCAL_SPEAKER_MODEL LISTENER
-_local print _meter _footprint memory_report tell envelope WAVE_RATE WAVES_FORMAT wave_peaks
+_local print _meter memory_report tell envelope WAVE_RATE WAVES_FORMAT wave_peaks
 write_waves read_waves track_info speaker_model_available SENTENCE_END REPEAT_LIMIT VOICE_LONG_TURN
 VOICE_MAX_CROP VOICE_MIN_SECONDS VOICE_MIN_SENTENCE VOICE_MIN_MARGIN CLUSTER_MIN_SENTENCE
 CLUSTER_DISTANCE SIDECAR_EXTENSIONS MEDIA_EXTENSIONS FIRST_WORD_MIN_PROBABILITY MIN_SPEECH_SHARE
@@ -127,6 +128,21 @@ except ValueError:
     check("engine: onbekende naam geeft een nette fout", True)
 check("engine: alleen whisper_mlx kent MLX", not any("mlx" in Path(f"app/{n}.py").read_text()
       for n in PART_NAMES if n not in ("whisper_mlx", "engine", "base")))
+# --- platformlaag: macOS alleen in platform_mac.py (en in de Mac-shell zelf) ---
+import system  # noqa: E402
+import platform_mac  # noqa: E402
+missing = [n for n in system.NAMES if not hasattr(platform_mac, n) or not hasattr(system, n)]
+check("platform: platform_mac heeft alle namen van system", not missing, missing)
+check("platform: system geeft de Mac-versie door", system.mount_reachable is platform_mac.mount_reachable
+      and system.computer_name is platform_mac.computer_name)
+MAC_ONLY = ["osascript", "caffeinate", "pmset", "vm_stat", "ioreg", "scutil", "LaunchAgents", "libSystem",
+            '"open"', '"Library"', "/Volumes\")"]
+SHELL = {"platform_mac.py", "app_main.py", "main.py", "app_shell.py"}
+found = {f.name: [w for w in MAC_ONLY if w in f.read_text()] for f in Path("app").glob("*.py") if f.name not in SHELL}
+found = {k: v for k, v in found.items() if v}
+check("platform: geen macOS-aanroepen buiten platform_mac.py en de Mac-shell", not found, found)
+check("platform: support-map via de platformlaag", base.SUPPORT_DIR == platform_mac.support_dir(base.INTERNAL_NAME))
+check("code-update: platformlaag in CODE_FILES", "system.py" in CODE_FILES and "platform_mac.py" in CODE_FILES)
 check("sbom: modelrevisie staat in whisper_mlx.py",
       re.search(r'"[\w.-]+/[\w.-]+":\s*"[0-9a-f]{40}"', Path("app/whisper_mlx.py").read_text()) is not None)
 

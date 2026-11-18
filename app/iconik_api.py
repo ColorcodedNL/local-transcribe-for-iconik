@@ -7,9 +7,7 @@ import base64
 import hashlib
 import json
 import os
-import re
 import secrets
-import subprocess
 import threading
 import time
 from pathlib import Path
@@ -18,6 +16,7 @@ import requests
 from base import (  # noqa: F401
     KEYCHAIN_SERVICE, L, MEDIA_EXTENSIONS, NeedsFolder, OLD_APP_NAME, Problem, SIDECAR_EXTENSIONS, fail, load_config, print, update_config,
 )
+from system import ask_folder, find_moved_mount, mount_reachable  # noqa: F401  (macOS: platform_mac.py)
 
 
 DEFAULT_HOST = "https://app.iconik.io"
@@ -272,83 +271,6 @@ def set_mount(storage_id, folder):
             mounts[storage_id] = str(folder)
     update_config(change)
 
-
-def ask_folder(prompt, start=None):
-    """Laat de gebruiker een map kiezen in een venster van macOS. None bij annuleren.
-    `start` is de map waarin het venster opent, als die bestaat."""
-    if start and Path(start).is_dir():
-        choose = "choose folder with prompt (item 1 of argv) default location (POSIX file (item 2 of argv))"
-    else:
-        choose, start = "choose folder with prompt (item 1 of argv)", ""
-    script = f"on run argv\ntell me to activate\nreturn POSIX path of ({choose})\nend run"
-    result = subprocess.run(["osascript", "-e", script, prompt, str(start)],
-                            capture_output=True, text=True)
-    chosen = result.stdout.strip()
-    return chosen.rstrip("/") if result.returncode == 0 and chosen else None
-
-
-def find_moved_mount(known, relative, volumes=Path("/Volumes")):
-    """Zoekt dezelfde map op een opnieuw gekoppeld volume.
-
-    Na een verbroken netwerkkoppeling blijft er soms een lege /Volumes/Opslag
-    achter en koppelt macOS de opslag opnieuw als /Volumes/Opslag-1. Hier
-    zoeken we in beide richtingen, met of zonder zo'n achtervoegsel.
-    """
-    try:
-        inner = Path(known).relative_to(volumes)
-    except ValueError:
-        return None  # geen netwerkvolume onder /Volumes
-    if not inner.parts:
-        return None
-    volume, rest = inner.parts[0], Path(*inner.parts[1:])
-    base = re.sub(r"-\d+$", "", volume)
-    try:
-        entries = sorted(volumes.iterdir())
-    except OSError:
-        return None
-    for entry in entries:
-        if entry.name != volume and re.sub(r"-\d+$", "", entry.name) == base:
-            candidate = entry / rest
-            try:
-                if (candidate / relative).is_file():
-                    return candidate
-            except OSError:
-                continue
-    return None
-
-
-def mount_reachable(path, volumes=Path("/Volumes")):
-    """Is het mount point van een ISG nu bereikbaar? Alleen kijken, nooit iets onthouden of wijzigen.
-
-    Een netwerkvolume onder /Volumes telt alleen als het echt gekoppeld is: na een verbroken koppeling
-    blijft er soms een lege map /Volumes/Opslag achter, en die bestaat wel maar is niet de opslag.
-    Koppelde macOS de opslag opnieuw als /Volumes/Opslag-1 (zie find_moved_mount), dan is hij ook
-    bereikbaar: de opdracht zelf vindt hem daar en onthoudt dat.
-    Kan blijven hangen op een netwerkkoppeling die niet meer reageert: roep dit aan met een tijdslimiet.
-    """
-    path = Path(path)
-    try:
-        inner = path.relative_to(volumes)
-    except ValueError:
-        return path.is_dir()          # een map op een eigen schijf: bestaat hij, dan is hij er
-    if not inner.parts:
-        return False
-    volume, rest = inner.parts[0], Path(*inner.parts[1:])
-    if os.path.ismount(volumes / volume) and (volumes / volume / rest).is_dir():
-        return True
-    base = re.sub(r"-\d+$", "", volume)
-    try:
-        entries = sorted(volumes.iterdir())
-    except OSError:
-        return False
-    for entry in entries:
-        if entry.name != volume and re.sub(r"-\d+$", "", entry.name) == base:
-            try:
-                if os.path.ismount(entry) and (entry / rest).is_dir():
-                    return True
-            except OSError:
-                continue
-    return False
 
 
 def find_media_file(iconik, asset_id, mount_override=None, ask_mount=False, interactive=True):

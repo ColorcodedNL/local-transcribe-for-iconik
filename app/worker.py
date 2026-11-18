@@ -9,14 +9,13 @@ Voorkeuren). Er komt niets binnen op deze Mac: de werker vraagt zelf elke minuut
 Deze module praat alleen met Iconik, niet met de rest van de app: `run` krijgt de functies
 die het nodig heeft mee.
 """
-import functools
 import re
 import secrets
-import socket
-import subprocess
 import threading
 import time
 from datetime import datetime, timezone
+
+from system import computer_name  # noqa: F401
 
 FIELD = "local_transcribe_status"
 INFO = "local_transcribe_info"
@@ -101,19 +100,6 @@ def machine_name():
     Iedereen die het asset ziet, ziet deze naam, en in een computernaam staat vaak de naam van een persoon."""
     return machine_alias[0] or computer_name()
 
-
-@functools.lru_cache(maxsize=1)
-def computer_name():
-    """De computernaam uit Systeeminstellingen. De hostnaam van het netwerk kan er vreemd uitzien."""
-    for args in (["scutil", "--get", "ComputerName"], ["scutil", "--get", "LocalHostName"]):
-        try:
-            name = subprocess.run(args, capture_output=True, text=True, timeout=5).stdout.strip()
-        except (OSError, subprocess.SubprocessError):
-            continue
-        if name:
-            return name
-    name = socket.gethostname().split(".")[0]
-    return "".join(c for c in name if c.isprintable() and c.isascii()) or "Mac"
 
 
 def stamp(now=None):

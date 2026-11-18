@@ -32,6 +32,7 @@ import requests
 import app_shell
 import refine
 import resources
+import system
 import transcribe
 import updater
 import worker as remote
@@ -929,11 +930,11 @@ class Handler(BaseHTTPRequestHandler):
             # Het asset in Iconik, in de gewone browser. Alleen een asset-ID: geen willekeurige adressen openen.
             asset_id = first("id")
             if re.fullmatch(r"[0-9a-fA-F-]{8,64}", asset_id or ""):
-                subprocess.Popen(["open", f"{transcribe.api_host()}/asset/{asset_id}"])
+                system.open_url(f"{transcribe.api_host()}/asset/{asset_id}")
             return self.reply_json({"ok": True})
         if url.path == "/update/open":
             if update.get("url"):
-                subprocess.Popen(["open", update["url"]])  # in de gewone browser, niet in het venster
+                system.open_url(update["url"])  # in de gewone browser, niet in het venster
             return self.reply_json({"ok": True})
         if url.path == "/actions/install":
             install_actions()
@@ -1153,22 +1154,22 @@ def want_awake():
 
 
 def keep_awake(want=want_awake, interval=10, once=False):
-    """Start of stopt caffeinate. Met -w stopt caffeinate vanzelf als deze app wegvalt."""
+    """Houdt de computer wakker of laat hem weer slapen (system.keep_awake_command; stopt vanzelf als deze app wegvalt)."""
     while True:
         try:
             on = bool(want())
             process = awake["process"]
             if on and (process is None or process.poll() is not None):
-                awake["process"] = subprocess.Popen(["caffeinate", "-i", "-w", str(os.getpid())],
+                awake["process"] = subprocess.Popen(system.keep_awake_command(os.getpid()),
                                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                print(f"[{datetime.now():%H:%M:%S}] Mac blijft wakker (caffeinate)")
+                print(f"[{datetime.now():%H:%M:%S}] Computer blijft wakker")
             elif not on and process is not None:
                 process.terminate()
                 process.wait(timeout=5)
                 awake["process"] = None
                 print(f"[{datetime.now():%H:%M:%S}] Mac mag weer slapen")
             awake["on"] = awake["process"] is not None
-        except Exception as error:   # geen caffeinate (geen Mac) of iets anders: dan maar niet wakker houden
+        except Exception as error:   # het commando ontbreekt of iets anders: dan maar niet wakker houden
             awake["on"] = False
             print(f"Wakker houden: {error}")
             if not once:
@@ -1329,7 +1330,6 @@ def worker_languages():
     return transcribe.app_language(), chosen if chosen in ("nl", "en") else transcribe.app_language()
 
 
-LOGIN_PLIST = Path.home() / "Library" / "LaunchAgents" / "nl.colorcoded.local-transcribe.plist"
 LOGIN_MARKER = transcribe.SUPPORT_DIR / "login-start"  # de LaunchAgent legt dit neer, de app ruimt het op
 
 
@@ -1340,26 +1340,13 @@ def bundle_path():
 
 
 def login_item_on():
-    return LOGIN_PLIST.exists()
+    return system.login_item_on()
 
 
 def set_login_item(on):
-    """Opstarten bij inloggen: een LaunchAgent die de app opent. Gaat in bij de volgende login."""
-    import plistlib
-    import shlex
-    bundle = bundle_path()
-    if not on:
-        LOGIN_PLIST.unlink(missing_ok=True)
-        return
-    if bundle is None:
-        return
-    command = f"touch {shlex.quote(str(LOGIN_MARKER))}; exec /usr/bin/open -a {shlex.quote(str(bundle))}"
-    LOGIN_PLIST.parent.mkdir(parents=True, exist_ok=True)
-    LOGIN_PLIST.write_bytes(plistlib.dumps({
-        "Label": LOGIN_PLIST.stem,
-        "ProgramArguments": ["/bin/sh", "-c", command],
-        "RunAtLoad": True,
-    }))
+    """Opstarten bij inloggen aan of uit. Gaat in bij de volgende login."""
+    system.set_login_item(on, bundle_path(), LOGIN_MARKER)
+
 
 
 def stall_limit(job):

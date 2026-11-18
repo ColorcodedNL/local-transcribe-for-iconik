@@ -10,8 +10,8 @@ import subprocess
 import sys
 import threading
 import time
-from pathlib import Path
 import transcript as tmodel
+import system
 
 
 
@@ -24,7 +24,7 @@ os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
 INTERNAL_NAME = "Local Transcribe for Iconik"
 DISPLAY_NAME = "Local Transcribe for Iconik"   # venster, meldingen, User-Agent
 OLD_APP_NAME = "Iconik Transcribe"  # de naam tot oktober 2026; voorkeuren en inlog verhuizen mee
-SUPPORT_DIR = Path.home() / "Library" / "Application Support" / INTERNAL_NAME
+SUPPORT_DIR = system.support_dir(INTERNAL_NAME)
 try:
     _old_dir = SUPPORT_DIR.with_name(OLD_APP_NAME)
     if _old_dir.is_dir() and not SUPPORT_DIR.exists():
@@ -58,20 +58,6 @@ MEMORY_PROBES = []   # functies die een korte geheugentekst geven; een engine ze
 _meter = {"peak": 0, "since": None, "thread": None}
 
 
-def _footprint():
-    """Geheugen van dit proces zoals Activiteitenweergave het toont (phys_footprint), in bytes."""
-    try:
-        import ctypes
-        lib = getattr(_footprint, "lib", None)
-        if lib is None:
-            lib = _footprint.lib = ctypes.CDLL("/usr/lib/libSystem.B.dylib")
-        info = (ctypes.c_uint64 * 48)()
-        if lib.proc_pid_rusage(os.getpid(), 2, ctypes.byref(info)) != 0:  # RUSAGE_INFO_V2
-            return 0
-        return int(info[2 + 7])  # na de uuid (16 bytes): ri_phys_footprint
-    except Exception:
-        return 0
-
 
 def memory_report(stage):
     """Logregel met geheugen en tijd sinds de vorige meting, ook de piek daartussen."""
@@ -82,11 +68,11 @@ def memory_report(stage):
         if _meter["thread"] is None:
             def sample():
                 while True:
-                    _meter["peak"] = max(_meter["peak"], _footprint())
+                    _meter["peak"] = max(_meter["peak"], system.process_footprint())
                     time.sleep(0.25)
             _meter["thread"] = threading.Thread(target=sample, daemon=True)
             _meter["thread"].start()
-        current = _footprint()
+        current = system.process_footprint()
         peak = max(_meter["peak"], current)
         since = _meter["since"] or now
         parts = [f"nu {current / 1e9:.1f} GB", f"piek {peak / 1e9:.1f} GB", f"{now - since:.1f} s"]
