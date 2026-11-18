@@ -11,20 +11,28 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: ffmpeg
-        # Bleef in november twee keer hangen tot de hele job stopte. Nu: nooit een vraag die op antwoord wacht
-        # (noninteractive), een tijdslimiet per download met nieuwe pogingen, en de stap zelf begrensd.
+        # Eerst een kant-en-klare LGPL-build van GitHub (BtbN/FFmpeg-Builds): komt binnen seconden binnen en is
+        # LGPL zoals de ffmpeg in de app. Apt is de reserve: de Ubuntu-spiegel van de runners leverde in november
+        # 100 tot 300 KB/s, te traag voor 173 MB aan pakketten. Alleen voor de tests; de app bouwt zijn eigen ffmpeg.
         timeout-minutes: 12
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          APT="-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Dpkg::Use-Pty=0"
-          for attempt in 1 2; do
-            if sudo -E timeout 120 apt-get $APT update -q && sudo -E timeout 180 apt-get $APT install -y -q --no-install-recommends ffmpeg; then
-              break
-            fi
-            echo "ffmpeg installeren lukte niet (poging $attempt), opnieuw"
-            sleep 10
-          done
+          NAME=ffmpeg-master-latest-linux64-lgpl
+          BASE=https://github.com/BtbN/FFmpeg-Builds/releases/download/latest
+          cd "$RUNNER_TEMP"
+          if curl -fsSL --retry 3 --max-time 180 -o "$NAME.tar.xz" "$BASE/$NAME.tar.xz" \
+             && curl -fsSL --retry 3 --max-time 30 -o checksums.sha256 "$BASE/checksums.sha256" \
+             && grep -E "[ *]$NAME\.tar\.xz\$" checksums.sha256 | sed 's/\*//' | sha256sum -c - \
+             && tar -xf "$NAME.tar.xz"; then
+            echo "$RUNNER_TEMP/$NAME/bin" >> "$GITHUB_PATH"
+            export PATH="$RUNNER_TEMP/$NAME/bin:$PATH"
+          else
+            echo "Kant-en-klare ffmpeg lukte niet, nu via apt"
+            APT="-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Dpkg::Use-Pty=0"
+            sudo -E timeout 120 apt-get $APT update -q && sudo -E timeout 480 apt-get $APT install -y -q --no-install-recommends ffmpeg || true
+          fi
+          command -v ffmpeg >/dev/null && command -v ffprobe >/dev/null || { echo "ffmpeg of ffprobe ontbreekt"; exit 1; }
           ffmpeg -version | head -1
       - name: uv
         run: pipx install uv
