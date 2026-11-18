@@ -686,6 +686,85 @@ def status_page(note=""):
 # Routes die iets veranderen: alleen als POST met de header X-Local-Transcribe, die alleen het venster
 # meestuurt (en de sessie, zoals alles). Een link, een plaatje of een formulier op een andere pagina kan zo'n
 # verzoek niet maken. De waarden staan nog in de querystring, zoals voorheen.
+def set_labels_language(code):
+    """De labels van de rij in Iconik in deze taal. Gelden voor iedereen in die Iconik-omgeving; daarom eerst
+    in Iconik en pas daarna bewaren. Een fout gaat als Problem of andere fout naar boven."""
+    connection = client()
+    if connection is None:
+        raise Problem(transcribe.L("Niet ingelogd bij Iconik.", "Not logged in to Iconik."))
+    queue_in_iconik = remote.Queue(connection)
+    queue_in_iconik.setup(create=True, language=code)
+    queue_in_iconik.apply_language(code)
+
+
+def _after_host(old, new):
+    if old != new:   # een andere Iconik-omgeving: de inlog hoort bij de oude
+        transcribe.clear_login()
+        who.clear()
+        actions.clear()
+
+
+def _wake_worker(old, new):
+    remote.resume()
+    remote.wake.set()
+
+
+def _wake_auto(old, new):
+    storage_wake.set()  # meteen kijken of de opslag er is
+    remote.wake.set()   # meteen kijken, en de meter begint te meten
+
+
+# Wat er na het bewaren moet gebeuren: functie(oude waarde, nieuwe waarde).
+AFTER_SAVE = {
+    "iconik.host": _after_host,
+    "iconik.worker_enabled": _wake_worker,
+    "iconik.machine_name": lambda old, new: remote.set_machine_alias(new),
+    "iconik.auto_transcribe": _wake_auto,
+    "iconik.auto_audio": _wake_auto,
+}
+
+
+def apply_settings(changes):
+    """Eén ingang voor elke wijziging uit het venster: {sleutel: waarde}. Alles wordt eerst gecontroleerd
+    tegen het schema; mag één waarde niet, dan verandert er niets. Geeft {"ok": True, "values": ...} of
+    {"ok": False, "errors": {sleutel: melding}, "error": de eerste melding}."""
+    if not isinstance(changes, dict) or not changes:
+        return {"ok": False, "errors": {}, "error": transcribe.L("Niets om te bewaren.", "Nothing to save.")}
+    errors, cleaned = {}, {}
+    for key, value in changes.items():
+        spec = setting.SCHEMA.get(key) if isinstance(key, str) else None
+        if spec is None:
+            errors[str(key)] = transcribe.L("Onbekende instelling.", "Unknown setting.")
+            continue
+        if spec.kind == "mapping":   # mounts en ondertitels hebben hun eigen weg (mappenkiezer, Refine)
+            errors[key] = transcribe.L("Deze instelling verandert elders.", "This setting is changed elsewhere.")
+            continue
+        if key == "iconik.machine_name" and isinstance(value, str):
+            value = remote.clean_alias(value)   # zoals altijd: leesbare tekens, niet te lang
+        try:
+            cleaned[key] = setting.clean(key, value)
+        except setting.SettingError as error:
+            errors[key] = error.message()
+    if "iconik.machine_name" in cleaned and busy():
+        # Niet tijdens een opdracht: het asset staat dan onder de oude naam op "bezig", en de werker herkent
+        # zijn eigen werk aan die naam.
+        errors["iconik.machine_name"] = transcribe.L("Wacht tot de lopende opdracht klaar is.",
+                                                     "Wait until the running job has finished.")
+    if not errors and cleaned.get("iconik.iconik_language") in ("nl", "en"):
+        try:
+            set_labels_language(cleaned["iconik.iconik_language"])
+        except Exception as error:
+            errors["iconik.iconik_language"] = str(error)[:300]
+    if errors:
+        return {"ok": False, "errors": errors, "error": next(iter(errors.values()))}
+    old = {key: setting.get(key) for key in cleaned}
+    setting.put_many(cleaned)
+    for key, value in cleaned.items():
+        if key in AFTER_SAVE:
+            AFTER_SAVE[key](old[key], value)
+    return {"ok": True, "values": cleaned}
+
+
 PROTECTED = {"/clear", "/mount/change", "/mount/remove", "/language", "/applang", "/actions/install",
              "/update/open", "/update/install", "/worker", "/iconik-language", "/login-item", "/settings",
              "/logout", "/window/show", "/auto", "/asset/open", "/machine-name"}
@@ -796,6 +875,15 @@ class Handler(BaseHTTPRequestHandler):
         if url.path != "/window/show" and not self.session_ok():
             return self.send_error(403)
         size = int(self.headers.get("Content-Length") or 0)
+        if url.path == "/settings" and size:
+            # De nieuwe vorm: {sleutel: waarde, ...} als JSON, alles of niets.
+            if size > 16384:
+                return self.send_error(413)
+            try:
+                changes = json.loads(self.rfile.read(size))
+            except ValueError:
+                return self.reply_json({"ok": False, "errors": {}, "error": "json"})
+            return self.reply_json(apply_settings(changes))
         if url.path in PROTECTED:
             if size:
                 self.rfile.read(min(size, 65536))   # het venster stuurt hier niets mee; wat er toch is, weg
@@ -888,23 +976,18 @@ class Handler(BaseHTTPRequestHandler):
                 remote.resume()
                 remote.wake.set()
             if first("value") in ("on", "off"):
-                transcribe.set_config("worker_enabled", first("value") == "on")
-                remote.resume()
-                remote.wake.set()
+                apply_settings({"iconik.worker_enabled": first("value") == "on"})   # maakt de werker wakker
             return self.reply_json({"ok": True})
         if url.path == "/machine-name":
-            # De naam van deze Mac in Iconik. Niet tijdens een opdracht: het asset staat dan onder de oude naam
-            # op "bezig", en de werker herkent zijn eigen werk aan die naam.
-            if busy():
-                return self.reply_json({"ok": False, "error": transcribe.L(
-                    "Wacht tot de lopende opdracht klaar is.", "Wait until the running job has finished.")})
-            name = remote.set_machine_alias(first("value"))
-            transcribe.set_config("machine_name", name)
+            # De naam van deze Mac in Iconik (niet tijdens een opdracht; zie apply_settings).
+            result = apply_settings({"iconik.machine_name": first("value")})
+            if not result["ok"]:
+                return self.reply_json({"ok": False, "error": result["error"]})
             return self.reply_json({"ok": True, "name": remote.machine_name()})
         if url.path == "/auto":
-            for key, name in (("value", "auto_transcribe"), ("audio", "auto_audio")):
+            for key, name in (("value", "iconik.auto_transcribe"), ("audio", "iconik.auto_audio")):
                 if first(key) in ("on", "off"):
-                    transcribe.set_config(name, first(key) == "on")
+                    apply_settings({name: first(key) == "on"})
             storage_wake.set()  # meteen kijken of de opslag er is
             remote.wake.set()   # meteen kijken, en de meter begint te meten
             return self.reply_json({"ok": True})
@@ -912,17 +995,8 @@ class Handler(BaseHTTPRequestHandler):
             code = first("value")
             if code not in ("nl", "en"):
                 return self.reply_json({"ok": False, "error": "language"})
-            try:
-                connection = client()
-                if connection is None:
-                    raise Problem(transcribe.L("Niet ingelogd bij Iconik.", "Not logged in to Iconik."))
-                queue_in_iconik = remote.Queue(connection)
-                queue_in_iconik.setup(create=True, language=code)
-                queue_in_iconik.apply_language(code)
-            except Exception as error:
-                return self.reply_json({"ok": False, "error": str(error)[:300]})
-            transcribe.set_config("iconik_language", code)
-            return self.reply_json({"ok": True})
+            result = apply_settings({"iconik.iconik_language": code})   # eerst in Iconik, dan bewaren
+            return self.reply_json({"ok": True} if result["ok"] else {"ok": False, "error": result["error"]})
         if url.path == "/login-item":   # opstarten bij inloggen op de Mac; /login is inloggen bij Iconik
             if first("value") in ("on", "off"):
                 set_login_item(first("value") == "on")
@@ -942,12 +1016,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply_json({"ok": True})
         if url.path == "/applang":
             if first("value") in ("auto", "nl", "en"):
-                transcribe.set_config("app_language", first("value"))
+                apply_settings({"general.app_language": first("value")})
             return self.reply_json({"ok": True})
         if url.path == "/language":
             value = first("value")
             if re.fullmatch(r"auto|[a-z]{2,3}", value):
-                transcribe.set_config("language", value)
+                apply_settings({"transcription.language": value})
             return self.reply_json({"ok": True})
         if url.path == "/clear":
             clear_finished()
@@ -981,12 +1055,10 @@ class Handler(BaseHTTPRequestHandler):
         return self.transcribe(url, query)
 
     def save_settings(self, client_id):
-        """Het venster stuurt de client-ID; daarna gaat het zelf naar /login."""
-        if not re.fullmatch(r"[0-9a-fA-F-]{36}", client_id):
-            return self.reply_json({"ok": False, "error": transcribe.L(
-                "Dat lijkt geen geldige client-ID.", "That does not look like a valid client ID.")})
-        transcribe.set_config("client_id", client_id.lower())
-        return self.reply_json({"ok": True})
+        """Het venster stuurt de client-ID; daarna gaat het zelf naar /login. (De oude vorm van /settings;
+        het nieuwe venster stuurt JSON, zie do_POST.)"""
+        result = apply_settings({"iconik.client_id": client_id})
+        return self.reply_json({"ok": True} if result["ok"] else {"ok": False, "error": result["error"]})
 
     def finish_login(self, code, state, error):
         verifier = pending_login.pop(state, None)

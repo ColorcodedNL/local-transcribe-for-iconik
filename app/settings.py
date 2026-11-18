@@ -7,6 +7,7 @@ straks per koppeling onder integrations.<id>.
     register(setting) een deel dat later komt (een engine, een koppeling) voegt zijn eigen instelling toe
     get(key)          de waarde, of de standaardwaarde als er niets (bruikbaars) staat
     put(key, value)   controleert de waarde tegen het schema en bewaart hem; anders SettingError
+    put_many(changes) hetzelfde voor meerdere tegelijk: alles of niets
 
 Lezen is ruim: alleen het type en de grenzen tellen, zoals de app het altijd deed. Bewaren is streng.
 Tot de omzetting naar groepen staat alles nog plat in config.json, onder de oude naam (`flat`).
@@ -41,6 +42,8 @@ class Setting:
     pattern: str = ""        # bij text: de hele tekst moet hier aan voldoen
     max_length: int = 0      # bij text: 0 is geen grens
     advanced: bool = False   # alleen voor wie weet wat hij doet; niet in het gewone venster
+    required: bool = False   # bij text: leeg mag niet
+    invalid: tuple = ()      # (nl, en): eigen melding bij een ongeldige waarde
     extra: dict = field(default_factory=dict)
 
     @property
@@ -85,7 +88,8 @@ _SCHEMA = [
       flat="host", pattern=r"https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/?", max_length=200),
     S("iconik.client_id", "text", "", ("Client-ID", "Client ID"),
       ("Van de app-registratie in Iconik.", "From the app registration in Iconik."),
-      flat="client_id", pattern=r"[0-9a-f-]{36}", extra={"lower": True}),
+      flat="client_id", pattern=r"[0-9a-f-]{36}", required=True, extra={"lower": True},
+      invalid=("Dat lijkt geen geldige client-ID.", "That does not look like a valid client ID.")),
     S("iconik.mounts", "mapping", {}, ("Opslag op deze Mac", "Storage on this Mac"),
       ("Per storage in Iconik de map op deze Mac.", "For each storage in Iconik the folder on this Mac."),
       flat="mounts"),
@@ -153,7 +157,7 @@ def get(key):
 def clean(key, value):
     """De waarde zoals hij bewaard wordt, of SettingError. Verandert niets aan config.json."""
     s = spec(key)
-    wrong = SettingError(f"Ongeldige waarde voor {s.label[0]}.", f"Invalid value for {s.label[1]}.")
+    wrong = SettingError(*(s.invalid or (f"Ongeldige waarde voor {s.label[0]}.", f"Invalid value for {s.label[1]}.")))
     if s.kind == "bool":
         if not isinstance(value, bool):
             raise wrong
@@ -179,6 +183,8 @@ def clean(key, value):
             value = value.lower()
         if s.max_length and len(value) > s.max_length:
             raise SettingError(f"{s.label[0]}: hooguit {s.max_length} tekens.", f"{s.label[1]}: at most {s.max_length} characters.")
+        if s.required and not value:
+            raise wrong
         if s.pattern and value and not re.fullmatch(s.pattern, value):
             raise wrong
         if s.pattern and not value and s.default:   # leeg bij een tekst met een standaardwaarde: terug naar de standaard
@@ -199,10 +205,19 @@ def clean(key, value):
 
 def put(key, value):
     """Controleert en bewaart. Geeft de bewaarde waarde terug."""
-    s = spec(key)
-    value = clean(key, value)
-    base.set_config(s.flat, value)
-    return value
+    return put_many({key: value})[key]
+
+
+def put_many(changes):
+    """Controleert alles eerst; mag één waarde niet, dan wordt niets bewaard (SettingError van de eerste).
+    Daarna in één keer weggeschreven. Geeft de bewaarde waarden terug."""
+    cleaned = {key: clean(key, value) for key, value in changes.items()}
+
+    def change(config):
+        for key, value in cleaned.items():
+            config[spec(key).flat] = value
+    base.update_config(change)
+    return cleaned
 
 
 def defaults():
