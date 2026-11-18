@@ -264,13 +264,12 @@ def find_version(asset):
 
 def set_mount(storage_id, folder):
     """Onthoudt (of vergeet, met None) waar een storage op deze Mac staat."""
-    def change(config):
-        mounts = config.setdefault("mounts", {})
+    def change(mounts):
         if folder is None:
             mounts.pop(storage_id, None)
         else:
             mounts[storage_id] = str(folder)
-    update_config(change)
+    settings.update("iconik.mounts", change)
 
 
 

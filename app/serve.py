@@ -538,6 +538,11 @@ def app_state():
         "spoken_fixed": bool(settings.get("language")), "has_client_id": bool(client_id),
         "mounts": mount_list(setting.get("iconik.mounts")), "model": settings.get("model", ""),
         "speakers": "lokaal" if local else "huggingface" if settings.get("hf_token") else "uit",
+        # Voor het venster Instellingen (stap 3): per groep de waarden, en de koppelingen. De velden hierboven
+        # blijven tot het huidige venster weg is.
+        "general": setting.values("general"),
+        "integrations": [dict(item, values=setting.values(item["type"])) for item in setting.integrations()
+                         if item["type"] in setting.INTEGRATIONS],
         "worker": dict(remote.state, enabled=worker_enabled(), machine=remote.machine_name(),
                        machine_alias=remote.machine_alias[0], computer=remote.computer_name(),
                        login=login_item_on(), login_available=bundle_path() is not None,

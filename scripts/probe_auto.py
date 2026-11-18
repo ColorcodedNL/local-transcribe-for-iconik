@@ -18,6 +18,7 @@ import requests
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "app"))
 import transcribe  # noqa: E402
 import worker  # noqa: E402
+import settings  # noqa: E402
 
 login = transcribe.load_login()
 if not login:
@@ -51,7 +52,7 @@ class Borrowed:
 iconik = Borrowed()
 queue = worker.Queue(iconik)
 queue.setup(create=False)
-storages = list((transcribe.load_config().get("mounts") or {}).keys())
+storages = list(settings.get("iconik.mounts").keys())
 print(f"Opslag die deze Mac kent: {len(storages)}")
 
 for audio in (False, True):

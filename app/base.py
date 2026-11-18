@@ -147,7 +147,10 @@ _system_language = []
 def app_language():
     """De taal van de app: de keuze uit de voorkeuren, anders die van macOS."""
     try:
-        choice = load_config().get("app_language", "auto")
+        # Rechtstreeks uit het bestand: settings komt na base. Plek gelijk aan general.app_language in het
+        # schema (test_settings controleert dat); de platte naam voor een bestand van 0.6 dat nog niet omgezet is.
+        config = load_config()
+        choice = (config.get("general") or {}).get("app_language") or config.get("app_language", "auto")
     except Exception:
         choice = "auto"
     if choice in ("nl", "en"):

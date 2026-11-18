@@ -13,6 +13,7 @@ import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "app"))
 import transcribe  # noqa: E402
+import settings  # noqa: E402
 
 FIELD = "metadata.local_transcribe_status"
 
@@ -94,7 +95,7 @@ if None not in (c["all"], c["C"], c["D"]):
 if None not in (c["A"], c["E"], c["F"]):
     print(f"  E + F = A:      {c['E']} + {c['F']} = {c['E'] + c['F']}  (A: {c['A']})")
 
-mounts = transcribe.load_config().get("mounts") or {}
+mounts = settings.get("iconik.mounts")
 print(f"\nOpslag die deze Mac kent: {len(mounts)}")
 for storage_id in mounts:
     show(f"G  op opslag {storage_id[:8]}", f"files.storage_id:{storage_id} ")

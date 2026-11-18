@@ -26,6 +26,7 @@ for name in ("mlx", "mlx_whisper", "torch", "webview"):
         except Exception:
             sys.modules[name] = types.ModuleType(name)
 import transcribe, serve, worker  # noqa: E402,E401
+import settings  # noqa: E402
 
 transcribe.L = lambda nl, en: nl
 tmp = Path(tempfile.mkdtemp())
@@ -72,39 +73,35 @@ def post(body, header=True, session=True, raw=None):
         return r.status, None
 
 
-def cfg():
-    return transcribe.load_config()
-
-
 # --- wie erbij mag ---
-check("zonder header: 403", post({"general.app_language": "en"}, header=False)[0] == 403 and cfg()["app_language"] == "nl")
-check("zonder sessie: 403", post({"general.app_language": "en"}, session=False)[0] == 403 and cfg()["app_language"] == "nl")
+check("zonder header: 403", post({"general.app_language": "en"}, header=False)[0] == 403 and settings.stored("general.app_language") == "nl")
+check("zonder sessie: 403", post({"general.app_language": "en"}, session=False)[0] == 403 and settings.stored("general.app_language") == "nl")
 _c = http.client.HTTPConnection("127.0.0.1", PORT, timeout=10)
 _c.request("GET", "/settings?client_id=12345678-1234-1234-1234-123456789abd",
            headers={"Host": f"localhost:{PORT}", "Cookie": f"{serve.SESSION_COOKIE}={serve.SESSION}", "X-Local-Transcribe": "1"})
 _status = _c.getresponse().status
-check("als GET: 405 en niets veranderd", _status == 405 and cfg()["client_id"].endswith("abc"), _status)
+check("als GET: 405 en niets veranderd", _status == 405 and settings.stored("iconik.client_id").endswith("abc"), _status)
 
 # --- bewaren ---
 status, r = post({"general.app_language": "en", "transcription.language": "uk", "iconik.auto_max_minutes": "90"})
-check("meerdere tegelijk: bewaard", status == 200 and r["ok"] and cfg()["app_language"] == "en" and cfg()["language"] == "uk"
-      and cfg()["auto_max_minutes"] == 90.0, r)
+check("meerdere tegelijk: bewaard", status == 200 and r["ok"] and settings.stored("general.app_language") == "en" and settings.stored("transcription.language") == "uk"
+      and settings.stored("iconik.auto_max_minutes") == 90.0, r)
 check("antwoord geeft de bewaarde waarden", r["values"] == {"general.app_language": "en", "transcription.language": "uk",
                                                             "iconik.auto_max_minutes": 90.0}, r)
-check("de rest bleef staan", cfg()["mounts"] == {"opslag-1": "/Volumes/ISG"} and cfg()["client_id"].startswith("12345678"))
+check("de rest bleef staan", settings.stored("iconik.mounts") == {"opslag-1": "/Volumes/ISG"} and settings.stored("iconik.client_id").startswith("12345678"))
 
 # --- alles of niets ---
 status, r = post({"general.app_language": "nl", "iconik.auto_max_minutes": -5})
-check("één ongeldig: niets bewaard", not r["ok"] and cfg()["app_language"] == "en" and cfg()["auto_max_minutes"] == 90.0, r)
+check("één ongeldig: niets bewaard", not r["ok"] and settings.stored("general.app_language") == "en" and settings.stored("iconik.auto_max_minutes") == 90.0, r)
 check("melding per sleutel", list(r["errors"]) == ["iconik.auto_max_minutes"] and "Langste asset" in r["error"], r)
 status, r = post({"bestaat.niet": 1})
 check("onbekende instelling", not r["ok"] and "bestaat.niet" in r["errors"], r)
 status, r = post({"iconik.mounts": {}})
-check("mounts alleen via de mappenkiezer", not r["ok"] and cfg()["mounts"] == {"opslag-1": "/Volumes/ISG"}, r)
+check("mounts alleen via de mappenkiezer", not r["ok"] and settings.stored("iconik.mounts") == {"opslag-1": "/Volumes/ISG"}, r)
 status, r = post({"refine.subtitles": {}})
 check("ondertitels alleen via Refine", not r["ok"], r)
 status, r = post({"iconik.client_id": ""})
-check("client-ID niet leeg", not r["ok"] and r["error"] == "Dat lijkt geen geldige client-ID." and cfg()["client_id"].startswith("12345678"), r)
+check("client-ID niet leeg", not r["ok"] and r["error"] == "Dat lijkt geen geldige client-ID." and settings.stored("iconik.client_id").startswith("12345678"), r)
 status, r = post({})
 check("leeg verzoek", not r["ok"], r)
 status, r = post(None, raw=b"{kapot")
@@ -123,24 +120,34 @@ serve.storage_wake.clear()
 status, r = post({"iconik.auto_transcribe": True})
 check("auto aan: opslag en werker meteen kijken", r["ok"] and serve.storage_wake.is_set() and worker.wake.is_set(), r)
 status, r = post({"iconik.machine_name": "  Montage\n 3  " + "x" * 60})
-check("naam van de Mac: opgeschoond en ingekort zoals altijd", r["ok"] and len(cfg()["machine_name"]) <= worker.MAX_NAME
-      and cfg()["machine_name"].startswith("Montage 3") and worker.machine_name() == cfg()["machine_name"], cfg().get("machine_name"))
+check("naam van de Mac: opgeschoond en ingekort zoals altijd", r["ok"] and len(settings.stored("iconik.machine_name")) <= worker.MAX_NAME
+      and settings.stored("iconik.machine_name").startswith("Montage 3") and worker.machine_name() == settings.stored("iconik.machine_name"), settings.stored("iconik.machine_name"))
 is_busy[0] = True
 status, r = post({"iconik.machine_name": "Anders", "general.app_language": "nl"})
 check("naam niet tijdens een opdracht, en dan ook de rest niet", not r["ok"] and "Wacht" in r["error"]
-      and cfg()["app_language"] == "en" and worker.machine_name().startswith("Montage 3"), r)
+      and settings.stored("general.app_language") == "en" and worker.machine_name().startswith("Montage 3"), r)
 is_busy[0] = False
 status, r = post({"iconik.iconik_language": "en"})
-check("labeltaal: niet ingelogd, dus niet bewaard", not r["ok"] and "Niet ingelogd" in r["error"] and "iconik_language" not in cfg(), r)
+check("labeltaal: niet ingelogd, dus niet bewaard", not r["ok"] and "Niet ingelogd" in r["error"] and settings.stored("iconik.iconik_language") is None, r)
 status, r = post({"iconik.iconik_language": ""})
-check("labeltaal leeg (volgt de app): zonder Iconik bewaard", r["ok"] and cfg()["iconik_language"] == "", r)
+check("labeltaal leeg (volgt de app): zonder Iconik bewaard", r["ok"] and settings.stored("iconik.iconik_language") == "", r)
 logouts.clear()
 status, r = post({"iconik.host": "https://app.iconik.io"})
 check("Iconik-adres gelijk: blijft ingelogd", r["ok"] and not logouts, r)
 status, r = post({"iconik.host": "https://eu.iconik.io"})
 check("ander Iconik-adres: uitgelogd", r["ok"] and logouts == [1] and transcribe.api_host() == "https://eu.iconik.io", r)
 status, r = post({"iconik.host": "http://eu.iconik.io"})
-check("Iconik-adres zonder https geweigerd", not r["ok"] and cfg()["host"] == "https://eu.iconik.io", r)
+check("Iconik-adres zonder https geweigerd", not r["ok"] and settings.stored("iconik.host") == "https://eu.iconik.io", r)
+
+# --- /state: de blokken voor het venster Instellingen, naast de oude velden ---
+_c = http.client.HTTPConnection("127.0.0.1", PORT, timeout=10)
+_c.request("GET", "/state", headers={"Host": f"localhost:{PORT}", "Cookie": f"{serve.SESSION_COOKIE}={serve.SESSION}"})
+state = json.loads(_c.getresponse().read())
+check("/state: general met de taal van de app", state.get("general") == {"general.app_language": "en"}, state.get("general"))
+check("/state: één Iconik-koppeling met zijn waarden", len(state.get("integrations", [])) == 1
+      and state["integrations"][0]["type"] == "iconik" and state["integrations"][0]["values"]["iconik.host"] == "https://eu.iconik.io",
+      state.get("integrations"))
+check("/state: de oude velden zijn er nog", "worker" in state and "mounts" in state and "app_language" in state)
 
 # --- de oude knoppen gaan via dezelfde ingang ---
 check("alle wijzigingen in serve.py via apply_settings", "set_config(" not in Path("app/serve.py").read_text())

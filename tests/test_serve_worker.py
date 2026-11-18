@@ -24,6 +24,7 @@ for name in ("keyring", "numpy", "mlx", "mlx_whisper", "torch", "webview"):
         except Exception:
             sys.modules[name] = types.ModuleType(name)
 import transcribe, serve, worker  # noqa: E402,E401
+import settings  # noqa: E402
 
 transcribe.CONFIG_PATH = Path(tempfile.mkdtemp()) / "config.json"   # nooit de echte voorkeuren aanraken
 fails = 0
@@ -54,7 +55,7 @@ check("zonder header: 403 en niets veranderd", get("/worker?value=on") == 403 an
 worker.pause()
 worker.wake.clear()
 check("met header aan: 200", get("/worker?value=on", header) == 200)
-check("  staat nu in de voorkeuren", serve.worker_enabled() is True and transcribe.load_config()["worker_enabled"] is True)
+check("  staat nu in de voorkeuren", serve.worker_enabled() is True and settings.stored("iconik.worker_enabled") is True)
 check("  en de werker wordt wakker gemaakt", worker.wake.is_set())
 check("  en een pauze na een fout vervalt", worker.paused() is False and worker.state["paused_until"] is None)
 check("onbekende waarde verandert niets", get("/worker?value=misschien", header) == 200 and serve.worker_enabled() is True)
@@ -65,7 +66,7 @@ check("hervatten met header: pauze weg en de werker wordt wakker", get("/worker?
       and worker.paused() is False and worker.wake.is_set() and serve.worker_enabled() is True)
 check("met header uit: 200 en uit", get("/worker?value=off", header) == 200 and serve.worker_enabled() is False)
 check("andere voorkeuren blijven staan", (transcribe.save_config({**transcribe.load_config(), "language": "nl"}) or True)
-      and get("/worker?value=on", header) == 200 and transcribe.load_config().get("language") == "nl")
+      and get("/worker?value=on", header) == 200 and settings.stored("transcription.language") == "nl")
 
 try:
     transcribe.fail("x", local=True)
@@ -101,31 +102,31 @@ real_queue, real_client = serve.remote.Queue, serve.client
 serve.remote.Queue, serve.client = StubQueue, lambda: object()
 check("taal van de velden: zonder header 403", get("/iconik-language?value=en") == 403 and not calls)
 check("taal van de velden: onbekende taal doet niets", get("/iconik-language?value=fr", header) == 200 and not calls
-      and "iconik_language" not in transcribe.load_config())
+      and settings.stored("iconik.iconik_language") is None)
 check("taal van de velden: Engels kiezen maakt eerst de velden af en zet dan de labels",
       get("/iconik-language?value=en", header) == 200 and calls == [("setup", True, "en"), ("apply", "en")])
-check("  en onthoudt de keuze", transcribe.load_config().get("iconik_language") == "en"
+check("  en onthoudt de keuze", settings.stored("iconik.iconik_language") == "en"
       and serve.worker_languages()[1] == "en")
 serve.client = lambda: None
 calls.clear()
-before = transcribe.load_config().get("iconik_language")
+before = settings.stored("iconik.iconik_language")
 get("/iconik-language?value=nl", header)
-check("  niet ingelogd: niets gewijzigd, keuze blijft", not calls and transcribe.load_config().get("iconik_language") == before)
+check("  niet ingelogd: niets gewijzigd, keuze blijft", not calls and settings.stored("iconik.iconik_language") == before)
 serve.remote.Queue, serve.client = real_queue, real_client
 check("  en het venster krijgt de gekozen taal mee", serve.app_state()["worker"]["iconik_language"] == "en")
 
 # --- auto transcribe: schakelaars, instellingen, wakker houden
 check("auto: zonder header 403 en niets veranderd", get("/auto?value=on") == 403
-      and not transcribe.load_config().get("auto_transcribe"))
+      and not settings.stored("iconik.auto_transcribe"))
 worker.wake.clear()
-check("auto aan met header", get("/auto?value=on", header) == 200 and transcribe.load_config().get("auto_transcribe") is True
+check("auto aan met header", get("/auto?value=on", header) == 200 and settings.stored("iconik.auto_transcribe") is True
       and worker.wake.is_set())
-check("audio apart aan te zetten", get("/auto?audio=on", header) == 200 and transcribe.load_config().get("auto_audio") is True
-      and transcribe.load_config().get("auto_transcribe") is True)
+check("audio apart aan te zetten", get("/auto?audio=on", header) == 200 and settings.stored("iconik.auto_audio") is True
+      and settings.stored("iconik.auto_transcribe") is True)
 state = serve.app_state()["worker"]
 check("het venster krijgt auto en audio mee", state["auto_on"] is True and state["auto_audio"] is True and "awake" in state)
 get("/auto?audio=off", header)
-check("audio uit laat auto aan", transcribe.load_config().get("auto_audio") is False and transcribe.load_config().get("auto_transcribe") is True)
+check("audio uit laat auto aan", settings.stored("iconik.auto_audio") is False and settings.stored("iconik.auto_transcribe") is True)
 
 
 class FakeMeter:
@@ -271,15 +272,15 @@ real_busy = serve.busy
 serve.busy = lambda: False
 check("naam: zonder header 403", get("/machine-name?value=Montage") == 403 and not worker.machine_alias[0])
 check("naam: bewaard en meteen in gebruik", get("/machine-name?value=Montage%203", header) == 200
-      and transcribe.load_config().get("machine_name") == "Montage 3" and worker.machine_name() == "Montage 3")
+      and settings.stored("iconik.machine_name") == "Montage 3" and worker.machine_name() == "Montage 3")
 check("naam: het venster krijgt de eigen naam en de computernaam", serve.app_state()["worker"]["machine_alias"] == "Montage 3"
       and serve.app_state()["worker"]["computer"] == worker.computer_name() and serve.app_state()["worker"]["machine"] == "Montage 3")
 serve.busy = lambda: True
 check("naam: niet tijdens een opdracht", get("/machine-name?value=Anders", header) == 200 and worker.machine_name() == "Montage 3"
-      and transcribe.load_config().get("machine_name") == "Montage 3")
+      and settings.stored("iconik.machine_name") == "Montage 3")
 serve.busy = lambda: False
 check("naam: leeg maken geeft de computernaam terug", get("/machine-name?value=", header) == 200
-      and worker.machine_name() == worker.computer_name() and transcribe.load_config().get("machine_name") == "")
+      and worker.machine_name() == worker.computer_name() and settings.stored("iconik.machine_name") == "")
 serve.busy = real_busy
 
 print("\nALLES OK" if not fails else f"\n{fails} FOUT")

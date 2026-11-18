@@ -44,6 +44,7 @@ for name in ("mlx", "mlx_whisper", "torch", "webview"):
             sys.modules[name] = types.ModuleType(name)
 
 import transcribe, serve  # noqa: E402,E401
+import settings as app_settings  # noqa: E402  (`settings` is hieronder het blok Voorkeuren op de pagina)
 from playwright.sync_api import sync_playwright  # noqa: E402
 
 fails = 0
@@ -191,14 +192,14 @@ with sync_playwright() as p:
         account.locator('input[name="client_id"]').fill("geen-id")
         account.get_by_role("button", name="Opslaan en inloggen").click()
         page.get_by_text("Dat lijkt geen geldige client-ID.").wait_for(timeout=5000)
-        check("ongeldige client-ID: melding, niets bewaard", transcribe.load_config()["client_id"] == sorted(CLIENT_IDS)[0])
+        check("ongeldige client-ID: melding, niets bewaard", app_settings.stored("iconik.client_id") == sorted(CLIENT_IDS)[0])
         other = sorted(CLIENT_IDS)[1]
         account.locator('input[name="client_id"]').fill(other.upper())
         account.get_by_role("button", name="Opslaan en inloggen").click()
         page.wait_for_url(BASE + "/", timeout=10000)
         settings.click()
         account.get_by_text("Ingelogd als").wait_for(timeout=5000)
-        check("geldige client-ID: bewaard en ingelogd", transcribe.load_config()["client_id"] == other and logged_in())
+        check("geldige client-ID: bewaard en ingelogd", app_settings.stored("iconik.client_id") == other and logged_in())
 
         # 5. Klik vanuit Iconik terwijl je uitgelogd bent: eerst inloggen, daarna staan de opdrachten in de rij
         account.get_by_role("link", name="Log uit").click()
@@ -217,30 +218,30 @@ with sync_playwright() as p:
         settings.click()
         page.locator("#workerOn").check()
         page.wait_for_timeout(500)
-        check("opdrachten op afstand aan", transcribe.load_config().get("worker_enabled") is True)
+        check("opdrachten op afstand aan", app_settings.stored("iconik.worker_enabled") is True)
 
         # Eigen naam voor deze Mac in Iconik: niet tijdens een opdracht, daarna wel
         name_field = page.locator('#nameForm input[name="machine"]')
         name_field.fill("Montage 3")
         page.locator("#nameForm button").click()
         page.get_by_text("Wacht tot de lopende opdracht klaar is.").wait_for(timeout=5000)
-        check("naam van de Mac: geweigerd terwijl er opdrachten wachten", not transcribe.load_config().get("machine_name"))
+        check("naam van de Mac: geweigerd terwijl er opdrachten wachten", not app_settings.stored("iconik.machine_name"))
         real_busy, serve.busy = serve.busy, lambda: False
         name_field.fill("Montage 3")
         page.locator("#nameForm button").click()
         page.locator("#worker p.dim", has_text="Montage 3").first.wait_for(timeout=5000)
-        check("naam van de Mac: bewaard en getoond", transcribe.load_config().get("machine_name") == "Montage 3")
+        check("naam van de Mac: bewaard en getoond", app_settings.stored("iconik.machine_name") == "Montage 3")
         name_field.fill("")
         page.locator("#nameForm button").click()
         page.wait_for_timeout(500)
-        check("naam van de Mac: leeg maken geeft de computernaam terug", transcribe.load_config().get("machine_name") == ""
+        check("naam van de Mac: leeg maken geeft de computernaam terug", app_settings.stored("iconik.machine_name") == ""
               and serve.remote.machine_name() == serve.remote.computer_name())
         serve.busy = real_busy
 
         # Auto transcribe: schakelaar en vinkje onder opdrachten op afstand, status van de meter
         page.locator("#autoOn").check()
         page.wait_for_timeout(500)
-        check("automatisch transcriberen aan", transcribe.load_config().get("auto_transcribe") is True)
+        check("automatisch transcriberen aan", app_settings.stored("iconik.auto_transcribe") is True)
         serve.remote.state["auto"] = {"ready": False, "reason": "gpu", "values": {"gpu": 63.0}}
         page.get_by_text("GPU 63% bezet").wait_for(timeout=5000)
         check("het venster zegt waarop auto wacht", True)
@@ -251,11 +252,11 @@ with sync_playwright() as p:
         check("en wanneer hij klaar is", True)
         page.locator("#autoAudio").check()
         page.wait_for_timeout(500)
-        check("ook audio aan", transcribe.load_config().get("auto_audio") is True)
+        check("ook audio aan", app_settings.stored("iconik.auto_audio") is True)
         page.locator("#autoOn").uncheck()
         page.wait_for_timeout(500)
         check("automatisch transcriberen uit, audio-keuze blijft bewaard",
-              transcribe.load_config().get("auto_transcribe") is False and transcribe.load_config().get("auto_audio") is True)
+              app_settings.stored("iconik.auto_transcribe") is False and app_settings.stored("iconik.auto_audio") is True)
         check("vinkje voor audio verdwijnt als auto uit staat", page.locator("#autoAudio").count() == 0)
         serve.remote.state["auto"] = None
         serve.jobs[0]["auto"] = True
@@ -267,7 +268,7 @@ with sync_playwright() as p:
 
         page.locator("#workerOn").uncheck()
         page.wait_for_timeout(500)
-        check("opdrachten op afstand uit", transcribe.load_config().get("worker_enabled") is False)
+        check("opdrachten op afstand uit", app_settings.stored("iconik.worker_enabled") is False)
         page.locator("#loginOn").check()
         page.wait_for_timeout(500)
         check("opstarten bij inloggen aan", serve.login_item_on())
@@ -276,13 +277,13 @@ with sync_playwright() as p:
         check("opstarten bij inloggen uit", not serve.login_item_on())
         page.locator("#lang").select_option("en")
         account.get_by_role("link", name="Log out").wait_for(timeout=5000)
-        check("taal van de app naar Engels", transcribe.load_config().get("app_language") == "en")
+        check("taal van de app naar Engels", app_settings.stored("general.app_language") == "en")
         page.locator("#lang").select_option("nl")
         account.get_by_role("link", name="Log uit").wait_for(timeout=5000)
         page.locator("#spoken").select_option("en")
         page.wait_for_timeout(500)
-        check("gesproken taal bewaard", transcribe.load_config().get("language") == "en")
-        check("client-ID bleef bij al die wijzigingen staan", transcribe.load_config().get("client_id") == other)
+        check("gesproken taal bewaard", app_settings.stored("transcription.language") == "en")
+        check("client-ID bleef bij al die wijzigingen staan", app_settings.stored("iconik.client_id") == other)
 
         # 7. Een andere website probeert uit te loggen en de lijst te wissen
         evil = browser.new_page()

@@ -210,7 +210,7 @@ def existing_subtitles(asset_id):
 
 
 def _remember(**values):
-    core.update_config(lambda config: config.setdefault("subtitles", {}).update(values))
+    settings.update("refine.subtitles", lambda kept: kept.update(values))
 
 
 def preview_subtitles(asset_id, raw):

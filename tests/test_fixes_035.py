@@ -29,6 +29,7 @@ for name in ("mlx", "mlx_whisper", "torch", "webview"):
 
 import numpy as np  # noqa: E402
 import transcribe, serve  # noqa: E402,E401
+import settings  # noqa: E402
 
 transcribe.L = lambda nl, en: nl
 tmp = Path(tempfile.mkdtemp())
@@ -137,10 +138,10 @@ with serve.jobs_lock:
 status, _, body = get("/settings?client_id=nee", WINDOW)
 check("ongeldige client-ID geeft een melding", status == 200 and not json.loads(body)["ok"], body)
 status, _, body = get("/settings?client_id=ABCDEF12-1234-1234-1234-123456789ABC", WINDOW)
-check("geldige client-ID wordt bewaard", json.loads(body)["ok"] and transcribe.load_config()["client_id"].startswith("abcdef12"))
+check("geldige client-ID wordt bewaard", json.loads(body)["ok"] and settings.stored("iconik.client_id").startswith("abcdef12"))
 status, _, body = get("/applang?value=en", WINDOW)
-check("taal zetten laat de client-ID staan", transcribe.load_config().get("app_language") == "en"
-      and transcribe.load_config().get("client_id", "").startswith("abcdef12"), transcribe.load_config())
+check("taal zetten laat de client-ID staan", settings.stored("general.app_language") == "en"
+      and (settings.stored("iconik.client_id") or "").startswith("abcdef12"), transcribe.load_config())
 
 
 def boom():
@@ -189,9 +190,10 @@ for w in workers:
     w.join()
 config = transcribe.load_config()
 check("40 instellingen en 40 mounts tegelijk: alles bewaard",
-      all(config.get(f"k{i}") == i for i in range(40)) and len(config.get("mounts", {})) == 40 and config["client_id"] == "c")
+      all(config.get(f"k{i}") == i for i in range(40)) and len(settings.stored("iconik.mounts")) == 40
+      and settings.stored("iconik.client_id") == "c")
 transcribe.set_mount("s0", None)
-check("mount vergeten", "s0" not in transcribe.load_config()["mounts"])
+check("mount vergeten", "s0" not in settings.stored("iconik.mounts"))
 check("geen tijdelijk bestand achtergebleven", not (tmp / "config.json.tmp").exists())
 
 # --- 4. Push: eerst nieuw, dan oud weg; bij een fout blijft het oude staan
@@ -300,7 +302,7 @@ transcribe.save_config({**transcribe.load_config(), "expected_languages": ["nl",
 iconik = FakeIconik()
 deleted, problem = run_push(iconik, language="auto", detected="ru")
 check("verwachte talen zijn instelbaar", problem is None, problem)
-transcribe.save_config({k: v for k, v in transcribe.load_config().items() if k != "expected_languages"})
+settings.raw_put("transcription.expected_languages", None)   # weer de standaard
 
 # --- 5. Sporenvergelijking op 1 kHz geeft dezelfde uitkomst als np.corrcoef
 rng = np.random.default_rng(1)

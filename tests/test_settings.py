@@ -118,8 +118,11 @@ check("bewaren: geweigerd verandert het bestand niet", raw() == before)
 # --- put schrijft onder de oude naam, de rest blijft staan ---
 settings.put("iconik.auto_transcribe", True)
 settings.put("iconik.client_id", "ABCDEF12-1234-1234-1234-123456789ABC")
-check("put: onder de oude naam", raw().get("auto_transcribe") is True and raw().get("client_id").startswith("abcdef12"))
-check("put: andere instellingen blijven", raw().get("mounts") == {"opslag-1": "/Volumes/ISG"} and raw().get("app_language") == "nl")
+iconik_block = next(v for v in raw()["integrations"].values() if v.get("type") == "iconik")
+check("put: in de nieuwe indeling, bij de koppeling", raw().get("version") == 2 and iconik_block.get("auto_transcribe") is True
+      and iconik_block.get("client_id", "").startswith("abcdef12") and "auto_transcribe" not in raw(), raw())
+check("put: andere instellingen blijven", iconik_block.get("mounts") == {"opslag-1": "/Volumes/ISG"}
+      and raw()["general"].get("app_language") == "nl", raw())
 check("put: en get leest het terug", settings.get("iconik.auto_transcribe") is True)
 
 # --- beschrijving voor het venster ---
@@ -153,6 +156,73 @@ try:
     check("aanmelden: een andere met dezelfde sleutel wordt geweigerd", False)
 except ValueError:
     check("aanmelden: een andere met dezelfde sleutel wordt geweigerd", True)
+
+# --- de omzetting van een plat bestand (0.6) ---
+import shutil  # noqa: E402
+old_path = transcribe.CONFIG_PATH
+folder = Path(tempfile.mkdtemp())
+transcribe.CONFIG_PATH = folder / "config.json"
+flat = {"app_language": "nl", "language": "uk", "client_id": "abcdef12-1234-1234-1234-123456789abc",
+        "host": "https://eu.iconik.io", "mounts": {"opslag-1": "/Volumes/ISG"}, "worker_enabled": True,
+        "auto_transcribe": True, "auto_audio": False, "machine_name": "Montage 3", "iconik_language": "en",
+        "auto_max_minutes": 90, "auto_min_free_gb": 10, "mlx_cache_gb": 0, "expected_languages": ["nl", "en", "ru"],
+        "subtitles": {"rules": {"max_chars": 37}, "formats": "both", "place": "other"}, "iets_onbekends": [1, 2]}
+transcribe.CONFIG_PATH.write_text(json.dumps(flat))
+before_text = transcribe.CONFIG_PATH.read_text()
+check("omzetting: elke instelling leest na de omzetting hetzelfde als ervoor",
+      all(settings.get(s.key) == (float(flat[s.flat]) if s.kind == "number" else flat[s.flat])
+          for s in S.values() if s.flat in flat),
+      {s.key: settings.get(s.key) for s in S.values() if s.flat in flat})
+new_file = raw()
+check("omzetting: versie 2 met de groepen", new_file.get("version") == 2
+      and all(isinstance(new_file.get(g), dict) for g in ("general", "transcription", "refine", "integrations")), new_file)
+items = list(new_file["integrations"].items())
+check("omzetting: één Iconik-koppeling met een eigen kenmerk", len(items) == 1 and items[0][1]["type"] == "iconik"
+      and __import__("re").fullmatch(r"iconik-[0-9a-f]{6}", items[0][0]), items)
+check("omzetting: geen platte instellingen meer bovenaan", not any(s.flat in new_file for s in S.values()), list(new_file))
+check("omzetting: onbekende sleutel blijft ongemoeid", new_file.get("iets_onbekends") == [1, 2])
+check("omzetting: de grenzen voor automatisch werk bij transcriptie", new_file["transcription"].get("auto_min_free_gb") == 10
+      and iconik_block is not None and items[0][1].get("auto_max_minutes") == 90)
+backup = folder / "config-0.6.json"
+check("omzetting: reservekopie config-0.6.json, gelijk aan het oude bestand",
+      backup.is_file() and backup.read_text() == before_text)
+same_id = items[0][0]
+settings.put("iconik.machine_name", "Montage 4")
+check("omzetting: maar één keer; het kenmerk blijft", list(raw()["integrations"]) == [same_id] and backup.read_text() == before_text)
+transcribe.save_config({**raw(), "auto_audio": True})
+check("een losse platte sleutel later (een deel dat later aanmeldt) gaat ook op zijn plek",
+      settings.get("iconik.auto_audio") is True and "auto_audio" not in raw() and list(raw()["integrations"]) == [same_id])
+check("taal van de app in base leest de nieuwe plek", transcribe.app_language() == "nl"
+      and S["general.app_language"].key == "general.app_language")
+settings.put("general.app_language", "en")
+check("taal van de app in base volgt een wijziging", transcribe.app_language() == "en")
+settings.put("general.app_language", "nl")
+check("koppelingen voor het venster", settings.integrations() == [{"id": same_id, "type": "iconik"}])
+check("waarden per groep voor het venster", settings.values("general") == {"general.app_language": "nl"}
+      and settings.values("iconik")["iconik.machine_name"] == "Montage 4")
+check("stored: niets bewaard is None, geen standaard", settings.stored("transcription.prefetch_min_free_gb") is None)
+settings.update("iconik.mounts", lambda m: m.update({"opslag-2": "/Volumes/B"}))
+check("update: mounts aangevuld, de rest bleef", settings.get("iconik.mounts") == {"opslag-1": "/Volumes/ISG", "opslag-2": "/Volumes/B"})
+
+# leeg of ontbrekend bestand: niets schrijven bij alleen lezen
+transcribe.CONFIG_PATH = folder / "leeg" / "config.json"
+check("geen bestand: standaardwaarden, en er wordt niets geschreven",
+      settings.get("iconik.auto_transcribe") is False and not transcribe.CONFIG_PATH.exists())
+settings.put("iconik.auto_transcribe", True)
+check("geen bestand: het eerste bewaren maakt versie 2, zonder reservekopie",
+      raw().get("version") == 2 and settings.get("iconik.auto_transcribe") is True
+      and not (folder / "leeg" / "config-0.6.json").exists(), raw())
+transcribe.CONFIG_PATH = old_path
+shutil.rmtree(folder, ignore_errors=True)
+
+# --- kopjes ---
+check("kopjes: elk kopje bestaat", all(not s.section or s.section in settings.SECTIONS for s in S.values()))
+auto = [i for i in settings.describe("transcription", advanced=True) if i.get("section", {}).get("id") == "automatic"]
+check("kopjes: de drie ruimtegrenzen onder 'Werk dat de app vanzelf oppakt'",
+      sorted(i["key"] for i in auto) == ["transcription.auto_max_cpu", "transcription.auto_max_gpu", "transcription.auto_min_free_gb"]
+      and auto[0]["section"]["title"] == "Werk dat de app vanzelf oppakt", auto)
+check("kopjes: auto transcribe bij Iconik verwijst ernaar", "Transcriptie" in base_help if (base_help := next(
+      i["help"] for i in settings.describe("iconik") if i["key"] == "iconik.auto_transcribe")) else False)
 
 # --- via de vaste ingang ---
 check("transcribe kent settings als deel", settings in transcribe.PARTS
