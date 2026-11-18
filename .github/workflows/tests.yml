@@ -7,11 +7,25 @@ on: [push, pull_request]
 jobs:
   tests:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
       - name: ffmpeg
-        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends ffmpeg
+        # Bleef in november twee keer hangen tot de hele job stopte. Nu: nooit een vraag die op antwoord wacht
+        # (noninteractive), een tijdslimiet per download met nieuwe pogingen, en de stap zelf begrensd.
+        timeout-minutes: 12
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          APT="-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Dpkg::Use-Pty=0"
+          for attempt in 1 2; do
+            if sudo -E timeout 120 apt-get $APT update -q && sudo -E timeout 180 apt-get $APT install -y -q --no-install-recommends ffmpeg; then
+              break
+            fi
+            echo "ffmpeg installeren lukte niet (poging $attempt), opnieuw"
+            sleep 10
+          done
+          ffmpeg -version | head -1
       - name: uv
         run: pipx install uv
       - name: Tests
