@@ -28,7 +28,7 @@ Found something we missed? Open an issue, or for anything sensitive use a privat
 | Model | Revision | How | Notes |
 | --- | --- | --- | --- |
 | pyannote/speaker-diarization-community-1 | bundled | `Resources/models/`, loaded locally | |
-| mlx-community/whisper-large-v3-mlx | `49e6aa286ad60c14352c404340ded53710378a11` | downloaded from Hugging Face on first use, at this revision (`MODEL_REVISIONS` in `app/transcribe.py`) | pinned from 0.4.1 |
+| mlx-community/whisper-large-v3-mlx | `49e6aa286ad60c14352c404340ded53710378a11` | downloaded from Hugging Face on first use, at this revision (`MODEL_REVISIONS` in `app/whisper_mlx.py`) | pinned from 0.4.1 |
 
 ## Python packages (104)
 
@@ -172,7 +172,7 @@ Vulnerabilities in distributed training, CUDA, server use of torch, lightning or
 | 2026-11-14 | pip-audit: 13 advisories for filelock 4.0.12 (CVE-2026-112907 and others), CVE-2026-126360 for opentelemetry-api 1.45.1, GHSA-xmj3-9gf7-h52w for setuptools 84.0.0 | Python packages | Fixed in 0.5.1 | Upgraded to filelock 4.2.10, opentelemetry-api and -sdk 1.45.2, setuptools 84.2.1. pip-audit clean after the upgrade |
 | 2026-11-14 | FFmpeg 9.0.3 | FFmpeg 9.0.2 | Not released yet | Newest tag is still n9.0.2; CVE-2026-107678 and -107677 stay open |
 | 2026-11-14 | Code updates trusted after download; local receiver readable by other local processes | App | Fixed in 0.5.1 | Signed zip verified at every start and run from memory (shell 5), session on the receiver |
-| 2026-10-23 | Supply chain | Whisper model | Fixed in 0.4.1 | Pinned to revision `49e6aa2` (`MODEL_REVISIONS` in `app/transcribe.py`). Every release checks for a newer revision and ships it after testing |
+| 2026-10-23 | Supply chain | Whisper model | Fixed in 0.4.1 | Pinned to revision `49e6aa2` (`MODEL_REVISIONS` in `app/whisper_mlx.py`). Every release checks for a newer revision and ships it after testing |
 
 ## Updating this file
 

@@ -5,7 +5,8 @@ Notes for an AI coding session in this repo. The README says what the app does; 
 ## Layout
 
 - `app/` is the app. Everything in `CODE_FILES` in `tools/make_manifest.py` can go out as a small signed code update. `main.py` and `app_shell.py` are the fixed shell: they start the app and verify updates, and only change with a new dmg and a higher `SHELL_VERSION`. Touch them only when there is no other way.
-  - `transcribe.py`: the engine (track analysis, Whisper, speakers, filters) and, for now, also the Iconik login, the client and the config
+  - `transcribe.py`: the fixed entrance to the engine parts below, and the command line. Holds `APP_VERSION` (the build scripts read it there). Reading `transcribe.X` gives the live value from the part where X lives; `transcribe.X = ...` sets it in every part that knows X, so tests and `serve.py` keep working. New code imports the part itself
+  - `base.py` (names, paths, log, progress, language, errors, config), `iconik_api.py` (login, client, ISG mounts, find the media file), `audio.py` (ffmpeg, track analysis, waveforms), `speakers.py`, `filters.py`, `whisper_mlx.py` (pinned model, language detection), `pipeline.py` (one job from start to end). A part only imports from parts earlier in this order; `tests/test_split.py` checks that
   - `iconik.py`: the Iconik connector (open, find media, write, read). `worker.py`: the queue in Iconik for remote jobs and auto transcribe
   - `serve.py`: the local receiver on 127.0.0.1:8765 and the job list. `ui.html`, `refine.html`: the window. `refine.py`: the editor's backend. `transcript.py`: the own transcript model. `subtitles.py`: subtitles as a second layer that someone makes on purpose in Refine (dividing by rules, fitting, warnings, .srt and .vtt files)
   - `app_main.py`: the Mac app around it (window, menu bar, links from Iconik). `updater.py`: code updates
@@ -14,7 +15,7 @@ Notes for an AI coding session in this repo. The README says what the app does; 
 
 ## Rules that came out of earlier work
 
-- New files in `app/` that the app needs go into `CODE_FILES`, or a code update leaves them out. Code updates only know flat file names, no folders.
+- New files in `app/` that the app needs go into `CODE_FILES` (and a new engine part into `PARTS` in `transcribe.py`), or a code update leaves them out. Code updates only know flat file names, no folders.
 - Code in a code update also runs on apps with an older shell. Reach for something new in `app_shell` with `getattr` and keep a fallback.
 - Everything on the receiver needs a session (cookie of the app's own window, or the listener key). A route that changes something goes into `PROTECTED` and is called as a POST with the `X-Local-Transcribe` header. New window behaviour gets a step in `tests/test_e2e.py`, or in `tests/test_refine_window.py` for Refine.
 - Never overwrite a transcript from another source or a correction made in Refine.

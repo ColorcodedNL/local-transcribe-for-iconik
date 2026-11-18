@@ -150,7 +150,10 @@ bash scripts/run_tests.sh       # all tests, also run by the two build scripts a
 | `app/main.py`, `app_shell.py` | Boot layer: picks the bundled code or a verified update, shell version and public update key |
 | `app/app_main.py` | The app: window, menu bar, Iconik links, quitting |
 | `app/serve.py` | Local receiver, job queue, sign-in, Custom Actions, preferences |
-| `app/transcribe.py` | The engine: audio tracks, Whisper, speakers, filters. Also usable from the command line |
+| `app/transcribe.py` | Entrance to the engine parts and the command line; holds the version number |
+| `app/base.py`, `pipeline.py` | Shared basics (paths, log, language, settings) and one job from start to end |
+| `app/audio.py`, `speakers.py`, `filters.py`, `whisper_mlx.py` | The engine: audio tracks, speakers, filters, Whisper on MLX |
+| `app/iconik_api.py` | Iconik sign-in, client, ISG mounts and finding the media file |
 | `app/transcript.py` | The app's own transcript model and file format |
 | `app/iconik.py` | The Iconik connector: open an asset, find the media, write and read transcripts |
 | `app/refine.py`, `refine.html` | Refine: player pieces, waveforms, drafts, saving and restoring |

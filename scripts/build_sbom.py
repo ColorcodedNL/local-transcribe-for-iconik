@@ -107,8 +107,8 @@ def models():
             "licenses": [{"expression": "CC-BY-4.0"}],
         })
     # Het Whisper-model zit niet in de bundel: de app haalt het bij het eerste gebruik op, op de vaste
-    # revisie uit MODEL_REVISIONS in transcribe.py. Die revisie hoort er dus wel in.
-    source = (RES / "app" / "transcribe.py").read_text()
+    # revisie uit MODEL_REVISIONS in whisper_mlx.py. Die revisie hoort er dus wel in.
+    source = (RES / "app" / "whisper_mlx.py").read_text()
     for repo, revision in re.findall(r'"([\w.-]+/[\w.-]+)":\s*"([0-9a-f]{40})"', source):
         found.append({
             "type": "machine-learning-model",

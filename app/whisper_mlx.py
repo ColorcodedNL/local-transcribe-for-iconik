@@ -1,0 +1,93 @@
+"""Whisper op MLX: het vastgezette model ophalen en de taal bepalen. In stap 1d komt hier de engine-interface omheen.
+"""
+import sys
+from pathlib import Path
+
+from base import L, SAMPLE_RATE, fail, print, tell  # noqa: F401
+
+
+LANGUAGE_WINDOWS = 5  # aantal stukken van 30 seconden waarop de taal wordt bepaald
+
+
+# Vaste revisie per model: elke Mac draait dezelfde, geteste versie, en een wijziging op Hugging Face
+# komt pas mee na een test (zie docs/RELEASING.md). Een model dat hier niet staat volgt de nieuwste.
+MODEL_REVISIONS = {
+    "mlx-community/whisper-large-v3-mlx": "49e6aa286ad60c14352c404340ded53710378a11",
+}
+
+
+def ensure_model(repo):
+    """Haalt het Whisper-model eenmalig binnen als het er nog niet is, met voortgang voor het venster.
+
+    Geeft het lokale pad van het model terug. Met een repo-naam raadpleegt mlx_whisper bij elke
+    load eerst Hugging Face; een Mac die net uit de slaapstand komt en nog geen verbinding heeft,
+    bleef daar hangen. Met een pad gebeurt er niets met het netwerk.
+    Met een vaste revisie (een commit-hash) zoekt de cache direct die map op, ook zonder internet."""
+    import os
+    import threading
+    from huggingface_hub import HfApi, constants, snapshot_download
+
+    if os.path.isdir(repo):
+        return repo
+    revision = MODEL_REVISIONS.get(repo)
+    try:
+        return snapshot_download(repo, revision=revision, local_files_only=True)  # staat al in de cache
+    except Exception:
+        pass
+
+    print(L("Whisper-model wordt eenmalig gedownload (ongeveer 3 GB)...",
+            "Downloading the Whisper model once (about 3 GB)..."))
+    tell("stage", name="model")
+    total = 0
+    try:
+        info = HfApi().model_info(repo, revision=revision, files_metadata=True)
+        total = sum(item.size or 0 for item in info.siblings)
+    except Exception:
+        pass  # zonder totaal laat het venster een lopende balk zien
+
+    folder = Path(constants.HF_HUB_CACHE) / ("models--" + repo.replace("/", "--"))
+    finished = threading.Event()
+
+    def watch():
+        while not finished.wait(0.7):
+            try:
+                size = sum(f.stat().st_size for f in (folder / "blobs").glob("*") if f.is_file())
+            except OSError:
+                continue
+            if total:
+                tell("progress", fraction=min(size / total, 0.99))
+
+    threading.Thread(target=watch, daemon=True).start()
+    try:
+        return snapshot_download(repo, revision=revision)
+    except Exception as error:
+        fail(L(f"Het Whisper-model kon niet worden gedownload ({type(error).__name__}). Dat is eenmalig nodig, "
+               "controleer de internetverbinding en probeer het opnieuw.",
+               f"The Whisper model could not be downloaded ({type(error).__name__}). This is needed once, "
+               "check the internet connection and try again."), local=True)
+    finally:
+        finished.set()
+
+
+def detect_language(samples, model_repo):
+    """Bepaalt de gesproken taal op de luidste stukken van de opname, niet alleen
+    op de eerste 30 seconden: daar zit vaak een leader of muziek.
+    Geeft (taalcode, zekerheid) terug."""
+    import mlx.core as mx
+    import mlx_whisper  # noqa: F401  laadt mlx_whisper.transcribe, waar ModelHolder hieronder vandaan komt
+    from mlx_whisper.audio import N_FRAMES, log_mel_spectrogram, pad_or_trim
+
+    model = sys.modules["mlx_whisper.transcribe"].ModelHolder.get_model(model_repo, mx.float16)
+    window = 30 * SAMPLE_RATE
+    starts = list(range(0, max(len(samples) - window, 0) + 1, window))
+    starts.sort(key=lambda start: -float((samples[start:start + window] ** 2).mean()))
+    chosen = starts[:LANGUAGE_WINDOWS]
+    totals = {}
+    for start in chosen:
+        mel = log_mel_spectrogram(samples[start:start + window], n_mels=model.dims.n_mels)
+        mel = pad_or_trim(mel, N_FRAMES, axis=-2).astype(mx.float16)
+        _, probabilities = model.detect_language(mel)
+        for code, probability in probabilities.items():
+            totals[code] = totals.get(code, 0.0) + float(probability)
+    best = max(totals, key=totals.get)
+    return best, totals[best] / len(chosen)
