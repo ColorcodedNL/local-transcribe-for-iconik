@@ -3,6 +3,7 @@
 import re
 
 from base import load_config  # noqa: F401
+import settings
 from speakers import speech_share  # noqa: F401
 
 
@@ -108,7 +109,4 @@ def is_hallucination(segment, turns=None, language="nl"):
 
 def expected_languages():
     """De talen die in dit archief te verwachten zijn (config.json: expected_languages)."""
-    value = load_config().get("expected_languages")
-    if isinstance(value, list) and value and all(isinstance(v, str) for v in value):
-        return tuple(v.lower() for v in value)
-    return EXPECTED_LANGUAGES
+    return tuple(v.lower() for v in settings.get("transcription.expected_languages"))

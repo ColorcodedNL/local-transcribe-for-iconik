@@ -16,6 +16,7 @@ import requests
 from base import (  # noqa: F401
     KEYCHAIN_SERVICE, L, MEDIA_EXTENSIONS, NeedsFolder, OLD_APP_NAME, Problem, SIDECAR_EXTENSIONS, fail, load_config, print, update_config,
 )
+import settings
 from system import ask_folder, find_moved_mount, mount_reachable  # noqa: F401  (macOS: platform_mac.py)
 
 
@@ -30,7 +31,7 @@ LOGIN_LOCK = threading.Lock()
 
 
 def api_host():
-    return (load_config().get("host") or DEFAULT_HOST).rstrip("/")
+    return (settings.get("iconik.host") or DEFAULT_HOST).rstrip("/")
 
 
 # De inlog in het geheugen: de sleutelhanger één keer lezen in plaats van bij elke aanroep naar Iconik. Bij
@@ -122,7 +123,7 @@ def token_request(fields):
 
 def start_login():
     """Begin van de inlog: geeft (adres voor de browser, state, verifier)."""
-    client_id = load_config().get("client_id")
+    client_id = settings.get("iconik.client_id")
     if not client_id:
         fail(L("Er is nog geen client-ID van de Iconik-applicatie ingesteld.",
                "No client ID for the Iconik application has been set yet."))
@@ -140,7 +141,7 @@ def start_login():
 
 def finish_login(code, verifier):
     return token_request({
-        "grant_type": "authorization_code", "client_id": load_config().get("client_id"),
+        "grant_type": "authorization_code", "client_id": settings.get("iconik.client_id"),
         "code": code, "code_verifier": verifier, "redirect_uri": REDIRECT_URI,
     })
 
@@ -175,7 +176,7 @@ class Iconik:
                 try:
                     login = token_request({
                         "grant_type": "refresh_token",
-                        "client_id": load_config().get("client_id"),
+                        "client_id": settings.get("iconik.client_id"),
                         "refresh_token": login["refresh_token"],
                     })
                 except Problem:
@@ -304,7 +305,7 @@ def find_media_file(iconik, asset_id, mount_override=None, ask_mount=False, inte
         fail(L(f"Bestand niet gevonden: {Path(mount_override) / relative_of(media[0])}",
                f"File not found: {Path(mount_override) / relative_of(media[0])}"))
 
-    mounts = load_config().get("mounts") or {}
+    mounts = settings.get("iconik.mounts")
     chosen = media[0]
     if not ask_mount:
         # Iconik koppelt identieke bestanden op verschillende plekken aan een asset. Elke kopie op een

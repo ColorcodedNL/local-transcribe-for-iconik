@@ -9,7 +9,7 @@ import settings
 # Hoeveel GB MLX na een opdracht in zijn buffer mag houden. Hoort bij deze engine, dus hier aangemeld.
 CACHE_SETTING = settings.register(settings.Setting(
     "transcription.mlx_cache_gb", "number", 2.0, ("Buffer van het model (GB)", "Model buffer (GB)"),
-    flat="mlx_cache_gb", minimum=0, advanced=True))
+    flat="mlx_cache_gb", minimum=0, zero_ok=True, advanced=True))
 
 NAME = ENGINE_NAME   # "mlx-whisper"; zo herkennen oudere versies het transcript in Iconik
 DEFAULT_MODEL = "mlx-community/whisper-large-v3-mlx"
@@ -110,11 +110,8 @@ def start(on_progress=None):
     import mlx.core as mx
 
     # MLX bewaart vrijgegeven werkgeheugen voor hergebruik. Bij Whisper groeit dat zonder
-    # grens uit tot vele GB die niet meer gebruikt worden. Instelbaar via mlx_cache_gb.
-    try:
-        cache_gb = float(load_config().get("mlx_cache_gb", 2))
-    except (TypeError, ValueError):
-        cache_gb = 2.0
+    # grens uit tot vele GB die niet meer gebruikt worden. Instelbaar (CACHE_SETTING); 0 is geen buffer.
+    cache_gb = settings.get(CACHE_SETTING.key)
     mx.set_cache_limit(int(cache_gb * 1e9))
 
     if on_progress:

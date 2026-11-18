@@ -37,6 +37,7 @@ class Setting:
     flat: str = ""           # de naam in het platte config.json van 0.6
     choices: tuple = ()      # bij choice
     minimum: float = None    # bij number: groter dan dit
+    zero_ok: bool = False    # bij number: 0 mag ook (betekent iets, zoals geen buffer)
     pattern: str = ""        # bij text: de hele tekst moet hier aan voldoen
     max_length: int = 0      # bij text: 0 is geen grens
     advanced: bool = False   # alleen voor wie weet wat hij doet; niet in het gewone venster
@@ -126,7 +127,8 @@ def _usable(s, value):
     if s.kind == "bool":
         return isinstance(value, bool)
     if s.kind == "number":
-        return isinstance(value, (int, float)) and not isinstance(value, bool) and (s.minimum is None or value > s.minimum)
+        return (isinstance(value, (int, float)) and not isinstance(value, bool)
+                and (s.minimum is None or value > s.minimum or (s.zero_ok and value == 0)))
     if s.kind in ("text", "choice"):
         return isinstance(value, str) and (s.kind != "choice" or value in s.choices)
     if s.kind == "languages":

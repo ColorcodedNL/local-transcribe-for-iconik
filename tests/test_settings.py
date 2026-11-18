@@ -130,6 +130,19 @@ check("describe: tekst in de taal van de app", next(i for i in plain if i["key"]
 check("describe: alles met advanced", len(settings.describe(advanced=True)) == len(S))
 check("describe: gewone gegevens (JSON)", bool(json.dumps(settings.describe(advanced=True))))
 
+# --- modelbuffer: 0 betekent geen buffer en blijft 0 ---
+transcribe.save_config({**raw(), "mlx_cache_gb": 0})
+check("lezen: modelbuffer 0 blijft 0", settings.get("transcription.mlx_cache_gb") == 0)
+transcribe.save_config({**raw(), "mlx_cache_gb": -1})
+check("lezen: modelbuffer onder 0 geeft standaard", settings.get("transcription.mlx_cache_gb") == 2.0)
+
+# --- niemand leest nog zelf uit config.json, behalve de taal van de app in base (komt eerder dan settings) ---
+loose = [f"{f.name}:{n}" for f in sorted(Path("app").glob("*.py")) if f.name not in ("settings.py",)
+         for n, line in enumerate(f.read_text().splitlines(), 1)
+         if "load_config()" in line and not line.lstrip().startswith(("def ", "#"))
+         and not (f.name == "base.py" and '"app_language"' in line) and "config = load_config()" not in line]
+check("geen losse lezers van config.json meer in app/", not loose, loose)
+
 # --- een later deel meldt zijn eigen instelling aan ---
 check("aanmelden: de engine brengt zijn modelbuffer mee", S.get("transcription.mlx_cache_gb") is whisper_mlx.CACHE_SETTING)
 check("aanmelden: settings.py zelf kent geen MLX", "mlx" not in Path("app/settings.py").read_text().lower())

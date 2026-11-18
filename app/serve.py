@@ -32,6 +32,7 @@ import requests
 import app_shell
 import refine
 import resources
+import settings as setting   # de lijst met alle instellingen; `settings` hieronder is die van een opdracht
 import system
 import transcribe
 import updater
@@ -217,19 +218,19 @@ def make_options(job):
     # Een opdracht uit de rij die een andere Mac heeft overgenomen, wordt niet meer naar Iconik geschreven.
     still_ours = (lambda: job["asset_id"] not in remote.lost) if job.get("remote") else None
     return argparse.Namespace(
-        asset_id=job["asset_id"], model=settings["model"], language=settings["language"] or transcribe.load_config().get("language", "auto"),
+        asset_id=job["asset_id"], model=settings["model"], language=settings["language"] or setting.get("transcription.language"),
         mount=settings["mount"], push=True, replace=True, speakers=None, still_ours=still_ours,
         no_speakers=not transcribe.speaker_model_available(settings["hf_token"]), no_voice_check=False, out="/tmp/whisper-test")
 
 
-PREFETCH_MIN_FREE_GB = 6.0   # vooruit lezen piekt rond 3,8 GB bovenop de lopende opdracht (config: prefetch_min_free_gb)
+PREFETCH_MIN_FREE_GB = setting.SCHEMA["transcription.prefetch_min_free_gb"].default   # vooruit lezen piekt rond 3,8 GB bovenop de lopende opdracht
 
 
 def prefetch_room():
     """(mag vooruit lezen, reden). Vooruit lezen loopt tijdens de lopende opdracht, dus beide pieken tellen
     op (in het slechtste geval ongeveer 9,9 + 3,8 GB). Op een Mac met weinig geheugen wacht het daarom tot er
     genoeg vrij is; is dat er niet, dan leest de volgende opdracht straks zelf, zonder swappen."""
-    need = number_setting(transcribe.load_config(), "prefetch_min_free_gb", PREFETCH_MIN_FREE_GB)
+    need = setting.get("transcription.prefetch_min_free_gb")
     available, level = resources.memory()
     if level is not None and level > resources.PRESSURE_NORMAL:
         return False, "geheugendruk hoog"
@@ -469,9 +470,9 @@ def fetch_storage_name(storage_id):
         storage_names[storage_id] = ""  # geen recht of geen verbinding: dan zonder naam
 
 
-def mount_list(config):
+def mount_list(mounts):
     rows = []
-    for storage_id, path in config.get("mounts", {}).items():
+    for storage_id, path in mounts.items():
         if storage_id not in storage_names:
             storage_names[storage_id] = ""
             threading.Thread(target=fetch_storage_name, args=(storage_id,), daemon=True).start()
@@ -480,7 +481,7 @@ def mount_list(config):
 
 
 def change_mount(storage_id, remove=False):
-    mounts = transcribe.load_config().get("mounts", {})
+    mounts = setting.get("iconik.mounts")
     if storage_id not in mounts:
         return
     if remove:
@@ -513,9 +514,9 @@ def app_state():
             "elapsed": (end - job["started"]).total_seconds() if job["started"] else None,
             "auto": bool(job.get("auto")),
         })
-    config = transcribe.load_config()
+    client_id = setting.get("iconik.client_id")
     connection = client()
-    account = ("geen" if connection is None and not config.get("client_id") else
+    account = ("geen" if connection is None and not client_id else
                "uitgelogd" if connection is None else
                "gebruiker" if connection.uses_login else "token")
     if connection is None:
@@ -530,18 +531,18 @@ def app_state():
     local = (transcribe.LOCAL_SPEAKER_MODEL / "config.yaml").is_file()
     return {
         "jobs": out, "account": account, "user": who.get("name", ""), "actions": actions.get("state", "onbekend"),
-        "lang": transcribe.app_language(), "app_language": config.get("app_language", "auto"),
+        "lang": transcribe.app_language(), "app_language": setting.get("general.app_language"),
         "originals": refine.originals_info(),
         "version": transcribe.APP_VERSION, "update": update_view(),
-        "spoken": settings.get("language") or config.get("language", "auto"),
-        "spoken_fixed": bool(settings.get("language")), "has_client_id": bool(config.get("client_id")),
-        "mounts": mount_list(config), "model": settings.get("model", ""),
+        "spoken": settings.get("language") or setting.get("transcription.language"),
+        "spoken_fixed": bool(settings.get("language")), "has_client_id": bool(client_id),
+        "mounts": mount_list(setting.get("iconik.mounts")), "model": settings.get("model", ""),
         "speakers": "lokaal" if local else "huggingface" if settings.get("hf_token") else "uit",
         "worker": dict(remote.state, enabled=worker_enabled(), machine=remote.machine_name(),
                        machine_alias=remote.machine_alias[0], computer=remote.computer_name(),
                        login=login_item_on(), login_available=bundle_path() is not None,
-                       iconik_language=worker_languages()[1], auto_on=bool(config.get("auto_transcribe")),
-                       auto_audio=bool(config.get("auto_audio")), awake=awake["on"]),
+                       iconik_language=worker_languages()[1], auto_on=setting.get("iconik.auto_transcribe"),
+                       auto_audio=setting.get("iconik.auto_audio"), awake=awake["on"]),
     }
 
 
@@ -1020,7 +1021,7 @@ class Handler(BaseHTTPRequestHandler):
         if client() is None:
             # Eerst inloggen; de opdracht gaat daarna alsnog de rij in.
             pending_ids.append(request)
-            if transcribe.load_config().get("client_id"):
+            if setting.get("iconik.client_id"):
                 return self.redirect("/login")
             return self.redirect("/")
         self.queue_request([request])
@@ -1065,7 +1066,7 @@ def say(text):
 
 
 def worker_enabled():
-    return bool(transcribe.load_config().get("worker_enabled"))
+    return setting.get("iconik.worker_enabled")
 
 
 meter = resources.Meter(lambda: busy())   # meet pas zodra auto transcribe aan staat
@@ -1121,8 +1122,7 @@ RELEASE_AFTER = 120   # met auto aan: modellen pas vrijgeven na zoveel seconden 
 
 
 def auto_active():
-    config = transcribe.load_config()
-    return bool(config.get("worker_enabled") and config.get("auto_transcribe"))
+    return setting.get("iconik.worker_enabled") and setting.get("iconik.auto_transcribe")
 
 
 def release_models_now():
@@ -1149,8 +1149,7 @@ def want_awake():
         return True
     if quit_after.is_set():
         return False
-    config = transcribe.load_config()
-    return bool(config.get("worker_enabled") and config.get("auto_transcribe")) and resources.on_mains_power() is True
+    return setting.get("iconik.worker_enabled") and setting.get("iconik.auto_transcribe") and resources.on_mains_power() is True
 
 
 def keep_awake(want=want_awake, interval=10, once=False):
@@ -1191,7 +1190,7 @@ _storage_checks = {}   # pad -> draad van een controle die nog hangt
 
 def storage_labels(storage_ids):
     """Namen voor in een melding: de naam van de ISG in Iconik, anders het mount point."""
-    mounts = transcribe.load_config().get("mounts") or {}
+    mounts = setting.get("iconik.mounts")
     return [storage_names.get(storage_id) or mounts.get(storage_id) or storage_id for storage_id in storage_ids]
 
 
@@ -1234,7 +1233,7 @@ def check_storage(state):
     De waarschuwing pas als hij twee keer achter elkaar weg is: een korte hapering geeft geen melding,
     en bij inloggen koppelt macOS netwerkschijven vaak pas na een paar seconden.
     Geeft het aantal seconden tot de volgende ronde."""
-    mounts = transcribe.load_config().get("mounts") or {}
+    mounts = setting.get("iconik.mounts")
     offline = [storage_id for storage_id, path in mounts.items() if not path_reachable(path)]
     storage["offline"] = offline
     storage["checked"] = time.time()
@@ -1285,21 +1284,15 @@ def watch_storage():
         storage_wake.clear()
 
 
-def number_setting(config, key, default):
-    value = config.get(key)
-    return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0 else default
-
-
 def auto_settings():
     """Voor de werker: de instellingen van auto transcribe als die aan staat en er op deze Mac ruimte
     is, anders None. Wat de meter vond staat in remote.state["auto"], voor het venster.
-    De grenzen staan in config.json (auto_min_free_gb, auto_max_cpu, auto_max_gpu, auto_max_minutes),
-    bewust niet in Voorkeuren."""
-    config = transcribe.load_config()
-    if not config.get("auto_transcribe"):
+    De grenzen (transcription.auto_min_free_gb, auto_max_cpu, auto_max_gpu en iconik.auto_max_minutes)
+    staan in het schema als geavanceerd: bewust niet in het gewone venster."""
+    if not setting.get("iconik.auto_transcribe"):
         remote.state["auto"] = None
         return None
-    mounts = config.get("mounts") or {}
+    mounts = setting.get("iconik.mounts")
     offline = [storage_id for storage_id in storage["offline"] if storage_id in mounts]
     storages = [storage_id for storage_id in mounts if storage_id not in offline]
     meter.start()
@@ -1311,7 +1304,7 @@ def auto_settings():
     elif not storages:
         ready, reason, values = False, "offline", {}
     else:
-        limits = {key: number_setting(config, key, default) for key, default in resources.DEFAULTS.items()}
+        limits = {key: setting.get(f"transcription.{key}") for key in resources.DEFAULTS}
         ready, reason, values = meter.check(limits)
     remote.state["auto"] = {"ready": ready, "reason": reason,
                             "values": {k: round(v, 1) if isinstance(v, float) else v for k, v in values.items()}}
@@ -1319,14 +1312,14 @@ def auto_settings():
         remote.state["auto"]["offline"] = storage_labels(offline)
     if not ready:
         return None
-    return {"storages": storages, "audio": bool(config.get("auto_audio")),
-            "max_minutes": number_setting(config, "auto_max_minutes", remote.AUTO_MAX_MINUTES)}
+    return {"storages": storages, "audio": setting.get("iconik.auto_audio"),
+            "max_minutes": setting.get("iconik.auto_max_minutes")}
 
 
 def worker_languages():
     """(taal van het detailveld, taal van de labels in Iconik). De labels volgen de app tot iemand
     een taal kiest: ze gelden voor iedereen in deze Iconik-omgeving, dus ze wisselen niet vanzelf mee."""
-    chosen = transcribe.load_config().get("iconik_language")
+    chosen = setting.get("iconik.iconik_language")
     return transcribe.app_language(), chosen if chosen in ("nl", "en") else transcribe.app_language()
 
 
@@ -1491,7 +1484,7 @@ def start(model="mlx-community/whisper-large-v3-mlx", language=None, mount=None,
         language=language, mount=mount, idle_exit=idle_exit)
 
     transcribe.LISTENER = listen
-    remote.set_machine_alias(transcribe.load_config().get("machine_name"))
+    remote.set_machine_alias(setting.get("iconik.machine_name"))
     load_jobs()
     atexit.register(save_jobs)
     threading.Thread(target=_saver, daemon=True, name="bewaren").start()

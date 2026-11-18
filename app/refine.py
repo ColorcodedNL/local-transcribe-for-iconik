@@ -19,6 +19,7 @@ from pathlib import Path
 
 import numpy as np
 
+import settings
 import subtitles
 import transcribe as core
 import transcript as tmodel
@@ -189,7 +190,7 @@ def _stamp(doc):
 
 def subtitle_settings():
     """Wat het maakvenster toont: de regels en de keuzes van de vorige keer, de voorkeuzes en de grenzen."""
-    kept = core.load_config().get("subtitles") or {}
+    kept = settings.get("refine.subtitles")
     rules = subtitles.clean_rules(kept.get("rules"))
     return {"rules": rules, "preset": subtitles.preset_of(rules), "presets": subtitles.PRESETS, "limits": subtitles.LIMITS,
             "formats": kept.get("formats") if kept.get("formats") in subtitles.CHOICES else "srt",
