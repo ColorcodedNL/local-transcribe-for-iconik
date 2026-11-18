@@ -12,3 +12,10 @@ dependencies = [
     "pywebview>=6.2.1",
     "requests>=2.34.2",
 ]
+
+[tool.ruff]
+# Alleen de fouten van pyflakes: ontbrekende of dubbele namen, ongebruikte imports. Geen stijlregels.
+# scripts/run_tests.sh draait dit voor de tests (ook in GitHub Actions) met een vaste versie.
+lint.select = ["F"]
+extend-exclude = ["build", "dist"]
+

@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 import AppKit
-import Foundation
+import Foundation  # noqa: F401  laadt het framework voor PyObjC
 from PyObjCTools import AppHelper
 
 # glyph() en GLYPH letterlijk uit app_main.py halen, zonder de rest van de app te laden.

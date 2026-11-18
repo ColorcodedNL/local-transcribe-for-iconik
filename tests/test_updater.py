@@ -146,7 +146,7 @@ try:
     import lt_probe
     check("geheugen: module komt uit de ondertekende zip", lt_probe.VALUE == 42, lt_probe.VALUE)
     check("geheugen: __file__ wijst naar de app, niet naar de updatemap", Path(lt_probe.HERE) == Path(app_shell.__file__).resolve().parent, lt_probe.HERE)
-    try: import lt_evil; ok = False
+    try: import lt_evil; ok = False  # noqa: F401  de import zelf is de test
     except ModuleNotFoundError: ok = True
     check("geheugen: een los bestand in de map is niet te laden", ok)
     check("geheugen: de map staat niet op het zoekpad", sys.path == before and str(folder) not in sys.path)

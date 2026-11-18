@@ -6,6 +6,15 @@ set -u
 cd "$(dirname "$0")/.."
 WITH=(--no-project --with pynacl --with requests --with numpy --with huggingface_hub --with playwright)
 failed=0
+# Eerst de code zelf: een naam die niet bestaat of een import die nergens heen gaat (pyflakes via ruff).
+RUFF=ruff@0.17.5
+if out="$(uv tool run "$RUFF" check --quiet --output-format concise app tests tools scripts 2>&1)"; then
+  printf "%-28s %s\n" "ruff" "OK"
+else
+  failed=1
+  printf "%-28s %s\n" "ruff" "FOUT"
+  printf '%s\n' "$out" | head -10 | sed 's/^/    /'
+fi
 for t in tests/test_*.py; do
   out="$(uv run "${WITH[@]}" python -B "$t" 2>&1)"
   code=$?
