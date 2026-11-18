@@ -4,6 +4,12 @@ from importlib.metadata import version as pkg_version
 from pathlib import Path
 
 from base import ENGINE_NAME, L, MEMORY_PROBES, SAMPLE_RATE, fail, load_config, print, tell  # noqa: F401
+import settings
+
+# Hoeveel GB MLX na een opdracht in zijn buffer mag houden. Hoort bij deze engine, dus hier aangemeld.
+CACHE_SETTING = settings.register(settings.Setting(
+    "transcription.mlx_cache_gb", "number", 2.0, ("Buffer van het model (GB)", "Model buffer (GB)"),
+    flat="mlx_cache_gb", minimum=0, advanced=True))
 
 NAME = ENGINE_NAME   # "mlx-whisper"; zo herkennen oudere versies het transcript in Iconik
 DEFAULT_MODEL = "mlx-community/whisper-large-v3-mlx"

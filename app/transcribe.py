@@ -10,7 +10,7 @@ Gebruik:
     uv run transcribe.py <asset_id> --no-speakers  # sprekerherkenning overslaan
     uv run transcribe.py <asset_id> --push --replace   # eigen eerdere transcript vervangen
 
-Sinds november 2026 staat de code in losse delen (base, iconik_api, audio, speakers, filters, whisper_mlx,
+Sinds november 2026 staat de code in losse delen (base, settings, iconik_api, audio, speakers, filters, whisper_mlx,
 engine, pipeline). Dit bestand is de vaste ingang daarvoor:
   - `transcribe.X` lezen geeft altijd de actuele waarde uit het deel waar X thuishoort
   - `transcribe.X = ...` zet de waarde in elk deel dat X kent, zodat een vervanging (in een test of in de
@@ -22,6 +22,7 @@ import types
 
 import system
 import base  # noqa: E402  als eerste na system: zet de telemetrie uit voordat pyannote geladen kan worden
+import settings
 import iconik_api
 import audio
 import speakers
@@ -35,7 +36,7 @@ RELEASES_REPO = "ColorcodedNL/local-transcribe-for-iconik"  # hier kijkt de app 
 
 # In deze volgorde: een deel importeert alleen uit delen die eerder staan, dus het eerste deel met een naam
 # is het deel waar die naam thuishoort.
-PARTS = (system, base, iconik_api, audio, speakers, filters, whisper_mlx, engine, pipeline)
+PARTS = (system, base, settings, iconik_api, audio, speakers, filters, whisper_mlx, engine, pipeline)
 
 
 def __getattr__(name):
