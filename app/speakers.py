@@ -1,7 +1,6 @@
 """Sprekers: per spoor (zenders), met pyannote, stemafdrukken per zin en het samenvoegen van groepen.
 """
 import os
-import sys
 from pathlib import Path
 import numpy as np
 
@@ -51,22 +50,10 @@ def speaker_from_tracks(words, microphones, previous):
 _pipeline = None  # het sprekermodel blijft geladen tussen opdrachten
 
 
-def release_models():
-    """Geeft het geheugen van de modellen vrij. Een volgende opdracht laadt ze opnieuw."""
+def release_speaker_model():
+    """Laat het sprekermodel los (pipeline.release_models geeft daarna het geheugen terug)."""
     global _pipeline
     _pipeline = None
-    holder = getattr(sys.modules.get("mlx_whisper.transcribe"), "ModelHolder", None)
-    if holder is not None:
-        holder.model = None
-        holder.model_path = None
-    import gc
-    gc.collect()
-    try:
-        import mlx.core as mx
-        mx.clear_cache()
-    except Exception:
-        pass
-    empty_gpu_cache()
 
 
 def diarize(samples, token, num_speakers):

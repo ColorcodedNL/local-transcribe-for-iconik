@@ -5,7 +5,6 @@ import argparse
 import json
 import os
 import sys
-from importlib.metadata import version as pkg_version
 from pathlib import Path
 import transcript as tmodel
 
@@ -15,18 +14,18 @@ from base import (  # noqa: F401
 from iconik_api import make_client  # noqa: F401
 from audio import load_audio_tracks, save_waves  # noqa: F401
 from speakers import (  # noqa: F401
-    diarize, empty_gpu_cache, make_voiceprint, refine_speakers, speaker_at, speaker_from_tracks, speaker_model_available,
+    diarize, empty_gpu_cache, make_voiceprint, refine_speakers, speaker_at, speaker_from_tracks, speaker_model_available, release_speaker_model,
 )
 from filters import (  # noqa: F401
     MIN_CONFIDENCE, MIN_WORDS_OTHER_LANGUAGE, drop_repeats, expected_languages, is_hallucination, split_sentences,
 )
-from whisper_mlx import MODEL_REVISIONS, detect_language, ensure_model  # noqa: F401
+import engine as engines
 
 
 def main():
     parser = argparse.ArgumentParser(description="Whisper-transcript naar Iconik.")
     parser.add_argument("asset_id")
-    parser.add_argument("--model", default="mlx-community/whisper-large-v3-mlx")
+    parser.add_argument("--model", default=engines.get().DEFAULT_MODEL)
     parser.add_argument("--language", default="auto", help="Taalcode zoals nl of en; auto herkent de taal.")
     parser.add_argument("--mount", help="Lokaal pad van de storage, eenmalig, zonder het te onthouden.")
     parser.add_argument("--ask-mount", action="store_true",
@@ -65,7 +64,7 @@ def prepare_asset(iconik, args, on_info=None, interactive=True):
     print(f"Bestand: {path}")
 
     print(f"Model:   {args.model}")
-    model_path = ensure_model(args.model)
+    model_path = engines.get(getattr(args, "engine", None)).ensure_model(args.model)
     memory_report("begin")
     tell("stage", name="audio")
     _local.tracks, _local.peaks = None, {}
@@ -104,37 +103,13 @@ def process_asset(iconik, args, hf_token, on_info=None, prepared=None):
     model_path = prepared.get("model_path") or args.model  # een lokaal pad: laden raakt het netwerk niet
     print("Transcriberen...")
     tell("stage", name="transcriberen")
-    import mlx_whisper  # pas hier laden, dat scheelt opstarttijd bij fouten hierboven
-    import mlx.core as mx
-
-    # MLX bewaart vrijgegeven werkgeheugen voor hergebruik. Bij Whisper groeit dat zonder
-    # grens uit tot vele GB die niet meer gebruikt worden. Instelbaar via mlx_cache_gb.
-    try:
-        cache_gb = float(load_config().get("mlx_cache_gb", 2))
-    except (TypeError, ValueError):
-        cache_gb = 2.0
-    mx.set_cache_limit(int(cache_gb * 1e9))
-
-    if LISTENER:
-        # Whisper toont zijn voortgang met tqdm; daar lezen we op mee.
-        try:
-            import tqdm as tqdm_module
-
-            class Watched(tqdm_module.tqdm):
-                def update(self, n=1):
-                    result = super().update(n)
-                    if self.total:
-                        tell("progress", fraction=min(self.n / self.total, 1.0))
-                    return result
-
-            sys.modules["mlx_whisper.transcribe"].tqdm = type("Shim", (), {"tqdm": Watched})
-        except Exception:
-            pass
+    engine = engines.get(getattr(args, "engine", None))
+    engine.start((lambda fraction: tell("progress", fraction=fraction)) if LISTENER else None)
 
     language = args.language
     if not language or language == "auto":
         try:
-            language, certainty = detect_language(samples, model_path)
+            language, certainty = engine.detect_language(samples, model_path)
             print(f"Taal:    {language} (herkend, {certainty:.0%})")
         except Exception as error:
             language = None  # dan bepaalt Whisper het zelf op het begin van de opname
@@ -143,15 +118,9 @@ def process_asset(iconik, args, hf_token, on_info=None, prepared=None):
         print(f"Taal:    {language} (ingesteld)")
     memory_report("taal")
 
-    result = mlx_whisper.transcribe(
-        samples,
-        path_or_hf_repo=model_path,
-        language=language,
-        word_timestamps=True,
-        verbose=False,  # voortgangsbalk in de terminal
-    )
+    result = engine.transcribe(samples, model_path, language)
     memory_report("transcriberen")
-    mx.clear_cache()  # Whisper blijft geladen, het losse werkgeheugen gaat terug voor de sprekerherkenning
+    engine.clear_working_memory()  # het model blijft geladen, het losse werkgeheugen gaat terug voor de sprekerherkenning
 
     language = language or result.get("language") or "nl"
     tell("language", code=language)
@@ -246,17 +215,12 @@ def process_asset(iconik, args, hf_token, on_info=None, prepared=None):
     pieces = [(numbers[speaker], words) for speaker, words in pieces]
     print(f"Sprekers: {len(numbers)}, stukken: {len(pieces)}")
 
-    engine_info = {
-        "type": "EXTERNAL",
-        "name": ENGINE_NAME,
-        "model": args.model,
-        "version": pkg_version("mlx-whisper"),
-    }
+    engine_info = engine.info(args.model)
     # Het transcript in het eigen model; de payload voor Iconik komt daaruit. De sporen en de vaste
     # modelrevisie staan alleen in het model: Iconik kent er geen velden voor.
     doc = tmodel.from_pieces(
         pieces, language, L("Spreker", "Speaker"),
-        engine=dict(engine_info, revision=MODEL_REVISIONS.get(args.model)),
+        engine=dict(engine_info, revision=engine.revision(args.model)),
         tracks=tmodel.tracks_from_infos(prepared.get("tracks")),
         source={"connector": "iconik", "asset_id": args.asset_id, "version_id": version_id,
                 "title": asset.get("title") or "", "media": prepared.get("media_path") or ""})
@@ -296,3 +260,15 @@ def process_asset(iconik, args, hf_token, on_info=None, prepared=None):
     save_waves(args.asset_id, prepared.get("peaks"))
     return {"title": asset.get("title"), "segments": written,
             "speakers": len(numbers), "pushed": True, "language": language}
+
+
+def release_models():
+    """Geeft het geheugen van de modellen vrij. Een volgende opdracht laadt ze opnieuw."""
+    import gc
+    release_speaker_model()
+    for engine in engines.ENGINES.values():
+        engine.release()
+    gc.collect()
+    for engine in engines.ENGINES.values():
+        engine.clear_working_memory()
+    empty_gpu_cache()

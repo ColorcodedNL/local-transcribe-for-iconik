@@ -11,7 +11,7 @@ Gebruik:
     uv run transcribe.py <asset_id> --push --replace   # eigen eerdere transcript vervangen
 
 Sinds november 2026 staat de code in losse delen (base, iconik_api, audio, speakers, filters, whisper_mlx,
-pipeline). Dit bestand is de vaste ingang daarvoor:
+engine, pipeline). Dit bestand is de vaste ingang daarvoor:
   - `transcribe.X` lezen geeft altijd de actuele waarde uit het deel waar X thuishoort
   - `transcribe.X = ...` zet de waarde in elk deel dat X kent, zodat een vervanging (in een test of in de
     ontvanger, zoals LISTENER) aankomt waar de code hem gebruikt
@@ -26,6 +26,7 @@ import audio
 import speakers
 import filters
 import whisper_mlx
+import engine
 import pipeline
 
 APP_VERSION = "0.6.2"  # ook het versienummer van de app-bundel (build_bundle.sh leest het hier)
@@ -33,7 +34,7 @@ RELEASES_REPO = "ColorcodedNL/local-transcribe-for-iconik"  # hier kijkt de app 
 
 # In deze volgorde: een deel importeert alleen uit delen die eerder staan, dus het eerste deel met een naam
 # is het deel waar die naam thuishoort.
-PARTS = (base, iconik_api, audio, speakers, filters, whisper_mlx, pipeline)
+PARTS = (base, iconik_api, audio, speakers, filters, whisper_mlx, engine, pipeline)
 
 
 def __getattr__(name):

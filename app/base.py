@@ -54,6 +54,7 @@ def print(*args, **kwargs):  # noqa: A001 - bewust: logregels van het vooruit le
     builtins.print(*args, **kwargs)
 
 
+MEMORY_PROBES = []   # functies die een korte geheugentekst geven; een engine zet er een bij
 _meter = {"peak": 0, "since": None, "thread": None}
 
 
@@ -89,9 +90,13 @@ def memory_report(stage):
         peak = max(_meter["peak"], current)
         since = _meter["since"] or now
         parts = [f"nu {current / 1e9:.1f} GB", f"piek {peak / 1e9:.1f} GB", f"{now - since:.1f} s"]
-        mx = sys.modules.get("mlx.core")
-        if mx is not None:
-            parts.append(f"MLX actief {mx.get_active_memory() / 1e9:.1f} / cache {mx.get_cache_memory() / 1e9:.1f} GB")
+        for probe in MEMORY_PROBES:   # de engine meldt zijn eigen geheugen (engine.py)
+            try:
+                text = probe()
+            except Exception:
+                text = None
+            if text:
+                parts.append(text)
         torch = sys.modules.get("torch")
         if torch is not None and torch.backends.mps.is_available():
             # driver_allocated telt al het Metal-geheugen van het proces, dus ook Whisper in MLX

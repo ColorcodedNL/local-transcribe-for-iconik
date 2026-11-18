@@ -102,7 +102,7 @@ for i, name in enumerate(PART_NAMES):
     wrong = [n.module for n in tree.body if isinstance(n, ast.ImportFrom) and n.module in PART_NAMES
              and PART_NAMES.index(n.module) >= i]
     wrong += [a.name for n in tree.body if isinstance(n, ast.Import) for a in n.names
-              if a.name in PART_NAMES + ["transcribe"]]
+              if a.name == "transcribe" or (a.name in PART_NAMES and PART_NAMES.index(a.name) >= i)]
     check(f"volgorde: {name} importeert alleen uit eerdere delen", not wrong, wrong)
     check(f"volgorde: {name} importeert transcribe niet", "transcribe" not in
           {getattr(n, "module", None) for n in tree.body if isinstance(n, ast.ImportFrom)})
@@ -111,6 +111,22 @@ for i, name in enumerate(PART_NAMES):
 check("code-update: alle delen in CODE_FILES", all(f"{n}.py" in CODE_FILES for n in PART_NAMES + ["transcribe"]))
 version_line = re.search(r'^APP_VERSION = "([0-9.]+)"', Path("app/transcribe.py").read_text(), re.M)
 check("build: APP_VERSION staat nog in transcribe.py", version_line and version_line.group(1) == transcribe.APP_VERSION)
+import engine  # noqa: E402
+import whisper_mlx  # noqa: E402
+NAMES_IN_FORM = ["NAME", "DEFAULT_MODEL", "ensure_model", "start", "detect_language", "transcribe",
+                 "clear_working_memory", "release", "info", "revision"]
+for name, module in engine.ENGINES.items():
+    missing = [n for n in NAMES_IN_FORM if not hasattr(module, n)]
+    check(f"engine {name}: heeft de vaste vorm uit engine.py", not missing and module.NAME == name, missing)
+check("engine: standaard is Whisper op MLX, met de oude naam voor Iconik",
+      engine.get() is whisper_mlx and whisper_mlx.NAME == "mlx-whisper" == base.ENGINE_NAME)
+try:
+    engine.get("bestaat-niet")
+    check("engine: onbekende naam geeft een nette fout", False)
+except ValueError:
+    check("engine: onbekende naam geeft een nette fout", True)
+check("engine: alleen whisper_mlx kent MLX", not any("mlx" in Path(f"app/{n}.py").read_text()
+      for n in PART_NAMES if n not in ("whisper_mlx", "engine", "base")))
 check("sbom: modelrevisie staat in whisper_mlx.py",
       re.search(r'"[\w.-]+/[\w.-]+":\s*"[0-9a-f]{40}"', Path("app/whisper_mlx.py").read_text()) is not None)
 
