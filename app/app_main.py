@@ -14,11 +14,11 @@ import threading
 from datetime import datetime
 from pathlib import Path
 
-APP_NAME = "Local Transcribe for Iconik"
+INTERNAL_NAME = "Local Transcribe for Iconik"   # zoals transcribe.INTERNAL_NAME; hier al nodig voor het importeren
 RES = Path(os.environ.get("LOCALTRANSCRIBE_RES") or Path(__file__).resolve().parent.parent)  # Contents/Resources van de bundel
 CODE_VERSION = os.environ.get("LOCALTRANSCRIBE_CODE")   # gezet door main.py als een code-update draait
-SUPPORT = Path.home() / "Library" / "Application Support" / APP_NAME
-LOGDIR = Path.home() / "Library" / "Logs" / APP_NAME
+SUPPORT = Path.home() / "Library" / "Application Support" / INTERNAL_NAME
+LOGDIR = Path.home() / "Library" / "Logs" / INTERNAL_NAME
 PORT = 8765
 BASE = f"http://localhost:{PORT}"
 
@@ -612,7 +612,7 @@ def main():
         mark_started()  # dit ligt niet aan de code
         import subprocess
         subprocess.run(["osascript", "-e",
-                        f'display alert "{APP_NAME}" message "' + transcribe.L(
+                        f'display alert "{transcribe.DISPLAY_NAME}" message "' + transcribe.L(
                             "Er draait nog een andere ontvanger op poort 8765. Sluit die af of herstart de Mac.",
                             "Another receiver is already running on port 8765. Quit it or restart the Mac.") + '"'])
         sys.exit(1)
@@ -679,7 +679,7 @@ def main():
     storage = SUPPORT / "webview"
     storage.mkdir(parents=True, exist_ok=True)
     # Het venster meldt zich met de sessie van deze start en krijgt de cookie; daarna gaat het naar de app.
-    window = webview.create_window(APP_NAME, BASE + serve.window_url(), width=980, height=620, min_size=(640, 360))
+    window = webview.create_window(transcribe.DISPLAY_NAME, BASE + serve.window_url(), width=980, height=620, min_size=(640, 360))
     window.events.closing += on_closing
     # Niet in privemodus: zo blijft de inlog bij Iconik in dit venster bewaard.
     threading.Thread(target=watch_settings, daemon=True).start()

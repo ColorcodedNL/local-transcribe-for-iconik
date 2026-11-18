@@ -322,7 +322,7 @@ def check_update():
     """Kijkt bij de start en daarna elke 6 uur of er op GitHub een nieuwere versie staat."""
     url = f"https://api.github.com/repos/{transcribe.RELEASES_REPO}/releases/latest"
     headers = {"Accept": "application/vnd.github+json",
-               "User-Agent": f"{transcribe.APP_NAME}/{transcribe.APP_VERSION}"}
+               "User-Agent": f"{transcribe.DISPLAY_NAME}/{transcribe.APP_VERSION}"}
     while True:
         try:
             response = requests.get(url, headers=headers, timeout=10)

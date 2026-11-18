@@ -44,18 +44,21 @@ os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
 DEFAULT_HOST = "https://app.iconik.io"
 REDIRECT_URI = "http://localhost:8765/oauth/callback"
 OAUTH_SCOPE = "assets:read assets:write collections:read user_impersonation"
-APP_NAME = "Local Transcribe for Iconik"
+# Twee namen: de interne naam verandert nooit (support-map, logs, keychain), de weergavenaam mag later anders
+# worden zonder dat er gegevens of een inlog hoeven te verhuizen.
+INTERNAL_NAME = "Local Transcribe for Iconik"
+DISPLAY_NAME = "Local Transcribe for Iconik"   # venster, meldingen, User-Agent
 APP_VERSION = "0.6.2"  # ook het versienummer van de app-bundel (build_bundle.sh leest het hier)
 RELEASES_REPO = "ColorcodedNL/local-transcribe-for-iconik"  # hier kijkt de app of er een nieuwere versie is
 OLD_APP_NAME = "Iconik Transcribe"  # de naam tot oktober 2026; voorkeuren en inlog verhuizen mee
-SUPPORT_DIR = Path.home() / "Library" / "Application Support" / APP_NAME
+SUPPORT_DIR = Path.home() / "Library" / "Application Support" / INTERNAL_NAME
 try:
     _old_dir = SUPPORT_DIR.with_name(OLD_APP_NAME)
     if _old_dir.is_dir() and not SUPPORT_DIR.exists():
         _old_dir.rename(SUPPORT_DIR)
 except OSError:
     pass
-KEYCHAIN_SERVICE = APP_NAME
+KEYCHAIN_SERVICE = INTERNAL_NAME
 BULK_LIMIT = 500
 CONFIG_PATH = SUPPORT_DIR / "config.json"
 SIDECARS_FILE = SUPPORT_DIR / "sidecars.json"   # welke ondertitelbestanden de app zelf schreef (pad en hash)

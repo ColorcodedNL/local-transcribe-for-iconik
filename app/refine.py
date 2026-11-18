@@ -112,7 +112,7 @@ def open_session(asset_id, reload=False):
         import iconik
         connector = iconik.IconikConnector(client)
         info = connector.open(asset_id, push=False)
-        doc = connector.read(info, core.REFINED_ENGINE)
+        doc = connector.read(info, connector.refined_names)
         if doc is not None:
             doc.source["refined"] = True
         else:
@@ -625,7 +625,7 @@ def save_to_iconik(asset_id):
     engine_info = {"type": "EXTERNAL", "name": core.REFINED_ENGINE, "model": doc.engine.get("model") or "",
                    "version": core.APP_VERSION}
     transcription_id, written = connector.write(info, doc, engine_info,
-                                                replaces=(core.ENGINE_NAME, core.REFINED_ENGINE))
+                                                replaces=connector.all_own_names)
     doc.source.update(transcription_id=transcription_id, refined=True)
     core.save_transcript(doc)          # de kopie op deze Mac is nu de correctie
     discard_draft(asset_id)
@@ -647,7 +647,7 @@ def restore_original(asset_id):
     engine_info = {"type": "EXTERNAL", "name": core.ENGINE_NAME, "model": doc.engine.get("model") or "",
                    "version": doc.engine.get("version") or ""}
     transcription_id, written = connector.write(info, doc, engine_info,
-                                                replaces=(core.ENGINE_NAME, core.REFINED_ENGINE))
+                                                replaces=connector.all_own_names)
     _complete(doc, open_session(asset_id)["doc"])
     doc.source.update(transcription_id=transcription_id)
     doc.source.pop("refined", None)

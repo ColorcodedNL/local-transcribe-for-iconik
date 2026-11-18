@@ -19,9 +19,33 @@ import transcript as tmodel
 NAME = "iconik"
 REINDEX_REALMS = ["TRANSCRIPTIONS", "SEGMENTS"]   # de namen die Iconik voor transcripten gebruikt
 
+# Waaraan de app zijn eigen transcripten in Iconik herkent (engine_info.name). Op één plek, zodat een tweede
+# engine of een ander platform zijn eigen werk nooit voor een transcript uit een andere bron aanziet.
+# Whisper op MLX schrijft nog "mlx-whisper", zodat Macs met een oudere versie in dezelfde rij het blijven
+# herkennen; een volgende engine schrijft PRODUCER, en die naam herkent deze versie nu al.
+PRODUCER = "local-transcribe"
+OWN_NAMES = (core.ENGINE_NAME, PRODUCER)
+REFINED_NAMES = (core.REFINED_ENGINE,)
+ALL_OWN_NAMES = OWN_NAMES + REFINED_NAMES   # alles wat de app zelf schreef
+
+
+def engine_name(transcription):
+    return (transcription.get("engine_info") or {}).get("name")
+
+
+def kind(transcription):
+    """"own" (een transcript van deze app), "refined" (gecorrigeerd in Refine) of "foreign" (andere bron)."""
+    name = engine_name(transcription)
+    if name in REFINED_NAMES:
+        return "refined"
+    if name in OWN_NAMES:
+        return "own"
+    return "foreign"
+
 
 class IconikConnector:
     name = NAME
+    own_names, refined_names, all_own_names = OWN_NAMES, REFINED_NAMES, ALL_OWN_NAMES
 
     def __init__(self, client):
         self.client = client   # transcribe.Iconik, of iets met dezelfde get/post/delete
@@ -38,10 +62,9 @@ class IconikConnector:
         print_(f"Asset:   {asset.get('title')}")
         existing = self.client.get(
             f"assets/v1/assets/{asset_id}/versions/{version_id}/transcriptions/properties/").get("objects", [])
-        name = lambda t: (t.get("engine_info") or {}).get("name")
-        own = [t for t in existing if name(t) == core.ENGINE_NAME]
-        refined = [t for t in existing if name(t) == core.REFINED_ENGINE]
-        foreign = [t for t in existing if t not in own and t not in refined]
+        own = [t for t in existing if kind(t) == "own"]
+        refined = [t for t in existing if kind(t) == "refined"]
+        foreign = [t for t in existing if kind(t) == "foreign"]
         if foreign:
             message = f"Dit asset heeft {len(foreign)} transcript(en) uit een andere bron."
             if push:
@@ -69,13 +92,13 @@ class IconikConnector:
 
     # --- schrijven ---
 
-    def write(self, info, doc, engine_info, still_ours=None, replaces=(core.ENGINE_NAME,)):
+    def write(self, info, doc, engine_info, still_ours=None, replaces=OWN_NAMES):
         """Schrijft het transcript naar Iconik en geeft het id van het nieuwe transcript.
 
         Eerst het nieuwe helemaal neerzetten, pas daarna het oude weghalen. Mislukt het schrijven halverwege,
         dan blijft het oude staan en gaat het halve nieuwe weer weg. Daarna gaan ook eigen transcripten weg
         die een andere Mac intussen op dit asset zette, zodat er precies één van deze app overblijft.
-        `replaces`: welke eigen transcripten (engine-namen) wijken; Refine vervangt ook een eerdere correctie."""
+        `replaces`: welke eigen transcripten (engine-namen) wijken; Refine vervangt ook een eerdere correctie (ALL_OWN_NAMES)."""
         L, fail, print_ = core.L, core.fail, core.print
         asset_id, version_id = info["asset_id"], info["version_id"]
         if still_ours is not None and not still_ours():
@@ -103,7 +126,7 @@ class IconikConnector:
             existing = (info.get("own") or []) + (info.get("refined") or [])
         replaced = False
         for old in existing:
-            if (old.get("engine_info") or {}).get("name") in replaces and old["id"] != transcription_id:
+            if engine_name(old) in replaces and old["id"] != transcription_id:
                 removed = core.delete_transcription(self.client, asset_id, version_id, old["id"])
                 print_(f"Oud transcript {old['id']} verwijderd ({removed} segmenten).")
                 replaced = True
@@ -127,14 +150,14 @@ class IconikConnector:
 
     # --- lezen ---
 
-    def read(self, info, engine_name=None):
+    def read(self, info, names=OWN_NAMES):
         """Het transcript van deze app op het asset, terug in het eigen model, of None als er geen is.
-        `engine_name`: een ander eigen transcript, bijvoorbeeld de gecorrigeerde versie van Refine later."""
-        wanted = engine_name or core.ENGINE_NAME
+        `names`: welke eigen transcripten (een naam of een rij namen), bijvoorbeeld REFINED_NAMES voor de correctie."""
+        wanted = (names,) if isinstance(names, str) else tuple(names)
         asset_id, version_id = info["asset_id"], info["version_id"]
         listing = self.client.get(
             f"assets/v1/assets/{asset_id}/versions/{version_id}/transcriptions/properties/").get("objects", [])
-        matches = [t for t in listing if (t.get("engine_info") or {}).get("name") == wanted]
+        matches = [t for t in listing if engine_name(t) in wanted]
         if not matches:
             return None
         properties = matches[-1]

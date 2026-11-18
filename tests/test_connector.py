@@ -181,5 +181,21 @@ client.segments.append({"transcription_id": "ANDER", "segment_text": "niet van o
                         "time_start_milliseconds": 0, "time_end_milliseconds": 1, "transcription": {}})
 check("read: segmenten van een ander transcript komen niet mee", len(connector.read(info).segments) == 9)
 
+# --- eigen transcripten herkennen (merkteken) ---
+check("kind: mlx-whisper is eigen werk", iconik.kind(OWN) == "own")
+check("kind: local-transcribe (volgende engine) is eigen werk", iconik.kind({"engine_info": {"name": "local-transcribe"}}) == "own")
+check("kind: correctie uit Refine", iconik.kind({"engine_info": {"name": transcribe.REFINED_ENGINE}}) == "refined")
+check("kind: andere bron of zonder naam", iconik.kind(OTHER) == "foreign" and iconik.kind({}) == "foreign")
+NEXT = {"engine_info": {"name": iconik.PRODUCER}}
+client = FakeIconik([dict(NEXT, id="NIEUWER"), dict(OTHER, id="X")])
+connector = iconik.IconikConnector(client)
+info = connector.open("A", push=False)
+check("open: transcript van een volgende engine telt als eigen", [t["id"] for t in info["own"]] == ["NIEUWER"]
+      and [t["id"] for t in info["foreign"]] == ["X"])
+tid, _ = connector.write(info, doc_with(1), {"name": transcribe.ENGINE_NAME})
+check("write: vervangt ook het transcript van een volgende engine, nooit dat uit een andere bron",
+      sorted(t["id"] for t in client.transcriptions) == sorted([tid, "X"]))
+check("read: vindt het eigen transcript ongeacht de engine-naam", connector.read(info) is not None)
+
 print("ALLES OK" if not fails else f"{fails} FOUT")
 sys.exit(1 if fails else 0)
