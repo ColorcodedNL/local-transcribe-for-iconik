@@ -227,6 +227,8 @@ check("kopjes: auto transcribe bij Iconik verwijst ernaar", "Transcriptie" in ba
 # --- terug naar de standaard en wat iemand zelf instelde ---
 settings.put("transcription.auto_max_cpu", 55)
 check("aangepast: een bewaarde waarde telt als eigen keuze", "transcription.auto_max_cpu" in settings.custom("transcription"))
+settings.put("transcription.auto_max_gpu", 40)
+check("aangepast: de standaardwaarde bewaren telt niet als aangepast", "transcription.auto_max_gpu" not in settings.custom("transcription"))
 check("aangepast: een andere groep telt niet mee", "transcription.auto_max_cpu" not in settings.custom("general"))
 check("terugzetten: geeft wat er stond", settings.reset(["transcription.auto_max_cpu"]) == ["transcription.auto_max_cpu"])
 check("terugzetten: weg uit het bestand, standaard geldt weer",
@@ -244,6 +246,14 @@ check("venster: de gesproken taal heeft een keuzelijst met de geteste talen",
 check("venster: describe zegt welke instellingen geavanceerd zijn",
       {i["key"]: i["advanced"] for i in settings.describe("transcription", advanced=True)}.get("transcription.prefetch_min_free_gb") is True
       and all(i["advanced"] is False for i in settings.describe("transcription")))
+
+# --- een koppeling verwijderen ---
+settings.put("iconik.client_id", "11111111-1111-1111-1111-111111111111")
+iid = next(i["id"] for i in settings.integrations() if i["type"] == "iconik")
+settings.remove_integration(iid)
+check("koppeling verwijderen: weg uit config.json met haar instellingen",
+      not settings.integrations() and settings.stored("iconik.client_id") is None)
+settings.remove_integration(iid)   # twee keer is geen fout
 
 # --- via de vaste ingang ---
 check("transcribe kent settings als deel", settings in transcribe.PARTS

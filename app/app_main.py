@@ -93,7 +93,7 @@ def open_settings(tab=None):
         if settings_window is None:
             settings_window = webview.create_window(
                 transcribe.L("Instellingen", "Settings"), BASE + serve.window_url(page),
-                width=720, height=560, min_size=(560, 360))
+                width=820, height=600, min_size=(640, 400))
             settings_window.events.closing += on_settings_closing
         else:
             if tab:

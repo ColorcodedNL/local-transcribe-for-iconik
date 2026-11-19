@@ -25,7 +25,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, quote, urlparse
+from urllib.parse import parse_qs, quote, urljoin, urlparse
 
 import requests
 
@@ -62,6 +62,7 @@ def window_url(page="/"):
     return f"/window/open?t={SESSION}&next={quote(page or '/', safe='')}"
 KEY_HEADER = "X-Local-Transcribe-Key"
 pending_login = {}        # state -> verifier, voor een inlog die onderweg is
+pending_back = {}         # state -> pagina waar het venster na het inloggen heen gaat (Instellingen)
 pending_ids = []          # opdrachten die wachten tot er is ingelogd
 window_state = {"n": 0, "page": "/"}   # wat het venster van de app moet tonen
 show_hook = None  # de app zet hier een functie neer die het venster toont
@@ -499,6 +500,26 @@ def change_mount(storage_id, remove=False):
         transcribe.set_mount(storage_id, folder)   # na het venster opnieuw gelezen, zie set_mount
 
 
+def iconik_account():
+    """Hoe deze Mac met Iconik verbonden is: ("geen" | "uitgelogd" | "gebruiker" | "token", client-ID). Start op
+    de achtergrond de controle op de knoppen in Iconik en het ophalen van de naam van de gebruiker."""
+    client_id = setting.get("iconik.client_id")
+    connection = client()
+    account = ("geen" if connection is None and not client_id else
+               "uitgelogd" if connection is None else
+               "gebruiker" if connection.uses_login else "token")
+    if connection is None:
+        actions.clear()
+    elif "state" not in actions or (not actions.get("busy") and actions.get("state") != "geweigerd" and time.time() - actions.get("checked", 0) > 60):
+        actions.setdefault("state", "onbekend")
+        actions["busy"] = True
+        threading.Thread(target=check_actions, daemon=True).start()
+    if connection is not None and "name" not in who:
+        who["name"] = ""
+        threading.Thread(target=fetch_who, daemon=True).start()
+    return account, client_id
+
+
 def app_state():
     """Alles wat het venster toont, als gegevens."""
     now = datetime.now()
@@ -518,20 +539,7 @@ def app_state():
             "elapsed": (end - job["started"]).total_seconds() if job["started"] else None,
             "auto": bool(job.get("auto")),
         })
-    client_id = setting.get("iconik.client_id")
-    connection = client()
-    account = ("geen" if connection is None and not client_id else
-               "uitgelogd" if connection is None else
-               "gebruiker" if connection.uses_login else "token")
-    if connection is None:
-        actions.clear()
-    elif "state" not in actions or (not actions.get("busy") and actions.get("state") != "geweigerd" and time.time() - actions.get("checked", 0) > 60):
-        actions.setdefault("state", "onbekend")
-        actions["busy"] = True
-        threading.Thread(target=check_actions, daemon=True).start()
-    if connection is not None and "name" not in who:
-        who["name"] = ""
-        threading.Thread(target=fetch_who, daemon=True).start()
+    account, client_id = iconik_account()
     local = (transcribe.LOCAL_SPEAKER_MODEL / "config.yaml").is_file()
     return {
         "jobs": out, "account": account, "user": who.get("name", ""), "actions": actions.get("state", "onbekend"),
@@ -767,7 +775,70 @@ def _transcription_extra():
 
 # Wat het venster Instellingen per tab ophaalt: het schema (ook wat geavanceerd is), de waarden, wat iemand
 # zelf heeft ingesteld en wat er verder op die tab staat maar geen instelling is.
-SETTINGS_DATA = {"general": _general_extra, "transcription": _transcription_extra}
+icons = {}   # host van de Iconik-omgeving -> (adres van het icoon of "", wanneer gezocht)
+
+
+def find_icon(host):
+    """Op de achtergrond: zoekt op de startpagina van de Iconik-omgeving het apple-touch-icon (scherper) of anders
+    het favicon, voor de lijst bij Integraties. Alleen een adres op dezelfde host telt; anders blijft het de stekker.
+    Er komt zo geen logo van Iconik in de app zelf."""
+    found = ""
+    try:
+        page = requests.get(host + "/", timeout=8).text[:200000]
+        links = re.findall(r"<link\b[^>]*>", page, re.I)
+        for rel in ("apple-touch-icon", "icon", "shortcut icon"):
+            for tag in links:
+                if re.search(r"""rel\s*=\s*["']?""" + rel + r"""["'\s>]""", tag, re.I):
+                    href = re.search(r"""href\s*=\s*["']([^"']+)""", tag, re.I)
+                    url = urljoin(host + "/", href.group(1)) if href else ""
+                    if url.startswith(host + "/"):
+                        found = url
+                        break
+            if found:
+                break
+    except Exception as error:
+        print(f"[{datetime.now():%H:%M:%S}] icoon van {host} niet gevonden: {type(error).__name__}")
+    icons[host] = (found, time.time())
+
+
+def integration_icon():
+    """Het adres van het icoon van de Iconik-omgeving, of None (dan de stekker). Zoekt het één keer op; lukte
+    dat niet, dan na tien minuten opnieuw."""
+    host = transcribe.api_host()
+    url, when = icons.get(host, (None, 0))
+    if url is None or (not url and time.time() - when > 600):
+        icons[host] = ("", time.time())   # wordt gezocht; niet nog een keer tegelijk
+        threading.Thread(target=find_icon, args=(host,), daemon=True).start()
+    return icons[host][0] or None
+
+
+def _iconik_extra():
+    account, client_id = iconik_account()
+    worker = dict(remote.state, enabled=worker_enabled(), machine=remote.machine_name(),
+                  machine_alias=remote.machine_alias[0], computer=remote.computer_name(), awake=awake["on"])
+    return {"instances": setting.integrations(), "account": account, "user": who.get("name", ""),
+            "has_client_id": bool(client_id), "actions": actions.get("state", "onbekend"),
+            "mounts": mount_list(setting.get("iconik.mounts")), "worker": worker, "icon": integration_icon()}
+
+
+SETTINGS_DATA = {"general": _general_extra, "transcription": _transcription_extra, "iconik": _iconik_extra}
+
+
+def remove_integration(instance_id):
+    """Een koppeling verwijderen (de knop − bij Integraties): uitloggen en de instellingen van die koppeling
+    vergeten. Niet tijdens een opdracht. Transcripten in Iconik blijven staan."""
+    known = {item["id"] for item in setting.integrations()}
+    if instance_id not in known:
+        return {"ok": False, "error": transcribe.L("Deze integratie bestaat niet (meer).", "This integration does not exist (any more).")}
+    if busy():
+        return {"ok": False, "error": transcribe.L("Wacht tot de lopende opdracht klaar is.", "Wait until the running job has finished.")}
+    transcribe.clear_login()
+    who.clear()
+    actions.clear()
+    setting.remove_integration(instance_id)
+    _wake_worker(True, False)   # de werker ziet dat opdrachten op afstand nu uit staan
+    print(f"[{datetime.now():%H:%M:%S}] integratie verwijderd: {instance_id}")
+    return {"ok": True}
 
 
 def settings_data(group):
@@ -819,7 +890,7 @@ def apply_settings(changes):
 PROTECTED = {"/clear", "/mount/change", "/mount/remove", "/language", "/applang", "/actions/install",
              "/update/open", "/update/install", "/worker", "/iconik-language", "/login-item", "/settings",
              "/logout", "/window/show", "/auto", "/asset/open", "/machine-name", "/window/settings",
-             "/window/title"}
+             "/window/title", "/integrations/remove"}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -1109,6 +1180,8 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/actions/install":
             install_actions()
             return self.reply_json({"ok": True})
+        if url.path == "/integrations/remove":
+            return self.reply_json(remove_integration(first("id")))
         if url.path == "/applang":
             if first("value") in ("auto", "nl", "en"):
                 apply_settings({"general.app_language": first("value")})
@@ -1138,7 +1211,10 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/login":
             address, state, verifier = transcribe.start_login()
             pending_login.clear()
+            pending_back.clear()
             pending_login[state] = verifier
+            if first("back") == "settings":   # ingelogd vanuit Instellingen: daarna daar terug, niet naar /
+                pending_back[state] = "/settings-window?tab=integrations"
             return self.redirect(address)
         if url.path == "/oauth/callback":
             return self.finish_login(first("code"), first("state"), first("error"))
@@ -1157,6 +1233,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def finish_login(self, code, state, error):
         verifier = pending_login.pop(state, None)
+        back = pending_back.pop(state, None)
+        if back and (error or not verifier or not code):
+            return self.redirect(back + "&login=failed")
         if error:
             return self.reply(200, status_page(transcribe.L(f"Iconik gaf geen toegang ({error}).", f"Iconik denied access ({error}).")))
         if not verifier or not code:
@@ -1169,7 +1248,7 @@ class Handler(BaseHTTPRequestHandler):
         waiting, pending_ids[:] = list(pending_ids), []
         if waiting:
             self.queue_request(waiting)
-        return self.redirect("/")
+        return self.redirect(back or "/")
 
     def queue_request(self, requests_waiting):
         queue_request(requests_waiting)

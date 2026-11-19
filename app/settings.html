@@ -68,6 +68,23 @@ button.fold span { color: var(--muted); width: 10px; display: inline-block; }
 .sheet .row { padding: 7px 12px; }
 .sheet .title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sheet .foot { display: flex; gap: 8px; align-items: center; }
+.split { display: flex; gap: 16px; align-items: flex-start; }
+.ilist { width: 190px; flex: none; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; }
+.items { padding: 6px; min-height: 120px; }
+.item { all: unset; box-sizing: border-box; width: 100%; display: flex; align-items: center; gap: 9px; padding: 7px 8px; border-radius: 6px; }
+.item[aria-current="true"] { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.ico { width: 28px; height: 28px; border-radius: 7px; background: var(--text); color: var(--window); display: flex; align-items: center; justify-content: center; flex: none; }
+.ico svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.ico.big { width: 40px; height: 40px; border-radius: 9px; } .ico.big svg { width: 22px; height: 22px; }
+.ico.logo { background: transparent; overflow: hidden; } .ico.logo img { width: 100%; height: 100%; display: block; }
+.nm { flex: 1; min-width: 0; display: flex; flex-direction: column; font-weight: 550; } .nm small { font-weight: 400; color: var(--muted); font-size: 11px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: #b9bfc7; flex: none; } .dot.on { background: #2e9a48; } .dot.off { background: #c9412b; }
+.pm { display: flex; border-top: 1px solid var(--line); }
+.pm .btn { border: 0; border-right: 1px solid var(--line); border-radius: 0; width: 30px; padding: 2px 0; background: transparent; }
+.detail { flex: 1; min-width: 0; }
+.ihead { display: flex; align-items: center; gap: 12px; margin: 2px 0 16px; } .iname { font-size: 16px; font-weight: 650; }
+.ihead .state { display: flex; align-items: center; gap: 6px; }
+button.link { all: unset; color: var(--accent-text); cursor: pointer; }
 .tag { font-size: 11px; font-weight: 600; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; }
 </style>
 </head>
@@ -90,7 +107,7 @@ button.fold span { color: var(--muted); width: 10px; display: inline-block; }
   <section role="tabpanel" data-panel="general"></section>
   <section role="tabpanel" data-panel="transcription"></section>
   <section role="tabpanel" data-panel="files"><p class="empty" data-t="filesSoon"></p></section>
-  <section role="tabpanel" data-panel="integrations"><p class="empty" data-t="soon"></p></section>
+  <section role="tabpanel" data-panel="integrations"></section>
 </main>
 <div class="back" id="sheet" hidden></div>
 <script>
@@ -99,7 +116,7 @@ const TEXT = {
   nl: {
     general: "Algemeen", transcription: "Transcriptie", files: "Bestanden", integrations: "Integraties",
     soon: "Volgt in een volgende stap.", filesSoon: "Komt met het werken met losse bestanden.",
-    choices: {"general.app_language": {auto: "Volg macOS", nl: "Nederlands", en: "English"}},
+    choices: {"general.app_language": {auto: "Volg macOS", nl: "Nederlands", en: "English"}, "iconik.iconik_language": {"": "Volg de app", nl: "Nederlands", en: "English"}},
     languages: {auto: "Herken per opdracht", nl: "Nederlands", en: "English", de: "Deutsch", fr: "Français", es: "Español", it: "Italiano", sv: "Svenska"},
     untested: "niet getest",
     login: "Opstarten bij inloggen", loginHelp: "Opent de app bij het inloggen. Staan opdrachten op afstand aan, dan blijft hij in de menubalk.",
@@ -110,7 +127,7 @@ const TEXT = {
     adjust: "Aanpassen…", backToRecommended: "Terug naar aanbevolen",
     limits: (gb, cpu, gpu) => `Alleen op netstroom, minstens ${gb} GB geheugen vrij, processor onder ${cpu}% en GPU onder ${gpu}%.`,
     refine: "Refine", refineSub: "Regels voor ondertitels kies je in Refine, bij + Ondertitels.",
-    originals: (n, mb) => n ? `Originelen van ${n} ${n === 1 ? "gecorrigeerd transcript" : "gecorrigeerde transcripten"} staan op deze Mac (${mb} MB).` : "Geen originelen van gecorrigeerde transcripten op deze Mac.",
+    originals: (n, mb) => n ? `Originelen van ${n} ${n === 1 ? "gecorrigeerd transcript" : "gecorrigeerde transcripten"} staan op deze Mac (${mb}).` : "Geen originelen van gecorrigeerde transcripten op deze Mac.",
     originalsHelp: "Daarmee zet je in Refine een origineel terug. In de lijst haal je er één weg, Leegmaken haalt ze allemaal weg.",
     showList: "Toon lijst…", clear: "Leegmaken", clearSure: "Zeker? Klik nogmaals",
     advanced: "Geavanceerd",
@@ -119,11 +136,35 @@ const TEXT = {
     colName: "Asset of bestand", colSource: "Bron", colDate: "Gecorrigeerd", colSize: "Grootte",
     selected: n => `${n} geselecteerd`, removeSelected: "Verwijder geselecteerde", done: "Klaar", noneLeft: "Geen originelen meer.",
     failed: "Bewaren lukte niet.",
+    account: "Account", short: {gebruiker: "Ingelogd", token: "Persoonlijk token", uitgelogd: "Niet ingelogd", geen: "Nog niet verbonden"},
+    accAs: u => u ? `Ingelogd als ${u}` : "Ingelogd bij Iconik", accToken: "Verbonden met een persoonlijk token uit ~/.iconik-env",
+    accOut: "Niet ingelogd.", accNone: "Nog niet verbonden met Iconik.", accNeedId: "Vul eerst de client-ID in van de applicatie die je Iconik-beheerder heeft aangemaakt.",
+    login: "Log in bij Iconik", logout: "Log uit", loginFailed: "Inloggen lukte niet. Probeer het opnieuw.",
+    buttons: "Knoppen in Iconik", btnPresent: "De knoppen Local Transcribe en Refine transcript staan in Iconik.",
+    btnMissing: "De knoppen staan nog niet (allebei) in deze Iconik-omgeving. Dat hoeft maar één keer, voor alle gebruikers tegelijk.",
+    btnDenied: "Je account mag geen Custom Actions aanmaken. Vraag een Iconik-beheerder om één keer in deze app in te loggen en de knoppen te plaatsen.",
+    btnChecking: "Kijkt of de knoppen in Iconik staan…", btnInstall: "Zet de knoppen in Iconik",
+    storage: "Opslag (ISG) op deze Mac", storageSub: "De app vraagt om de map bij de eerste opdracht van een nieuwe opslag.",
+    noMounts: "Nog geen opslag gekoppeld.", change: "Kies andere map", removeMount: "Verwijder",
+    remote: "Opdrachten op afstand", workerOn: "Opdrachten op afstand toestaan", autoOn: "Transcribeer zelf wat nog geen transcript heeft", workerHelp: "Neemt opdrachten uit Iconik aan vanaf elke locatie, ook als het venster dicht is. De opslag (ISG) moet op deze Mac gekoppeld zijn.",
+    nameHelp: "Staat in de details van een asset, zichtbaar voor iedereen die het asset in Iconik ziet. Leeg: de computernaam.",
+    workerAs: "Naam", workerLast: "laatst gekeken", workerAsset: "laatst opgepakt", workerPaused: "Gepauzeerd tot", workerProblem: "Probleem", resumeNow: "Nu hervatten",
+    auto: "Automatisch transcriberen", seeLimits: "Grenzen bij Transcriptie",
+    autoHelp: "Transcribeert alles op de opslag (ISG) van deze Mac dat nog geen transcript heeft, nieuwste eerst. Aanvragen van collega's gaan altijd voor. Alleen als deze Mac ruimte heeft.",
+    autoAudioHelp: "Bijvoorbeeld losse geluidsopnames van een draaidag. Muziek wordt pas na het transcriberen herkend en overgeslagen.",
+    autoReady: "Klaar: pakt een asset zodra er niets is aangevraagd.", autoWait: "Wacht", autoAwake: "Deze Mac blijft wakker.",
+    autoWhy: {power: "op batterij", memory: v => `te weinig geheugen vrij (${v} GB)`, pressure: "geheugendruk hoog", measuring: "meet nog hoe druk de Mac is", cpu: v => `CPU ${v}% bezet`, gpu: v => `GPU ${v}% bezet`, storage: "geen opslag (ISG) gekoppeld", checking: "kijkt of de opslag (ISG) bereikbaar is", offline: "opslag (ISG) niet bereikbaar"},
+    labels: "Labels in Iconik", fieldsHelp: "Wat mensen in Iconik zien bij Transcriptie en de keuzes Aangevraagd, Bezig, Klaar en Fout. Geldt voor iedereen in deze Iconik-omgeving en vraagt beheerrechten.",
+    fieldsDone: "Bijgewerkt in Iconik.",
+    noIntegrations: "Nog geen integraties.", addHint: "Kies + om Iconik toe te voegen.", add: "Integratie toevoegen", remove: "Integratie verwijderen",
+    oneIconik: "Er kan nu één Iconik-koppeling zijn.",
+    removeTitle: "Iconik verwijderen?", removeHelp: "Je wordt uitgelogd en de instellingen van deze koppeling (adres, opslag, op afstand, automatisch) worden vergeten. Transcripten in Iconik blijven staan.",
+    cancel: "Annuleer", removeConfirm: "Verwijder",
   },
   en: {
     general: "General", transcription: "Transcription", files: "Files", integrations: "Integrations",
     soon: "Follows in a next step.", filesSoon: "Comes with working on separate files.",
-    choices: {"general.app_language": {auto: "Follow macOS", nl: "Nederlands", en: "English"}},
+    choices: {"general.app_language": {auto: "Follow macOS", nl: "Nederlands", en: "English"}, "iconik.iconik_language": {"": "Follow the app", nl: "Nederlands", en: "English"}},
     languages: {auto: "Detect per job", nl: "Nederlands", en: "English", de: "Deutsch", fr: "Français", es: "Español", it: "Italiano", sv: "Svenska"},
     untested: "untested",
     login: "Open at login", loginHelp: "Opens the app when you log in. With remote jobs on, it stays in the menu bar.",
@@ -134,7 +175,7 @@ const TEXT = {
     adjust: "Adjust…", backToRecommended: "Back to recommended",
     limits: (gb, cpu, gpu) => `Only on mains power, at least ${gb} GB memory free, processor below ${cpu}% and GPU below ${gpu}%.`,
     refine: "Refine", refineSub: "Subtitle rules are chosen in Refine, under + Subtitles.",
-    originals: (n, mb) => n ? `Originals of ${n} corrected ${n === 1 ? "transcript are" : "transcripts are"} kept on this Mac (${mb} MB).` : "No originals of corrected transcripts on this Mac.",
+    originals: (n, mb) => n ? `Originals of ${n} corrected ${n === 1 ? "transcript are" : "transcripts are"} kept on this Mac (${mb}).` : "No originals of corrected transcripts on this Mac.",
     originalsHelp: "With them Refine puts an original back. In the list you remove one, Clear removes them all.",
     showList: "Show list…", clear: "Clear", clearSure: "Sure? Click again",
     advanced: "Advanced",
@@ -143,6 +184,30 @@ const TEXT = {
     colName: "Asset or file", colSource: "Source", colDate: "Corrected", colSize: "Size",
     selected: n => `${n} selected`, removeSelected: "Remove selected", done: "Done", noneLeft: "No originals left.",
     failed: "Saving failed.",
+    account: "Account", short: {gebruiker: "Logged in", token: "Personal token", uitgelogd: "Not logged in", geen: "Not connected yet"},
+    accAs: u => u ? `Logged in as ${u}` : "Logged in to Iconik", accToken: "Connected with a personal token from ~/.iconik-env",
+    accOut: "Not logged in.", accNone: "Not connected to Iconik yet.", accNeedId: "First fill in the client ID of the application your Iconik admin created.",
+    login: "Log in to Iconik", logout: "Log out", loginFailed: "Logging in did not work. Try again.",
+    buttons: "Buttons in Iconik", btnPresent: "The Local Transcribe and Refine transcript buttons are in Iconik.",
+    btnMissing: "The buttons are not (both) in this Iconik environment yet. This is needed only once, for all users at the same time.",
+    btnDenied: "Your account may not create Custom Actions. Ask an Iconik admin to log in to this app once and add the buttons.",
+    btnChecking: "Checking whether the buttons are in Iconik…", btnInstall: "Add the buttons to Iconik",
+    storage: "Storage (ISG) on this Mac", storageSub: "The app asks for the folder at the first job of a new storage.",
+    noMounts: "No storage linked yet.", change: "Choose another folder", removeMount: "Remove",
+    remote: "Remote jobs", workerOn: "Allow remote jobs", autoOn: "Transcribe what has no transcript yet by itself", workerHelp: "Accepts jobs from Iconik from any location, also with the window closed. The storage (ISG) must be mounted on this Mac.",
+    nameHelp: "Shown in the details of an asset, visible to everyone who sees the asset in Iconik. Empty: the computer name.",
+    workerAs: "Name", workerLast: "last checked", workerAsset: "last picked up", workerPaused: "Paused until", workerProblem: "Problem", resumeNow: "Resume now",
+    auto: "Auto transcribe", seeLimits: "Limits under Transcription",
+    autoHelp: "Transcribes everything on the storage (ISG) of this Mac that has no transcript yet, newest first. Requests from colleagues always go first. Only when this Mac has room.",
+    autoAudioHelp: "For example separate sound recordings of a shoot. Music is only recognised and skipped after transcribing.",
+    autoReady: "Ready: picks up an asset as soon as nothing is requested.", autoWait: "Waiting", autoAwake: "This Mac stays awake.",
+    autoWhy: {power: "on battery", memory: v => `not enough memory free (${v} GB)`, pressure: "memory pressure high", measuring: "still measuring how busy the Mac is", cpu: v => `CPU ${v}% busy`, gpu: v => `GPU ${v}% busy`, storage: "no storage (ISG) linked", checking: "checking whether the storage (ISG) is reachable", offline: "storage (ISG) not reachable"},
+    labels: "Labels in Iconik", fieldsHelp: "What people see in Iconik at Transcription and the choices Requested, Busy, Done and Error. Applies to everyone in this Iconik environment and needs admin rights.",
+    fieldsDone: "Updated in Iconik.",
+    noIntegrations: "No integrations yet.", addHint: "Choose + to add Iconik.", add: "Add integration", remove: "Remove integration",
+    oneIconik: "There can be one Iconik integration for now.",
+    removeTitle: "Remove Iconik?", removeHelp: "You are logged out and the settings of this integration (address, storage, remote, auto) are forgotten. Transcripts in Iconik stay.",
+    cancel: "Cancel", removeConfirm: "Remove",
   },
 };
 const TABS = ["general", "transcription", "files", "integrations"];
@@ -151,11 +216,15 @@ const T = TEXT[lang];
 const KEY = "settings.tab";   // de laatste tab; het venster bewaart zijn opslag tussen starts
 const AUTO = ["transcription.auto_min_free_gb", "transcription.auto_max_cpu", "transcription.auto_max_gpu"];
 const HDR = {"X-Local-Transcribe": "1"};
-let current = "general", data = {}, errors = {}, ui = {adjust: false, advanced: false, clearArmed: false};
+let current = "general", data = {}, errors = {}, ui = {adjust: false, advanced: false, clearArmed: false, adding: false, fieldsMsg: "",
+    loginFailed: new URLSearchParams(location.search).get("login") === "failed"};
+const GROUP = {general: "general", transcription: "transcription", integrations: "iconik"};   // tab -> groep in het schema
+const PLUG = '<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M9 7V3M15 7V3M7 7h10v4a5 5 0 0 1-10 0V7zM12 16v5"/></svg>';
 
 const $ = id => document.getElementById(id);
 const esc = text => String(text ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 const num = n => (lang === "nl" ? String(n).replace(".", ",") : String(n));
+const size = b => b < 1e6 ? `${Math.max(1, Math.round(b / 1e3))} kB` : `${num((b / 1e6).toFixed(1))} MB`;   // originelen zijn vaak maar een paar kB
 const remembered = () => { try { return localStorage.getItem(KEY); } catch (e) { return null; } };
 const remember = tab => { try { localStorage.setItem(KEY, tab); } catch (e) {} };
 const post = (path, body) => fetch(path, {method: "POST", headers: Object.assign({"Content-Type": "application/json"}, HDR),
@@ -209,7 +278,7 @@ function drawTranscription() {
                         (custom ? `<button class="btn" id="backRecommended">${esc(T.backToRecommended)}</button>`
                                 : (ui.adjust ? "" : `<button class="btn" id="adjust">${esc(T.adjust)}</button>`)))];
   if (custom || ui.adjust) AUTO.forEach(k => autoRows.push(settingRow(spec(k))));
-  const mb = (x.originals.bytes / 1e6).toFixed(1);
+  const mb = size(x.originals.bytes);
   const advanced = data.settings.filter(s => s.kind !== "mapping" && !s.section && s.key !== "transcription.language");
   return group(T.language, [settingRow(spec("transcription.language"))])
     + group(T.models, [
@@ -217,14 +286,105 @@ function drawTranscription() {
         row(esc(T.speakers), "", `<span class="state">${esc({lokaal: T.spLocal, huggingface: T.spHub, uit: T.spOff}[x.speakers])}</span>`),
         `<div class="row"><div class="help" style="margin:0">${esc(T.credit)} ${esc(T.version)} ${esc(x.version)}.</div></div>`])
     + group(section.title, autoRows, section.help)
-    + group(T.refine, [row(esc(T.originals(x.originals.count, num(mb))), esc(T.originalsHelp),
+    + group(T.refine, [row(esc(T.originals(x.originals.count, mb)), esc(T.originalsHelp),
         `<button class="btn" id="showList" ${x.originals.count ? "" : "disabled"}>${esc(T.showList)}</button>` +
         `<button class="btn" id="clearOriginals" ${x.originals.count ? "" : "disabled"}>${esc(ui.clearArmed ? T.clearSure : T.clear)}</button>`)], T.refineSub)
     + `<button class="fold" id="advanced" aria-expanded="${ui.advanced}"><span>${ui.advanced ? "▾" : "▸"}</span>${esc(T.advanced)}</button>`
     + (ui.advanced ? group("", advanced.filter(s => s.advanced).map(settingRow)) : "");
 }
 
-const DRAW = {general: drawGeneral, transcription: drawTranscription};
+function workerLine(w) {
+  let t = `${T.workerAs}: ${w.machine || ""}`;
+  if (w.last_poll) t += `, ${T.workerLast} ${w.last_poll}`;
+  if (w.last_asset) t += `, ${T.workerAsset} ${w.last_asset}`;
+  if (w.paused_until) t += `. ${T.workerPaused} ${w.paused_until}${w.pause_reason ? ": " + w.pause_reason : ""}`;
+  if (w.error) t += `. ${T.workerProblem}: ${w.error}`;
+  return t + ".";
+}
+
+function autoLine(w) {
+  const a = w.auto;
+  if (!a) return "";
+  const v = a.values || {}, why = T.autoWhy[a.reason];
+  const value = {memory: v.free_gb, cpu: v.cpu, gpu: v.gpu}[a.reason];
+  const reason = typeof why === "function" ? why(value == null ? "?" : num(Number(value).toFixed(a.reason === "memory" ? 1 : 0))) : (why || a.reason || "");
+  return (a.ready ? T.autoReady : `${T.autoWait}: ${reason}.`) + (w.awake ? " " + T.autoAwake : "");
+}
+
+// Het icoon van de Iconik-omgeving zelf (van haar eigen host), of de stekker als dat er niet is of niet laadt.
+const logo = (icon, big) => icon
+  ? `<span class="ico logo${big ? " big" : ""}"><img src="${esc(icon)}" alt="" onerror="this.parentNode.classList.remove('logo');this.outerHTML=PLUG"></span>`
+  : `<span class="ico${big ? " big" : ""}">${PLUG}</span>`;
+
+function drawIntegrations() {
+  const x = data.extra, v = data.values, w = x.worker;
+  const has = x.instances.some(i => i.type === "iconik") || x.account !== "geen";
+  const dot = {gebruiker: "on", token: "on", uitgelogd: "off", geen: ""}[x.account];
+  const list = `<div class="ilist"><div class="items">` +
+    (has || ui.adding ? `<button class="item" aria-current="true">${logo(x.icon)}<span class="nm">Iconik<small>${esc(T.short[x.account])}</small></span><i class="dot ${dot}"></i></button>`
+                      : `<p class="state" style="padding:8px">${esc(T.noIntegrations)}</p>`) +
+    `</div><div class="pm"><button class="btn" id="addIntegration" aria-label="${esc(T.add)}" ${has ? `disabled title="${esc(T.oneIconik)}"` : ""}>+</button>` +
+    `<button class="btn" id="removeIntegration" aria-label="${esc(T.remove)}" ${x.instances.some(i => i.type === "iconik") ? "" : "disabled"}>−</button></div></div>`;
+  if (!has && !ui.adding) return `<div class="split">${list}<div class="detail"><p class="empty">${esc(T.addHint)}</p></div></div>`;
+
+  const status = {gebruiker: T.accAs(x.user), token: T.accToken, uitgelogd: T.accOut, geen: T.accNone}[x.account];
+  let html = `<div class="ihead">${logo(x.icon, true)}<div><div class="iname">Iconik</div><div class="state"><i class="dot ${dot}"></i>${esc(status)}</div></div></div>`;
+  const account = [settingRow(spec("iconik.host")), settingRow(spec("iconik.client_id"))];
+  if (x.account === "gebruiker") account.push(row(esc(T.accAs(x.user)), "", `<button class="btn" id="logout">${esc(T.logout)}</button>`));
+  else if (x.account !== "token")
+    account.push(row(esc(x.has_client_id ? T.accOut : T.accNeedId), ui.loginFailed ? `<span class="err">${esc(T.loginFailed)}</span>` : "",
+                     `<button class="go" id="login" ${x.has_client_id ? "" : "disabled"}>${esc(T.login)}</button>`));
+  html += group(T.account, account);
+  const online = x.account === "gebruiker" || x.account === "token";
+  if (online) {
+    const text = {aanwezig: T.btnPresent, ontbreekt: T.btnMissing, geweigerd: T.btnDenied}[x.actions] || T.btnChecking;
+    html += group(T.buttons, [row(esc(text), "", x.actions === "ontbreekt" ? `<button class="btn" id="installActions">${esc(T.btnInstall)}</button>` : "")]);
+  }
+  html += group(T.storage, x.mounts.length
+    ? x.mounts.map(m => row(`${esc(m.name || "ISG " + m.id)}<div class="help"><code>${esc(m.path)}</code></div>`, "",
+        `<button class="btn" data-mount="change" data-id="${esc(m.id)}">${esc(T.change)}</button><button class="btn" data-mount="remove" data-id="${esc(m.id)}">${esc(T.removeMount)}</button>`))
+    : [row(`<span class="state">${esc(T.noMounts)}</span>`, "", "")], T.storageSub);
+  // label: een eigen tekst waar de kop van het blok al zegt wat het schema-label zegt
+  const withHelp = (key, help, extra, label) => row(esc(label || spec(key).label), esc(help) + (extra || ""), control(spec(key), v[key]), key);
+  const remote = [withHelp("iconik.worker_enabled", T.workerHelp, "", T.workerOn)];
+  if (w.enabled) {
+    remote.push(row(esc(spec("iconik.machine_name").label), esc(T.nameHelp),
+      `<input type="text" id="f-iconik-machine_name" data-key="iconik.machine_name" value="${esc(v["iconik.machine_name"])}" placeholder="${esc(w.computer || "")}" maxlength="40" aria-label="${esc(spec("iconik.machine_name").label)}">`, "iconik.machine_name"));
+    remote.push(`<div class="row"><div class="lbl help" style="margin:0">${esc(workerLine(w))}</div>${w.paused_until ? `<button class="btn" id="resumeNow">${esc(T.resumeNow)}</button>` : ""}</div>`);
+  }
+  html += group(T.remote, remote);
+  if (w.enabled) {
+    const auto = [withHelp("iconik.auto_transcribe", T.autoHelp, ` <button class="link" id="toLimits">${esc(T.seeLimits)}</button>`, T.autoOn)];
+    if (v["iconik.auto_transcribe"]) {
+      auto.push(withHelp("iconik.auto_audio", T.autoAudioHelp));
+      auto.push(settingRow(spec("iconik.auto_max_minutes")));
+      if (w.auto) auto.push(`<div class="row"><div class="help" style="margin:0">${esc(autoLine(w))}</div></div>`);
+    }
+    html += group(T.auto, auto);
+  }
+  if (online) html += group(T.labels, [row(esc(spec("iconik.iconik_language").label), esc(T.fieldsHelp) + (ui.fieldsMsg ? `<div class="state">${esc(ui.fieldsMsg)}</div>` : ""),
+                                           control(spec("iconik.iconik_language"), v["iconik.iconik_language"]), "iconik.iconik_language")]);
+  return `<div class="split">${list}<div class="detail">${html}</div></div>`;
+}
+
+function confirmRemove() {
+  const item = data.extra.instances.find(i => i.type === "iconik");
+  if (!item) return;
+  const sheet = $("sheet");
+  sheet.innerHTML = `<div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(T.removeTitle)}"><h2>${esc(T.removeTitle)}</h2>
+    <div class="help">${esc(T.removeHelp)}</div><div class="err" id="removeErr"></div>
+    <div class="foot" style="justify-content:flex-end;margin-top:14px"><button class="btn" id="removeCancel">${esc(T.cancel)}</button>
+    <button class="btn danger" id="removeConfirm">${esc(T.removeConfirm)}</button></div></div>`;
+  sheet.hidden = false;
+  $("removeCancel").focus();
+  $("removeCancel").onclick = closeSheet;
+  $("removeConfirm").onclick = async () => {
+    const r = await fetch("/integrations/remove?id=" + encodeURIComponent(item.id), {method: "POST", headers: HDR}).then(r => r.json()).catch(() => ({ok: false}));
+    if (r.ok) { ui.adding = false; closeSheet(); } else $("removeErr").textContent = r.error || T.failed;
+  };
+}
+
+const DRAW = {general: drawGeneral, transcription: drawTranscription, integrations: drawIntegrations};
 
 function draw() {
   const panel = document.querySelector(`[data-panel="${current}"]`);
@@ -236,7 +396,7 @@ function draw() {
 
 async function load(tab) {
   if (!DRAW[tab]) return;
-  const r = await fetch("/settings-data?group=" + tab);
+  const r = await fetch("/settings-data?group=" + GROUP[tab]);
   if (!r.ok) return;
   if (tab !== current) return;
   data = await r.json();
@@ -249,6 +409,7 @@ async function save(key, value) {
   if (result.ok) {
     delete errors[key];
     if (key === "general.app_language") { location.reload(); return; }   // de pagina komt terug in de nieuwe taal
+    if (key === "iconik.iconik_language") ui.fieldsMsg = T.fieldsDone;
   } else {
     errors[key] = (result.errors && result.errors[key]) || result.error || T.failed;
   }
@@ -278,6 +439,18 @@ document.addEventListener("click", async e => {
   else if (id === "backRecommended") { ui.adjust = false; await post("/settings/reset", {keys: AUTO}); AUTO.forEach(k => delete errors[k]); load(current); }
   else if (id === "advanced") { ui.advanced = !ui.advanced; draw(); }
   else if (id === "showList") openSheet();
+  else if (id === "login") location.href = "/login?back=settings";
+  else if (id === "logout") { await fetch("/logout", {method: "POST", headers: HDR}); load(current); }
+  else if (id === "installActions") { e.target.closest("button").disabled = true; await fetch("/actions/install", {method: "POST", headers: HDR}); load(current); }
+  else if (id === "resumeNow") { await fetch("/worker?value=resume", {method: "POST", headers: HDR}); load(current); }
+  else if (id === "addIntegration") { ui.adding = true; draw(); }
+  else if (id === "removeIntegration") confirmRemove();
+  else if (id === "toLimits") show("transcription");
+  else if (e.target.closest("[data-mount]")) {
+    const b = e.target.closest("[data-mount]");
+    await fetch(`/mount/${b.dataset.mount}?id=${encodeURIComponent(b.dataset.id)}`, {method: "POST", headers: HDR});
+    load(current);
+  }
   else if (id === "clearOriginals") {
     if (!ui.clearArmed) { ui.clearArmed = true; draw(); return; }
     ui.clearArmed = false;
@@ -293,7 +466,7 @@ async function openSheet() {
   const rows = list.map(o => `<div class="row"><input type="checkbox" data-asset="${esc(o.asset)}" aria-label="${esc(o.title || o.asset)}">
       <div class="title">${esc(o.title || o.asset)}</div>${o.connector ? `<span class="tag">${esc(o.connector === "iconik" ? "Iconik" : o.connector)}</span>` : ""}
       <span class="state" style="width:84px">${esc(new Date(o.time * 1000).toLocaleDateString(lang, {day: "numeric", month: "short"}))}</span>
-      <span class="state" style="width:56px;text-align:right">${esc(num((o.bytes / 1e6).toFixed(1)))} MB</span></div>`).join("");
+      <span class="state" style="width:56px;text-align:right">${esc(size(o.bytes))}</span></div>`).join("");
   sheet.innerHTML = `<div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(T.sheetTitle)}">
       <h2>${esc(T.sheetTitle)}</h2><div class="help">${esc(T.sheetHelp)}</div>
       <div class="grp">${rows || `<div class="row state">${esc(T.noneLeft)}</div>`}</div>
@@ -330,6 +503,9 @@ function show(tab) {
 document.documentElement.lang = lang;
 document.querySelectorAll("[data-t]").forEach(el => el.textContent = T[el.dataset.t]);
 document.querySelectorAll("nav button").forEach(b => b.addEventListener("click", () => show(b.dataset.tab)));
+setInterval(() => {
+  if (current === "integrations" && $("sheet").hidden && !document.activeElement.matches("input, select")) load(current);
+}, 3000);
 window.addEventListener("focus", () => { if ($("sheet").hidden && !document.activeElement.matches("input, select")) load(current); });   // het hoofdvenster kan intussen iets veranderd hebben
 show(new URLSearchParams(location.search).get("tab") || remembered());
 // ?tab= geldt alleen bij het openen; daarna uit het adres, zodat opnieuw laden (taalwissel) op de huidige tab blijft.

@@ -58,6 +58,7 @@ def check(name, cond, detail=""):
 
 
 # --- Nep-Iconik: OAuth met PKCE, token, gebruiker, knoppen, titels
+ICON_PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==")
 CLIENT_IDS = {"11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"}
 iconik = {"codes": {}, "tokens": set(), "pkce_ok": 0, "authorize": 0, "bad": []}
 
@@ -101,6 +102,15 @@ class FakeIconik(BaseHTTPRequestHandler):
             body = page.encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/html")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            return self.wfile.write(body)
+        if url.path in ("/", "/static/apple-touch-icon.png"):
+            # De startpagina met een icoon, zoals Iconik die heeft; de app toont dat icoon bij Integraties.
+            body, kind = ((b'<html><head><link rel="apple-touch-icon" href="/static/apple-touch-icon.png" /></head></html>', "text/html")
+                          if url.path == "/" else (ICON_PNG, "image/png"))
+            self.send_response(200)
+            self.send_header("Content-Type", kind)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             return self.wfile.write(body)
@@ -392,9 +402,9 @@ with sync_playwright() as p:
         # De originelen van Refine: één weghalen uit de lijst, daarna de rest leegmaken.
         serve.refine.DRAFTS_DIR.mkdir(parents=True, exist_ok=True)
         secret = serve.refine.DRAFTS_DIR / "A9.original.json"
-        other = serve.refine.DRAFTS_DIR / "B7.original.json"
+        remaining = serve.refine.DRAFTS_DIR / "B7.original.json"
         secret.write_text(json.dumps({"transcript": {"source": {"connector": "iconik", "title": "Vertrouwelijk interview"}}}))
-        other.write_text(json.dumps({"transcript": {"source": {"connector": "iconik", "title": "Ander interview"}}}))
+        remaining.write_text(json.dumps({"transcript": {"source": {"connector": "iconik", "title": "Ander interview"}}}))
         page.reload()
         page.get_by_text("Originelen van 2 gecorrigeerde transcripten").wait_for(timeout=5000)
         page.get_by_role("button", name="Toon lijst…").click()
@@ -402,12 +412,74 @@ with sync_playwright() as p:
         dialog.get_by_label("Vertrouwelijk interview").check()
         dialog.get_by_role("button", name="Verwijder geselecteerde").click()
         dialog.get_by_text("Vertrouwelijk interview").wait_for(state="detached", timeout=5000)
-        check("originelen: één weghalen uit de lijst", not secret.exists() and other.exists())
+        check("originelen: één weghalen uit de lijst", not secret.exists() and remaining.exists())
         dialog.get_by_role("button", name="Klaar").click()
         page.get_by_role("button", name="Leegmaken").click()
         page.get_by_role("button", name="Zeker? Klik nogmaals").click()
         page.get_by_text("Geen originelen van gecorrigeerde transcripten").wait_for(timeout=5000)
-        check("originelen: leegmaken werkt (de route ontbrak tot nu)", not other.exists())
+        check("originelen: leegmaken werkt (de route ontbrak tot nu)", not remaining.exists())
+
+        # 11. Instellingen, Integraties: Iconik in de lijst, op afstand en automatisch, uit- en inloggen, − en +.
+        # De opdrachten uit stap 5 staan nog in de rij (hier draait geen werker); met iets in de rij weigert de app
+        # een nieuwe naam en het verwijderen van Iconik. Eerst leeg, verderop wordt die weigering zelf getest.
+        while not serve.work.empty():
+            serve.work.get_nowait()
+        page.goto(BASE + "/settings-window?tab=integrations")
+        page.locator("#logout").wait_for(timeout=5000)
+        check("Integraties: één Iconik in de lijst, ingelogd", page.locator(".item").count() == 1 and logged_in())
+        check("Integraties: + staat uit zolang er een Iconik is", page.locator("#addIntegration").is_disabled())
+        icon = page.locator(".item img")
+        icon.wait_for(timeout=10000)   # het icoon wordt op de achtergrond opgezocht; de tab ververst elke 3 seconden
+        check("Integraties: het icoon van de Iconik-omgeving zelf, van haar eigen host",
+              icon.get_attribute("src") == FAKE + "/static/apple-touch-icon.png"
+              and icon.evaluate("img => img.complete && img.naturalWidth > 0"), icon.get_attribute("src"))
+        page.locator("#f-iconik-worker_enabled").check()
+        name = page.locator("#f-iconik-machine_name")
+        name.wait_for(timeout=5000)
+        check("Integraties: opdrachten op afstand aan", app_settings.stored("iconik.worker_enabled") is True)
+        name.fill("Testmac")
+        name.press("Enter")
+        page.wait_for_timeout(500)
+        check("Integraties: naam van deze Mac bewaard", app_settings.stored("iconik.machine_name") == "Testmac")
+        page.locator("#f-iconik-auto_transcribe").check()
+        page.locator("#f-iconik-auto_audio").wait_for(timeout=5000)
+        check("Integraties: automatisch transcriberen aan", app_settings.stored("iconik.auto_transcribe") is True)
+        page.locator("#f-iconik-auto_transcribe").uncheck()
+        page.wait_for_timeout(500)
+        page.locator("#f-iconik-worker_enabled").uncheck()
+        page.wait_for_timeout(500)
+        check("Integraties: automatisch en op afstand weer uit",
+              app_settings.stored("iconik.auto_transcribe") is False and app_settings.stored("iconik.worker_enabled") is False)
+        page.locator("#logout").click()
+        page.locator("#login").wait_for(timeout=5000)
+        check("Integraties: uitloggen", not logged_in())
+        page.locator("#login").click()
+        page.locator("#logout").wait_for(timeout=10000)
+        check("Integraties: inloggen vanuit Instellingen komt terug in Instellingen",
+              logged_in() and page.url == BASE + "/settings-window", page.url)
+        page.locator("#removeIntegration").click()
+        page.get_by_role("button", name="Annuleer").click()
+        check("Integraties: − en dan Annuleer laat alles staan", logged_in() and app_settings.integrations())
+        serve.work.put(("bezig", "test"))   # alsof er een opdracht loopt
+        page.locator("#removeIntegration").click()
+        page.locator("#removeConfirm").click()
+        page.get_by_text("Wacht tot de lopende opdracht klaar is.").wait_for(timeout=5000)
+        check("Integraties: − tijdens een opdracht geweigerd met melding", logged_in() and app_settings.integrations())
+        serve.work.get_nowait()
+        page.locator("#removeConfirm").click()
+        page.get_by_text("Kies + om Iconik toe te voegen.").wait_for(timeout=5000)
+        check("Integraties: − verwijdert de koppeling en logt uit",
+              not logged_in() and not app_settings.integrations() and app_settings.stored("iconik.client_id") is None)
+        page.locator("#addIntegration").click()
+        cid = page.locator("#f-iconik-client_id")
+        cid.wait_for(timeout=5000)
+        app_settings.raw_put("iconik.host", FAKE)   # het schema wil https; de nep-Iconik draait op http
+        cid.fill(other)
+        cid.press("Enter")
+        page.locator("#login:not([disabled])").wait_for(timeout=5000)
+        page.locator("#login").click()
+        page.locator("#logout").wait_for(timeout=10000)
+        check("Integraties: + en een client-ID, daarna ingelogd", logged_in() and app_settings.stored("iconik.client_id") == other)
 
         browser.close()
     except Exception as error:

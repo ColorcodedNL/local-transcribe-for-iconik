@@ -390,10 +390,18 @@ def reset(keys):
     return removed
 
 
+def remove_integration(instance_id):
+    """Haalt een koppeling met al haar instellingen uit config.json."""
+    if _config():
+        base.update_config(lambda config: (config.get("integrations") or {}).pop(instance_id, None))
+
+
 def custom(group):
-    """De sleutels van een groep die echt in config.json staan: wat iemand zelf heeft ingesteld."""
+    """De sleutels van een groep die iemand zelf anders heeft ingesteld dan de standaard. Een bewaarde waarde
+    die gelijk is aan de standaard telt niet: dan is er niets aangepast."""
     config = _config()
-    return [key for key, s in SCHEMA.items() if s.group == group and _read(config, s) is not None]
+    return [key for key, s in SCHEMA.items() if s.group == group and _read(config, s) is not None
+            and _read(config, s) != s.default]
 
 
 def describe(group=None, advanced=False):
