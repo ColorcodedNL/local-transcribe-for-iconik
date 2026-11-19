@@ -68,6 +68,8 @@ show_hook = None  # de app zet hier een functie neer die het venster toont
 save_hook = None  # idem: toont het bewaarvenster van macOS (map, naam) en geeft het gekozen pad of None
 open_hook = None  # idem: laat iemand een ondertitelbestand kiezen (map) en geeft het pad of None
 restart_hook = None  # idem, om opnieuw te starten na een code-update
+settings_hook = None  # idem: opent het venster Instellingen, eventueel op een tab
+title_hook = None  # idem: zet de titel van het venster Instellingen (pywebview neemt de <title> niet over)
 
 
 def client():
@@ -205,6 +207,8 @@ STALL_GRACE = 20          # seconden die de app krijgt om zelf af te sluiten voo
 last_progress = [time.monotonic()]
 UI_FILE = Path(__file__).with_name("ui.html")
 REFINE_FILE = Path(__file__).with_name("refine.html")
+SETTINGS_FILE = Path(__file__).with_name("settings.html")
+SETTINGS_TABS = ("general", "transcription", "files", "integrations")
 
 
 def page_text(file):
@@ -688,6 +692,11 @@ def status_page(note=""):
     return page_text(UI_FILE).replace('"__NOTE__"', json.dumps(note))
 
 
+def settings_page():
+    """Het venster Instellingen, in de taal van de app."""
+    return page_text(SETTINGS_FILE).replace('"__LANG__"', json.dumps(transcribe.app_language()))
+
+
 # Routes die iets veranderen: alleen als POST met de header X-Local-Transcribe, die alleen het venster
 # meestuurt (en de sessie, zoals alles). Een link, een plaatje of een formulier op een andere pagina kan zo'n
 # verzoek niet maken. De waarden staan nog in de querystring, zoals voorheen.
@@ -772,7 +781,8 @@ def apply_settings(changes):
 
 PROTECTED = {"/clear", "/mount/change", "/mount/remove", "/language", "/applang", "/actions/install",
              "/update/open", "/update/install", "/worker", "/iconik-language", "/login-item", "/settings",
-             "/logout", "/window/show", "/auto", "/asset/open", "/machine-name"}
+             "/logout", "/window/show", "/auto", "/asset/open", "/machine-name", "/window/settings",
+             "/window/title"}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -889,6 +899,19 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 return self.reply_json({"ok": False, "errors": {}, "error": "json"})
             return self.reply_json(apply_settings(changes))
+        if url.path == "/window/title":
+            # {"title": tekst}: de titel van het venster Instellingen volgt de tab.
+            if not 0 < size <= 1024:
+                return self.send_error(413)
+            try:
+                title = json.loads(self.rfile.read(size)).get("title")
+            except (ValueError, AttributeError):
+                title = None
+            if not isinstance(title, str) or not title.strip():
+                return self.reply_json({"ok": False})
+            if title_hook:
+                title_hook(" ".join(title.split())[:60])
+            return self.reply_json({"ok": True})
         if url.path in PROTECTED:
             if size:
                 self.rfile.read(min(size, 65536))   # het venster stuurt hier niets mee; wat er toch is, weg
@@ -967,6 +990,14 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, status_page())
         if url.path == "/refine" or url.path.startswith("/refine/"):
             return self.refine_route(url.path, first)
+        if url.path == "/settings-window":
+            return self.reply(200, settings_page())
+        if url.path == "/window/settings":
+            # Het venster Instellingen openen, eventueel op een tab (later: tandwiel en status in het venster).
+            tab = first("tab")
+            if settings_hook:
+                settings_hook(tab if tab in SETTINGS_TABS else None)
+            return self.reply_json({"ok": True})
         if url.path == "/state":
             activity["poll"] = time.time()
             return self.reply_json(app_state())

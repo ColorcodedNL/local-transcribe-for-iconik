@@ -74,6 +74,48 @@ def show(page=None):
     reconcile()
 
 
+settings_window = None
+settings_lock = threading.Lock()   # twee snelle klikken mogen geen twee vensters geven
+
+
+def open_settings(tab=None):
+    """Het venster Instellingen tonen, altijd één exemplaar, eventueel op een tab. Mag vanaf elke draad.
+    pywebview maakt een venster na de start alleen meteen aan vanaf een andere draad dan de hoofddraad."""
+    global settings_window
+    if threading.current_thread() is threading.main_thread():
+        threading.Thread(target=open_settings, args=(tab,), daemon=True).start()
+        return
+    import webview
+    from PyObjCTools import AppHelper
+    import AppKit
+    page = "/settings-window" + (f"?tab={tab}" if tab else "")
+    with settings_lock:
+        if settings_window is None:
+            settings_window = webview.create_window(
+                transcribe.L("Instellingen", "Settings"), BASE + serve.window_url(page),
+                width=720, height=560, min_size=(560, 360))
+            settings_window.events.closing += on_settings_closing
+        else:
+            if tab:
+                settings_window.load_url(BASE + serve.window_url(page))
+            settings_window.show()
+    # Staat de app alleen in de menubalk, dan komt een venster pas naar voren als de app actief wordt.
+    AppHelper.callAfter(AppKit.NSApp.activateIgnoringOtherApps_, True)
+
+
+def on_settings_closing():
+    """Rode knop of Cmd+W in Instellingen: verbergen, zodat het venster en de tab de volgende keer meteen terug zijn."""
+    if settings_window is not None:
+        settings_window.hide()
+    return False
+
+
+def settings_title(title):
+    """De titel van het venster Instellingen volgt de tab (gevraagd door de pagina via /window/title)."""
+    if settings_window is not None:
+        settings_window.set_title(title)
+
+
 def choose_save_path(folder, name):
     """Het bewaarvenster van macOS, voor de export uit Refine. Geeft het gekozen pad of None (geannuleerd).
     Wordt aangeroepen vanuit een draad van de ontvanger; pywebview toont het venster op de hoofddraad."""
@@ -299,6 +341,9 @@ def menu_target():
             def openWindow_(self, sender):
                 show()
 
+            def openSettings_(self, sender):
+                open_settings()
+
             def quitApp_(self, sender):
                 AppKit.NSApp.terminate_(None)
 
@@ -329,6 +374,7 @@ def apply_menubar():
         menu.addItem_(AppKit.NSMenuItem.separatorItem())
         for title, action in ((transcribe.L("Nu hervatten", "Resume now"), b"resumeNow:"),
                               (transcribe.L("Venster openen", "Open window"), b"openWindow:"),
+                              (transcribe.L("Instellingen…", "Settings…"), b"openSettings:"),
                               (transcribe.L("Stop", "Quit"), b"quitApp:")):
             item = menu.addItemWithTitle_action_keyEquivalent_(title, action, "")
             item.setTarget_(target)
@@ -479,9 +525,10 @@ def about_versions(code, bundle):
 _about = []  # het doel van het menu-item, zodat Python het niet opruimt
 
 
-def fix_about_menu():
+def fix_app_menu():
     """Op de hoofddraad. macOS haalt de versie in About uit Info.plist, en een code-update raakt de bundel
-    nooit: na een update stond er dan de versie van de bundel. Het item krijgt een eigen doel."""
+    nooit: na een update stond er dan de versie van de bundel. Het item krijgt een eigen doel.
+    Onder About komt Instellingen… met Cmd+komma, zoals in elke Mac-app."""
     import objc
     import AppKit
 
@@ -492,6 +539,10 @@ def fix_about_menu():
             AppKit.NSApp.activateIgnoringOtherApps_(True)
             AppKit.NSApp.orderFrontStandardAboutPanelWithOptions_(about_versions(transcribe.APP_VERSION, bundle and str(bundle)))
 
+        @objc.typedSelector(b"v@:@")
+        def openSettings_(self, sender):
+            open_settings()
+
     try:
         menu = AppKit.NSApp.mainMenu()
         app_menu = menu.itemAtIndex_(0).submenu() if menu and menu.numberOfItems() else None
@@ -501,6 +552,12 @@ def fix_about_menu():
                 _about.append(target)
                 item.setTarget_(target)
                 item.setAction_("showAbout:")
+                place = app_menu.indexOfItem_(item) + 1
+                settings_item = AppKit.NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+                    transcribe.L("Instellingen…", "Settings…"), "openSettings:", ",")
+                settings_item.setTarget_(target)
+                app_menu.insertItem_atIndex_(AppKit.NSMenuItem.separatorItem(), place)
+                app_menu.insertItem_atIndex_(settings_item, place + 1)
                 return
         print("About: menu-item niet gevonden")
     except Exception as error:
@@ -511,7 +568,7 @@ def mark_started():
     global hidden
     try:
         from PyObjCTools import AppHelper
-        AppHelper.callAfter(fix_about_menu)
+        AppHelper.callAfter(fix_app_menu)
     except Exception as error:
         print(f"About: {error}")
     try:
@@ -670,6 +727,8 @@ def main():
     BrowserView.AppDelegate = LocalTranscribeDelegate
     text_tools(objc, AppKit, BrowserView)
     serve.show_hook = show  # een tweede exemplaar kan zo het venster naar voren halen
+    serve.settings_hook = open_settings  # het venster Instellingen (menu, en later het tandwiel)
+    serve.title_hook = settings_title  # de titel van Instellingen volgt de tab
     serve.restart_hook = restart  # na een code-update
     serve.save_hook = choose_save_path  # ondertitels bewaren uit Refine
     serve.open_hook = choose_subtitle_file  # ondertitels inladen in Refine

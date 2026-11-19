@@ -302,6 +302,41 @@ with sync_playwright() as p:
         page.get_by_text("Nog geen opdrachten").wait_for(timeout=5000)
         check("lijst opruimen vanuit het venster", not serve.jobs)
 
+        # 9. Het venster Instellingen: eigen pagina, vier tabs, de titel volgt de tab, de laatste tab blijft.
+        titles, opened = [], []
+        serve.title_hook, serve.settings_hook = titles.append, opened.append
+        outsider = browser.new_page()
+        refused = outsider.goto(BASE + "/settings-window").status
+        outsider.close()
+        check("Instellingen: zonder sessie geen toegang", refused == 403, refused)
+        page.goto(BASE + "/settings-window")
+        page.wait_for_function("document.title === 'Algemeen'", timeout=5000)
+        check("Instellingen: vier tabs", page.get_by_role("tab").count() == 4, page.get_by_role("tab").count())
+        page.get_by_role("tab", name="Bestanden").click()
+        page.wait_for_function("document.title === 'Bestanden'", timeout=5000)
+        page.wait_for_timeout(300)
+        check("Instellingen: titel van het venster volgt de tab", titles[-1:] == ["Bestanden"], titles)
+        page.reload()
+        page.wait_for_function("document.title === 'Bestanden'", timeout=5000)
+        check("Instellingen: de laatste tab blijft na opnieuw openen",
+              page.get_by_role("tab", name="Bestanden").get_attribute("aria-selected") == "true")
+        page.goto(BASE + "/settings-window?tab=integrations")
+        page.wait_for_function("document.title === 'Integraties'", timeout=5000)
+        check("Instellingen: opent op de gevraagde tab", page.locator('[data-panel="integrations"]').is_visible())
+        hdr = {"X-Local-Transcribe": "1"}
+        check("Instellingen openen: geen GET", page.request.get(BASE + "/window/settings", headers=hdr).status == 405)
+        check("Instellingen openen: niet zonder header", page.request.post(BASE + "/window/settings").status == 403)
+        page.request.post(BASE + "/window/settings?tab=files", headers=hdr)
+        page.request.post(BASE + "/window/settings?tab=elders", headers=hdr)
+        check("Instellingen openen: de app krijgt de tab, een onbekende tab wordt geen tab", opened == ["files", None], opened)
+        page.request.post(BASE + "/window/title", headers=hdr, data=json.dumps({"title": "  Twee   woorden "}))
+        check("titel: spaties opgeschoond", titles[-1:] == ["Twee woorden"], titles)
+        big = page.request.post(BASE + "/window/title", headers=hdr, data=json.dumps({"title": "x" * 2000})).status
+        check("titel: te groot verzoek geweigerd", big == 413, big)
+        errors[:] = [e for e in errors if "/window/settings" not in e and "/window/title" not in e
+                     and not e.startswith("403 " + BASE + "/settings-window")]   # deze weigeringen zijn de bedoeling
+        serve.title_hook = serve.settings_hook = None
+
         browser.close()
     except Exception as error:
         # Een stap liep vast: zeg welke, en welke verzoeken de ontvanger weigerde.
