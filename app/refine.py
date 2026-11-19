@@ -695,6 +695,33 @@ def clear_originals():
 
 
 
+# --- alles van één asset van deze Mac ---
+
+def forget_asset(asset_id):
+    """Alles wat de app op deze Mac over dit asset bewaart weg ("Verwijder ook van deze Mac"): de kopie van het
+    transcript, de golfvormen, het concept, het origineel en de ondertitellaag van Refine, en de paden van de
+    ondertitelbestanden in sidecars.json. Nooit Iconik, nooit de media en nooit bestanden naast de media.
+    Geeft de namen van wat weg is."""
+    gone = []
+    try:   # eerst de paden uit de ondertitellaag, want die gaat zo weg
+        target = json.loads(_subtitles_path(asset_id).read_text()).get("target") or {}
+        base = Path(target["base"]) if target.get("base") else None
+    except (OSError, ValueError, AttributeError, TypeError):
+        base = None
+    if base is not None:
+        gone += subtitles.forget([base.with_suffix(f".{fmt}") for fmt in ("srt", "vtt")], core.SIDECARS_FILE)
+    for path in (core.TRANSCRIPTS_DIR / core.safe_name(asset_id, ".json"), core.WAVES_DIR / core.safe_name(asset_id, ".waves"),
+                 core.WAVES_DIR / core.safe_name(asset_id, ".media.json"), _draft_path(asset_id), _original_path(asset_id),
+                 _subtitles_path(asset_id)):
+        try:
+            path.unlink()
+            gone.append(path.name)
+        except FileNotFoundError:
+            pass
+    _marks_cache.pop(core.TRANSCRIPTS_DIR / core.safe_name(asset_id, ".json"), None)
+    return gone
+
+
 # --- labels in de opdrachtenlijst ---
 _marks_cache = {}   # pad van de kopie -> (mtime, gecorrigeerd)
 

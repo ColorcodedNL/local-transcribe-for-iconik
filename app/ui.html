@@ -52,7 +52,24 @@ button.plain:disabled { color: var(--idle); cursor: default; }
 .mount { display: flex; align-items: center; gap: 14px; padding: 4px 0; } .mount div { flex: 1; min-width: 0; }
 .speeds i { flex: 1; max-width: 9px; background: var(--accent); border-radius: 1px 1px 0 0; min-height: 2px; }
 
-.job { border-bottom: 1px solid var(--line); padding: 10px 2px 11px; }
+.job { border-bottom: 1px solid var(--line); padding: 10px 8px 11px; border-radius: 6px; }
+.job.sel { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+button.x { font: inherit; background: none; border: 0; color: var(--muted); padding: 0 4px; cursor: pointer; }
+.menu { position: fixed; z-index: 10; min-width: 250px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+        padding: 5px 0; box-shadow: 0 8px 24px rgba(0,0,0,.2); }
+.menu button { all: unset; box-sizing: border-box; display: flex; width: calc(100% - 10px); margin: 0 5px; padding: 3px 10px; border-radius: 4px; }
+.menu button span { flex: 1; } .menu button kbd { font: inherit; color: var(--muted); }
+.menu button:hover:not(:disabled), .menu button:focus-visible { background: var(--accent); color: #fff; outline: none; }
+.menu button:hover:not(:disabled) kbd { color: #fff; }
+.menu button:disabled { color: var(--idle); }
+.menu hr { border: 0; border-top: 1px solid var(--line); margin: 5px 10px; }
+.back { position: fixed; inset: 0; z-index: 20; background: rgba(0,0,0,.25); display: flex; align-items: flex-start; justify-content: center; padding-top: 60px; }
+.sheet { width: 480px; background: var(--window); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 12px 34px rgba(0,0,0,.3); padding: 20px 22px; }
+.sheet h2 { font-size: 15px; margin: 0 0 6px; overflow-wrap: anywhere; }
+.sheet .keep { margin: 12px 0 4px; padding: 9px 11px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+.sheet .foot { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+.sheet .btn { font: inherit; padding: 4px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--text); }
+.sheet .go.danger { background: var(--bad); }
 .top { display: flex; gap: 10px; align-items: baseline; }
 .title[data-asset] { cursor: pointer; } .title[data-asset]:hover { color: var(--accent); }
 .title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 550;
@@ -98,6 +115,8 @@ button.go { font: inherit; padding: 4px 10px; border-radius: 5px; border: 0; bac
   <button id="status" hidden><i class="dot" id="dot"></i><span id="who"></span></button>
   <button id="gear"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M9.23 4.92 L10.24 2.16 L13.76 2.16 L14.77 4.92 L15.05 5.04 L17.72 3.80 L20.20 6.28 L18.96 8.95 L19.08 9.23 L21.84 10.24 L21.84 13.76 L19.08 14.77 L18.96 15.05 L20.20 17.72 L17.72 20.20 L15.05 18.96 L14.77 19.08 L13.76 21.84 L10.24 21.84 L9.23 19.08 L8.95 18.96 L6.28 20.20 L3.80 17.72 L5.04 15.05 L4.92 14.77 L2.16 13.76 L2.16 10.24 L4.92 9.23 L5.04 8.95 L3.80 6.28 L6.28 3.80 L8.95 5.04Z"/><circle cx="12" cy="12" r="3"/></svg></button>
 </div>
+<div class="menu" id="menu" role="menu" hidden></div>
+<div class="back" id="sheet" hidden></div>
 <main>
   <div class="note" id="note" hidden></div>
   <div class="note" id="storageOff" hidden></div>
@@ -118,7 +137,13 @@ const TEXT = {
     emptyTitle: "Nog geen opdrachten", connect: "Verbinden met Iconik…",
     emptyConnect: "Opdrachten komen uit Iconik. Verbind deze Mac eerst, kies daarna in Iconik een asset of collectie en kies Local Transcribe.",
     stripRemote: "Op afstand", stripAuto: "Automatisch", stripStorage: "Opslag (ISG)", remoteOn: "Aan, wacht op aanvragen", remoteOff: "Uit",
-    storageOk: "gekoppeld", toIntegrations: "Opent Instellingen › Integraties", mountsTitle: "ISG Mount Points",
+    storageOk: "gekoppeld", toIntegrations: "Opent Instellingen › Integraties",
+    openRefine: "Openen in Refine", openIconik: "Openen in Iconik", removeRow: "Verwijder uit lijst", removeAll: "Verwijder ook van deze Mac…",
+    removeAllTip: "Wist wat de app op deze Mac over dit item bewaart: de kopie van het transcript, golfvormen, concept en origineel van Refine. Het mediabestand blijft altijd staan.",
+    removeTitle: t => `„${t}” ook van deze Mac verwijderen?`,
+    removeText: "De app wist wat hij zelf over dit item bewaart: de opdracht (ook andere regels van hetzelfde item), de kopie van het transcript, golfvormen, en het concept, het origineel en de ondertitellaag van Refine.",
+    removeKeep: "Blijft altijd staan: het mediabestand zelf, en alles in Iconik.",
+    removeLog: "De naam kan nog in het log staan.", clearLog: "Log wissen", logCleared: "Log gewist.", cancel: "Annuleer", remove: "Verwijder", mountsTitle: "ISG Mount Points",
     change: "Kies andere map", remove: "Verwijder",
     updateAvail: v => `Versie ${v} van Local Transcribe for Iconik is beschikbaar.`, updateGet: "Downloaden", updateInstall: "Installeren", updateRetry: "Opnieuw proberen", updateFull: "Deze versie vraagt een nieuwe installatie.", updateBusy: v => `Versie ${v} wordt gedownload en gecontroleerd...`, updateReady: v => `Versie ${v} is geïnstalleerd. De app start opnieuw op...`, updateWaiting: v => `Versie ${v} staat klaar. De app start opnieuw op zodra de opdrachten klaar zijn.`, updateFail: e => `Updaten is mislukt: ${e}`, version: "Versie",
     btnMissing: "De knoppen Local Transcribe en Refine transcript staan nog niet (allebei) in deze Iconik-omgeving. Dat hoeft maar één keer, voor alle gebruikers tegelijk.",
@@ -164,7 +189,13 @@ const TEXT = {
     emptyTitle: "No jobs yet", connect: "Connect to Iconik…",
     emptyConnect: "Jobs come from Iconik. Connect this Mac first, then pick an asset or collection in Iconik and choose Local Transcribe.",
     stripRemote: "Remote", stripAuto: "Automatic", stripStorage: "Storage (ISG)", remoteOn: "On, waiting for requests", remoteOff: "Off",
-    storageOk: "linked", toIntegrations: "Opens Settings › Integrations", mountsTitle: "ISG Mount Points",
+    storageOk: "linked", toIntegrations: "Opens Settings › Integrations",
+    openRefine: "Open in Refine", openIconik: "Open in Iconik", removeRow: "Remove from list", removeAll: "Also remove from this Mac…",
+    removeAllTip: "Removes what the app keeps about this item on this Mac: the copy of the transcript, waveforms, draft and original of Refine. The media file always stays.",
+    removeTitle: t => `Also remove “${t}” from this Mac?`,
+    removeText: "The app removes what it keeps about this item: the job (also other rows of the same item), the copy of the transcript, waveforms, and the draft, original and subtitle layer of Refine.",
+    removeKeep: "Always stays: the media file itself, and everything in Iconik.",
+    removeLog: "The name may still be in the log.", clearLog: "Clear log", logCleared: "Log cleared.", cancel: "Cancel", remove: "Remove", mountsTitle: "ISG Mount Points",
     change: "Choose another folder", remove: "Remove",
     updateAvail: v => `Version ${v} of Local Transcribe for Iconik is available.`, updateGet: "Download", updateInstall: "Install", updateRetry: "Try again", updateFull: "This version needs a full install.", updateBusy: v => `Downloading and checking version ${v}...`, updateReady: v => `Version ${v} is installed. The app is restarting...`, updateWaiting: v => `Version ${v} is ready. The app restarts when the jobs are done.`, updateFail: e => `Updating failed: ${e}`, version: "Version",
     btnMissing: "The Local Transcribe and Refine transcript buttons are not (both) in this Iconik environment yet. This is needed only once, for all users at the same time.",
@@ -233,12 +264,70 @@ function note(text) {
 
 if (NOTE) { $("note").textContent = NOTE; $("note").hidden = false; }
 $("clear").onclick = () => act("/clear").then(tick);
+let jobsByN = {};
+function select(n) { selected = n; drawn = Object.fromEntries(Object.entries(drawn).filter(([k]) => !k.startsWith("job-"))); tick(); }
+async function removeJob(n, everything) {
+  const r = await fetch(`/jobs/remove?n=${n}${everything ? "&all=1" : ""}`, H).then(r => r.json()).catch(() => ({ok: false}));
+  if (!r.ok && r.error) { $("note").textContent = r.error; $("note").hidden = false; }
+  if (r.ok) selected = null;
+  tick();
+}
+function closeMenu() { $("menu").hidden = true; $("menu").innerHTML = ""; }
+function openMenu(job, x, y) {
+  const can = removable(job), asset = job.asset_id;
+  const item = (id, label, on, key = "", tip = "") => `<button role="menuitem" data-act="${id}"${on ? "" : " disabled"}${tip ? ` title="${esc(tip)}"` : ""}><span>${esc(label)}</span><kbd>${key}</kbd></button>`;
+  $("menu").innerHTML = item("refine", T.openRefine, job.status === "klaar" && asset) + item("iconik", T.openIconik, !!asset)
+    + "<hr>" + item("remove", T.removeRow, can, "⌫") + item("all", T.removeAll, can && !!asset, "", T.removeAllTip);
+  const m = $("menu");
+  m.hidden = false;
+  m.style.left = Math.min(x, innerWidth - m.offsetWidth - 8) + "px";
+  m.style.top = Math.min(y, innerHeight - m.offsetHeight - 8) + "px";
+  m.onclick = e => {
+    const b = e.target.closest("button[data-act]"); if (!b || b.disabled) return;
+    closeMenu();
+    if (b.dataset.act === "refine") location.href = "/refine?asset=" + encodeURIComponent(asset);
+    else if (b.dataset.act === "iconik") act("/asset/open?id=" + encodeURIComponent(asset));
+    else if (b.dataset.act === "remove") removeJob(job.n, false);
+    else confirmAll(job);
+  };
+}
+function closeSheet() { $("sheet").hidden = true; $("sheet").innerHTML = ""; }
+function confirmAll(job) {
+  $("sheet").innerHTML = `<div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(T.removeTitle(job.title || job.asset_id))}">
+    <h2>${esc(T.removeTitle(job.title || job.asset_id))}</h2><p class="msg">${esc(T.removeText)}</p>
+    <div class="keep"><b>${esc(T.removeKeep)}</b></div>
+    <p class="msg">${esc(T.removeLog)} <button class="plain" id="clearLog">${esc(T.clearLog)}</button></p>
+    <div class="foot"><button class="btn" id="sheetCancel">${esc(T.cancel)}</button><button class="go danger" id="sheetRemove">${esc(T.remove)}</button></div></div>`;
+  $("sheet").hidden = false;
+  $("sheetCancel").focus();
+  $("sheetCancel").onclick = closeSheet;
+  $("clearLog").onclick = async e => { const r = await act("/log/clear").then(r => r.json()).catch(() => ({})); if (r.ok) e.target.replaceWith(T.logCleared); };
+  $("sheetRemove").onclick = () => { closeSheet(); removeJob(job.n, true); };
+}
+document.addEventListener("click", e => { if (!e.target.closest("#menu")) closeMenu(); });
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") { closeMenu(); closeSheet(); return; }
+  if (!$("sheet").hidden || e.target.matches("input, textarea, select")) return;
+  if ((e.key === "Backspace" || e.key === "Delete") && selected != null && jobsByN[selected] && removable(jobsByN[selected])) {
+    e.preventDefault(); removeJob(selected, false);
+  }
+});
+$("list").addEventListener("contextmenu", e => {
+  const el = e.target.closest(".job"); if (!el) return;
+  e.preventDefault();
+  const n = Number(el.id.slice(4));
+  if (n !== selected) select(n);
+  if (jobsByN[n]) openMenu(jobsByN[n], e.clientX, e.clientY);
+});
+
 $("list").onclick = e => {
   if (e.target.id === "connect") { act("/window/settings?tab=integrations"); return; }
+  const x = e.target.closest("[data-remove]"); if (x) { removeJob(Number(x.dataset.remove), false); return; }
   const s = e.target.closest("[data-subtitles]"); if (s) { location.href = "/refine?asset=" + encodeURIComponent(s.dataset.subtitles) + "&tab=subtitles"; return; }
   const r = e.target.closest("[data-refine]"); if (r) { location.href = "/refine?asset=" + encodeURIComponent(r.dataset.refine); return; }
   const a = e.target.closest("[data-asset]"); if (a && !window.getSelection().toString()) { act("/asset/open?id=" + encodeURIComponent(a.dataset.asset)); return; }
-  const b = e.target.closest("[data-toggle]"); if (b) { open[b.dataset.toggle] = b.dataset.open !== "1"; tick(); }
+  const b = e.target.closest("[data-toggle]"); if (b) { open[b.dataset.toggle] = b.dataset.open !== "1"; tick(); return; }
+  const j = e.target.closest(".job"); if (j) select(Number(j.id.slice(4)) === selected ? null : Number(j.id.slice(4)));
 };
 // Instellingen: het tandwiel opent de laatste tab, de status en de knop in de lege lijst openen Integraties.
 $("gear").onclick = () => act("/window/settings");
@@ -271,6 +360,8 @@ function stages(job) {
   }).join("") + "</div>";
 }
 
+let selected = null;   // het nummer van de geselecteerde regel
+const removable = job => !["wachtend", "bezig"].includes(job.status);
 function row(job, isOpen) {
   let state = T.status[job.status] || job.status, msg = job.message || "";
   if (job.status === "bezig") msg = job.duration ? T.audioLength + " " + clock(job.duration) : "";
@@ -284,7 +375,7 @@ function row(job, isOpen) {
   const rf = job.refine || {};
   const marks = (rf.refined ? `<span class="tag">${T.refinedTag}</span>` : "") + (rf.draft ? `<span class="tag draft">${T.draftTag}</span>` : "")
     + (rf.subtitles ? `<button class="tag jump" data-subtitles="${esc(job.asset_id)}" title="${T.subtitlesOpen}">${T.subtitlesTag}</button>` : "");
-  let html = `<div class="top"><div class="title"${job.asset_id ? ` data-asset="${esc(job.asset_id)}" title="${T.openIconik}"` : ""}>${esc(job.title || job.asset_id)}</div>${job.auto ? `<span class="tag">${T.autoTag}</span>` : ""}${marks}${refine}${toggle}<div class="state ${job.status}">${esc(state)}<span class="el"></span></div></div>`;
+  let html = `<div class="top"><div class="title"${job.asset_id ? ` data-asset="${esc(job.asset_id)}" title="${T.openIconik}"` : ""}>${esc(job.title || job.asset_id)}</div>${job.auto ? `<span class="tag">${T.autoTag}</span>` : ""}${marks}${refine}${toggle}<div class="state ${job.status}">${esc(state)}<span class="el"></span></div>${job.n === selected && removable(job) ? `<button class="x" data-remove="${job.n}" aria-label="${T.removeRow}" title="${T.removeRow}">✕</button>` : ""}</div>`;
   if (msg) html += `<div class="msg ${job.status === "fout" ? "fout" : ""}">${esc(msg)}</div>`;
   if (job.status === "bezig") html += stages(job);
   if (isOpen && tracks.length) html += '<div class="tracks">' + tracks.map(t =>
@@ -373,13 +464,16 @@ async function tick() {
   }
   if (drawn.empty) { list.innerHTML = ""; drawn.empty = false; }
   $("connect") && $("connect").remove();
+  jobsByN = {};
   s.jobs.forEach((job, index) => {
     const id = "job-" + job.n, isOpen = open[job.n] ?? job.status === "bezig";
+    jobsByN[job.n] = job;
     seen.add(id);
     let el = $(id);
     if (!el) { el = document.createElement("div"); el.className = "job"; el.id = id; }
     if (list.children[index] !== el) list.insertBefore(el, list.children[index] || null);
     const html = row(job, isOpen);
+    el.classList.toggle("sel", job.n === selected);
     if (drawn[id] !== html) { el.innerHTML = html; drawn[id] = html; }
     el.querySelector(".el").textContent = job.status === "bezig" ? " " + clock(job.elapsed || 0) : "";
   });

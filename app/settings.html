@@ -503,10 +503,13 @@ function show(tab) {
 document.documentElement.lang = lang;
 document.querySelectorAll("[data-t]").forEach(el => el.textContent = T[el.dataset.t]);
 document.querySelectorAll("nav button").forEach(b => b.addEventListener("click", () => show(b.dataset.tab)));
+// Iemand typt of kiest: dan niet opnieuw tekenen. Een schakelaar met focus telt niet, anders ververst de tab
+// na het omzetten niet meer tot er ergens anders geklikt wordt.
+const editing = () => document.activeElement.matches('input[type="text"], input[type="number"], select');
 setInterval(() => {
-  if (current === "integrations" && $("sheet").hidden && !document.activeElement.matches("input, select")) load(current);
+  if (current === "integrations" && $("sheet").hidden && !editing()) load(current);
 }, 3000);
-window.addEventListener("focus", () => { if ($("sheet").hidden && !document.activeElement.matches("input, select")) load(current); });   // het hoofdvenster kan intussen iets veranderd hebben
+window.addEventListener("focus", () => { if ($("sheet").hidden && !editing()) load(current); });   // het hoofdvenster kan intussen iets veranderd hebben
 show(new URLSearchParams(location.search).get("tab") || remembered());
 // ?tab= geldt alleen bij het openen; daarna uit het adres, zodat opnieuw laden (taalwissel) op de huidige tab blijft.
 if (location.search) history.replaceState(null, "", location.pathname);

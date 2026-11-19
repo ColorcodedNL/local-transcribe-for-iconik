@@ -239,10 +239,11 @@ with sync_playwright() as p:
         check("verkeerde sleutel geweigerd", status == 403 and "A3" not in {j["asset_id"] for j in serve.jobs}, status)
 
         # 6. Op afstand en automatisch in Instellingen, en wat het opdrachtenvenster daarvan laat zien
-        main = page.context.new_page()   # het opdrachtenvenster naast Instellingen, met dezelfde sessie
+        main = browser.new_page()   # het opdrachtenvenster naast Instellingen; meldt zich aan zoals het echte venster
         main.on("response", lambda r: errors.append(f"{r.status} {r.url}") if r.url.startswith(BASE) and r.status >= 400 else None)
         main.on("pageerror", lambda e: console.append(str(e)))
-        main.goto(BASE + "/")
+        main.goto(f"{BASE}/window/open?t={serve.SESSION}")
+        main.wait_for_url(BASE + "/", timeout=5000)
         main.locator("#strip").get_by_text("Uit", exact=True).wait_for(timeout=5000)
         page.goto(BASE + "/settings-window?tab=integrations")
         page.locator("#f-iconik-worker_enabled").check()
@@ -313,10 +314,54 @@ with sync_playwright() as p:
         check("andere website kan de lijst niet wissen", len(serve.jobs) == 2, len(serve.jobs))
         evil.close()
 
-        # 8. Lijst opruimen vanuit het venster
+        # 8. Losse opdrachten verwijderen: selecteren en ✕, ⌫ (niet bij een wachtende), rechtsklik en "ook van deze Mac"
+        with serve.jobs_lock:
+            for job in serve.jobs:
+                job["status"] = "klaar"
+            a1 = next(j for j in serve.jobs if j["asset_id"] == "A1")
+            a2 = next(j for j in serve.jobs if j["asset_id"] == "A2")
+            twin = dict(a1, n=serve.next_number())            # A1 nog een keer, zoals een asset dat twee keer liep
+            serve.jobs.append(twin)
+            waiting = dict(a2, n=serve.next_number(), asset_id="A3", title="Titel A3", status="wachtend")
+            serve.jobs.append(waiting)
+        kept = [serve.refine.core.TRANSCRIPTS_DIR / "A1.json", serve.refine.core.WAVES_DIR / "A1.waves",
+                serve.refine.DRAFTS_DIR / "A1.draft.json", serve.refine.core.TRANSCRIPTS_DIR / "A2.json"]
+        for f in kept:
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text("{}")
+        page.goto(BASE + "/")
+        page.locator(f"#job-{waiting['n']}").click(position={"x": 4, "y": 4})
+        page.wait_for_timeout(300)
+        check("wachtende opdracht: geselecteerd, maar zonder ✕", page.locator(f"#job-{waiting['n']}.sel").count() == 1
+              and page.locator(f"#job-{waiting['n']} button.x").count() == 0)
+        page.keyboard.press("Backspace")
+        page.wait_for_timeout(500)
+        check("⌫ haalt een wachtende opdracht niet weg", any(j["n"] == waiting["n"] for j in serve.jobs))
+        page.locator(f"#job-{a2['n']}").click(position={"x": 4, "y": 4})
+        page.locator(f"#job-{a2['n']} button.x").click()
+        page.locator(f"#job-{a2['n']}").wait_for(state="detached", timeout=5000)
+        check("✕ haalt één regel uit de lijst, de bestanden blijven", not any(j["n"] == a2["n"] for j in serve.jobs) and kept[3].exists())
+        page.locator(f"#job-{twin['n']}").click(button="right", position={"x": 4, "y": 4})
+        menu = page.locator("#menu")
+        check("rechtsklik: menu met de vier keuzes", menu.get_by_role("menuitem").count() == 4)
+        check("rechtsklik: uitleg bij 'ook van deze Mac'", "mediabestand blijft altijd staan"
+              in (menu.get_by_role("menuitem", name="Verwijder ook van deze Mac…").get_attribute("title") or ""))
+        menu.get_by_role("menuitem", name="Verwijder ook van deze Mac…").click()
+        dialog = page.get_by_role("dialog")
+        check("bevestiging zegt dat het mediabestand blijft", dialog.get_by_text("Blijft altijd staan: het mediabestand zelf").count() == 1)
+        serve.clear_log_hook = lambda: True
+        dialog.get_by_role("button", name="Log wissen").click()
+        dialog.get_by_text("Log gewist.").wait_for(timeout=5000)
+        dialog.get_by_role("button", name="Verwijder").click()
+        page.locator(f"#job-{twin['n']}").wait_for(state="detached", timeout=5000)
+        check("ook van deze Mac: beide regels van A1 weg, de wachtende blijft",
+              [j["asset_id"] for j in serve.jobs] == ["A3"], [j["asset_id"] for j in serve.jobs])
+        check("ook van deze Mac: de bestanden van A1 weg, die van A2 niet", not any(f.exists() for f in kept[:3]) and kept[3].exists())
+        serve.clear_log_hook = None
         for job in serve.jobs:
             job["status"] = "klaar"
-        page.goto(BASE + "/")
+
+        # Lijst opruimen vanuit het venster
         page.locator("#clear").click()
         page.get_by_text("Nog geen opdrachten").wait_for(timeout=5000)
         check("lijst opruimen vanuit het venster", not serve.jobs)
@@ -328,7 +373,7 @@ with sync_playwright() as p:
         refused = outsider.goto(BASE + "/settings-window").status
         outsider.close()
         check("Instellingen: zonder sessie geen toegang", refused == 403, refused)
-        page.goto(BASE + "/settings-window")
+        page.goto(BASE + "/settings-window?tab=general")   # eerdere stappen lieten Integraties als laatste tab achter
         page.wait_for_function("document.title === 'Algemeen'", timeout=5000)
         check("Instellingen: vier tabs", page.get_by_role("tab").count() == 4, page.get_by_role("tab").count())
         page.get_by_role("tab", name="Bestanden").click()

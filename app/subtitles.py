@@ -479,6 +479,22 @@ def adopt(path, registry_path):
         pass
 
 
+def forget(paths, registry_path):
+    """Haalt deze paden uit de lijst van wat de app zelf schreef. De bestanden blijven staan; de app herkent
+    ze daarna alleen niet meer als de zijne (en vervangt ze dus niet zonder dat iemand dat pad kiest)."""
+    written = _registry(registry_path)
+    gone = [str(path) for path in paths if written.pop(str(path), None) is not None]
+    if gone:
+        try:
+            registry_path = Path(registry_path)
+            temp = registry_path.with_name(registry_path.name + ".tmp")
+            temp.write_text(json.dumps(written, ensure_ascii=False))
+            os.replace(temp, registry_path)
+        except OSError:
+            pass
+    return gone
+
+
 # --- bestanden ---
 
 def _registry(path):

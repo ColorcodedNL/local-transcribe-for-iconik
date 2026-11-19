@@ -71,6 +71,7 @@ open_hook = None  # idem: laat iemand een ondertitelbestand kiezen (map) en geef
 restart_hook = None  # idem, om opnieuw te starten na een code-update
 settings_hook = None  # idem: opent het venster Instellingen, eventueel op een tab
 title_hook = None  # idem: zet de titel van het venster Instellingen (pywebview neemt de <title> niet over)
+clear_log_hook = None  # idem: maakt het log leeg (alleen de app weet waar het staat)
 
 
 def client():
@@ -560,6 +561,31 @@ def clear_finished():
     save_jobs()
 
 
+def remove_jobs(number, everything=False):
+    """Eén regel uit de lijst halen (✕, ⌫ of rechtsklik). Met everything ook de andere afgeronde regels van
+    hetzelfde asset en alles wat de app daarvan op deze Mac bewaart (refine.forget_asset). Een opdracht die wacht
+    of loopt blijft staan. Geeft {"ok", "removed": aantal regels, "files": wat er van de Mac weg is}."""
+    with jobs_lock:
+        job = next((j for j in jobs if j["n"] == number), None)
+        if job is None:
+            return {"ok": False, "error": transcribe.L("Deze opdracht staat niet (meer) in de lijst.", "This job is not in the list (any more).")}
+        if job["status"] in ("wachtend", "bezig"):
+            return {"ok": False, "error": transcribe.L("Een opdracht die wacht of loopt, haal je zo niet weg.",
+                                                       "A job that is waiting or running cannot be removed this way.")}
+        asset = job.get("asset_id") or ""
+        if everything and asset and any(j.get("asset_id") == asset and j["status"] in ("wachtend", "bezig") for j in jobs):
+            return {"ok": False, "error": transcribe.L("Er wacht of loopt nog een opdracht voor dit asset.",
+                                                       "A job for this asset is still waiting or running.")}
+        gone = [j for j in jobs if j is job or (everything and asset and j.get("asset_id") == asset)]
+        jobs[:] = [j for j in jobs if not any(j is g for g in gone)]
+        cleared[0] += len(gone)
+    save_jobs()
+    files = refine.forget_asset(asset) if everything and asset else []
+    if files:
+        print(f"[{datetime.now():%H:%M:%S}] van deze Mac verwijderd: {len(files)} bestand(en) van één asset")
+    return {"ok": True, "removed": len(gone), "files": files}
+
+
 def next_number():
     """Volgnummer voor een nieuwe regel in de lijst. Aanroepen met jobs_lock."""
     return max(len(jobs) + cleared[0], max((j["n"] for j in jobs), default=0)) + 1
@@ -878,7 +904,7 @@ def apply_settings(changes):
 
 PROTECTED = {"/clear", "/mount/change", "/mount/remove", "/actions/install", "/update/open", "/update/install",
              "/worker", "/login-item", "/settings", "/logout", "/window/show", "/asset/open", "/window/settings",
-             "/window/title", "/integrations/remove"}
+             "/window/title", "/integrations/remove", "/jobs/remove", "/log/clear"}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -1149,6 +1175,14 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/actions/install":
             install_actions()
             return self.reply_json({"ok": True})
+        if url.path == "/log/clear":
+            return self.reply_json({"ok": bool(clear_log_hook and clear_log_hook())})
+        if url.path == "/jobs/remove":
+            try:
+                number = int(first("n"))
+            except ValueError:
+                return self.reply_json({"ok": False, "error": "n"})
+            return self.reply_json(remove_jobs(number, everything=first("all") == "1"))
         if url.path == "/integrations/remove":
             return self.reply_json(remove_integration(first("id")))
         if url.path == "/clear":

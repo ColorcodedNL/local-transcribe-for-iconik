@@ -41,6 +41,19 @@ def prepare():
     os.dup2(log.fileno(), 2)
 
 
+def clear_log():
+    """Log wissen ("Verwijder ook van deze Mac"): het lopende log leeg en het vorige weg. Het proces schrijft in
+    toevoegmodus, dus het schrijft daarna gewoon vooraan verder."""
+    try:
+        os.truncate(LOGDIR / "serve.log", 0)
+        (LOGDIR / "serve.log.1").unlink(missing_ok=True)
+        print(f"[{datetime.now():%H:%M:%S}] log gewist op verzoek")
+        return True
+    except OSError as error:
+        print(f"Log wissen mislukte: {error}")
+        return False
+
+
 def log_start():
     """Kopregel in het log. Pas als vaststaat dat dit exemplaar de app wordt: een tweede start (een klik
     in Iconik terwijl de app al draait) schreef hem anders midden in de regels van een lopende opdracht."""
@@ -729,6 +742,7 @@ def main():
     serve.show_hook = show  # een tweede exemplaar kan zo het venster naar voren halen
     serve.settings_hook = open_settings  # het venster Instellingen (menu, en later het tandwiel)
     serve.title_hook = settings_title  # de titel van Instellingen volgt de tab
+    serve.clear_log_hook = clear_log  # "Log wissen" bij het verwijderen van een opdracht
     serve.restart_hook = restart  # na een code-update
     serve.save_hook = choose_save_path  # ondertitels bewaren uit Refine
     serve.open_hook = choose_subtitle_file  # ondertitels inladen in Refine

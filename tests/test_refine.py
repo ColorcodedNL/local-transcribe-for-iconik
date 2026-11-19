@@ -471,5 +471,28 @@ check("verwijderen: de laag weg, de bestanden blijven staan",
       refine.load_subtitles("A1") is None and (tmp / "uit" / "nieuw.srt").is_file() and refine.view("A1")["subtitles"] is None)
 refine.save_draft("A1", json.dumps({"transcript": edited, "edits": 1}))   # terug naar het concept van hierboven
 
+# --- "Verwijder ook van deze Mac": alles van één asset weg, niets naast de media ---
+core = transcribe   # de waarden van base, zoals refine.py ze als core ziet
+media_dir = Path(tempfile.mkdtemp())
+srt = media_dir / "clip.srt"
+srt.write_text("1\n00:00:00,000 --> 00:00:01,000\nHallo\n")
+other_srt = media_dir / "ander.srt"
+core.SIDECARS_FILE.write_text(json.dumps({str(srt): "h1", str(other_srt): "h2"}))
+refine.DRAFTS_DIR.mkdir(parents=True, exist_ok=True)
+core.WAVES_DIR.mkdir(parents=True, exist_ok=True)
+core.TRANSCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
+(refine.DRAFTS_DIR / "Z9.subtitles.json").write_text(json.dumps({"target": {"base": str(media_dir / "clip.mxf"), "formats": "srt"}}))
+for f in (core.TRANSCRIPTS_DIR / "Z9.json", core.WAVES_DIR / "Z9.waves", core.WAVES_DIR / "Z9.media.json",
+          refine.DRAFTS_DIR / "Z9.draft.json", refine.DRAFTS_DIR / "Z9.original.json", core.TRANSCRIPTS_DIR / "Z8.json"):
+    f.write_text("{}")
+gone = refine.forget_asset("Z9")
+check("van deze Mac: alle zes de plekken van het asset weg", not any((d / n).exists() for d, n in (
+      (core.TRANSCRIPTS_DIR, "Z9.json"), (core.WAVES_DIR, "Z9.waves"), (core.WAVES_DIR, "Z9.media.json"),
+      (refine.DRAFTS_DIR, "Z9.draft.json"), (refine.DRAFTS_DIR, "Z9.original.json"), (refine.DRAFTS_DIR, "Z9.subtitles.json"))), gone)
+check("van deze Mac: een ander asset blijft", (core.TRANSCRIPTS_DIR / "Z8.json").exists())
+check("van deze Mac: het ondertitelbestand naast de media blijft staan", srt.exists())
+check("van deze Mac: alleen het pad van dit asset uit sidecars.json", json.loads(core.SIDECARS_FILE.read_text()) == {str(other_srt): "h2"})
+check("van deze Mac: twee keer is geen fout", refine.forget_asset("Z9") == [])
+
 print("ALLES OK" if not fails else f"{fails} FOUT")
 sys.exit(1 if fails else 0)

@@ -283,7 +283,6 @@ with sync_playwright() as p:
             serve.jobs.append({"n": 1, "asset_id": "A1", "title": "Interview na de wedstrijd", "status": "klaar", "message": "", "added": datetime.now(),
                                "remote": 0, "started": datetime.now(), "finished": datetime.now(), "stage": "", "fraction": None, "tracks": [], "auto": False})
         page.goto(f"{BASE}/")
-        page.locator('.nav[data-view="jobs"]').click()         # niet ingelogd opent het venster op Instellingen
         label = page.locator("[data-subtitles]")
         label.wait_for(timeout=5000)
         check("opdrachtenlijst: het label Ondertitels staat bij de opdracht", label.inner_text() == "Ondertitels")
