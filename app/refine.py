@@ -667,6 +667,27 @@ def originals_info():
     return {"count": len(files), "bytes": sum(f.stat().st_size for f in files)}
 
 
+def originals_list():
+    """De bewaarde originelen, nieuwste eerst, voor de lijst in Instellingen: [{"asset", "title", "connector",
+    "bytes", "time"}]. "asset" is de naam van het bestand zonder achtervoegsel, zodat weghalen dezelfde vindt."""
+    out = []
+    for f in (DRAFTS_DIR.glob("*.original.json") if DRAFTS_DIR.is_dir() else []):
+        try:
+            data = json.loads(f.read_text())
+            source = (data.get("transcript") or {}).get("source") or data.get("source") or {}
+            stat = f.stat()
+        except (OSError, ValueError, AttributeError):
+            continue
+        out.append({"asset": f.name[:-len(".original.json")], "title": str(source.get("title") or ""),
+                    "connector": str(source.get("connector") or ""), "bytes": stat.st_size, "time": stat.st_mtime})
+    return sorted(out, key=lambda item: item["time"], reverse=True)
+
+
+def remove_original(asset_id):
+    """Eén bewaard origineel weg (bijvoorbeeld van vertrouwelijk materiaal); de correctie zelf blijft."""
+    _original_path(asset_id).unlink(missing_ok=True)
+
+
 def clear_originals():
     """Gooit de bewaarde originelen weg; daarna kan een correctie niet meer terug naar het origineel."""
     for f in (DRAFTS_DIR.glob("*.original.json") if DRAFTS_DIR.is_dir() else []):

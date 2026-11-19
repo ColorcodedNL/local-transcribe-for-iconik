@@ -276,6 +276,16 @@ check("terugzetten: kopie op de Mac weer met bestand en sporen", refine.view("A1
       and len(refine.view("A1")["tracks"]) == 2 and refine.view("A1")["tracks"][0]["label"] == "eigen microfoon")
 check("transcriberen: daarna weer toegestaan", connector.open("A1", push=True, replace=True)["refined"] == [])
 
+# De lijst met originelen, en er één weghalen.
+refine.save_draft("A1", json.dumps({"transcript": edited, "edits": 1}))
+refine.save_to_iconik("A1")
+listed = refine.originals_list()
+check("lijst: het origineel staat erin, met bron", [o["asset"] for o in listed] == ["A1"] and listed[0]["connector"] == "iconik"
+      and listed[0]["bytes"] > 0, listed)
+refine.remove_original("A1")
+check("één weghalen: weg uit de lijst, correctie blijft", refine.originals_list() == [] and refine.view("A1")["refined"])
+refine.remove_original("A1")   # twee keer is geen fout
+
 # Lokale originelen legen.
 refine.save_draft("A1", json.dumps({"transcript": edited, "edits": 1}))
 refine.save_to_iconik("A1")

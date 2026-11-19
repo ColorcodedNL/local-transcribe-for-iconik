@@ -15,6 +15,7 @@ import os
 import sys
 import tempfile
 import threading
+import traceback
 import types
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -323,6 +324,8 @@ with sync_playwright() as p:
         page.goto(BASE + "/settings-window?tab=integrations")
         page.wait_for_function("document.title === 'Integraties'", timeout=5000)
         check("Instellingen: opent op de gevraagde tab", page.locator('[data-panel="integrations"]').is_visible())
+        check("Instellingen: ?tab= daarna uit het adres, opnieuw laden blijft op de huidige tab",
+              page.url == BASE + "/settings-window", page.url)
         hdr = {"X-Local-Transcribe": "1"}
         check("Instellingen openen: geen GET", page.request.get(BASE + "/window/settings", headers=hdr).status == 405)
         check("Instellingen openen: niet zonder header", page.request.post(BASE + "/window/settings").status == 403)
@@ -337,10 +340,81 @@ with sync_playwright() as p:
                      and not e.startswith("403 " + BASE + "/settings-window")]   # deze weigeringen zijn de bedoeling
         serve.title_hook = serve.settings_hook = None
 
+        # 10. Instellingen, Algemeen en Transcriptie: getekend uit het schema, elke wijziging meteen bewaard.
+        page.goto(BASE + "/settings-window?tab=general")
+        app_lang = page.locator("#f-general-app_language")
+        app_lang.wait_for(timeout=5000)
+        check("Algemeen: taal van de app als keuzelijst", app_lang.input_value() == "nl", app_lang.input_value())
+        app_lang.select_option("en")
+        page.wait_for_function("document.title === 'General'", timeout=5000)
+        check("Algemeen: andere taal bewaard, het venster komt terug in die taal", app_settings.stored("general.app_language") == "en")
+        page.locator("#f-general-app_language").select_option("nl")
+        page.wait_for_function("document.title === 'Algemeen'", timeout=5000)
+        page.locator("#loginOn").check()
+        page.wait_for_timeout(500)
+        check("Algemeen: opstarten bij inloggen aan", serve.login_item_on())
+        page.locator("#loginOn").uncheck()
+        page.wait_for_timeout(500)
+        check("Algemeen: opstarten bij inloggen uit", not serve.login_item_on())
+
+        page.get_by_role("tab", name="Transcriptie").click()
+        spoken = page.locator("#f-transcription-language")
+        spoken.wait_for(timeout=5000)
+        check("Transcriptie: niet geteste talen staan erbij",
+              "niet getest" in page.locator('#f-transcription-language option[value="de"]').inner_text())
+        spoken.select_option("nl")
+        page.wait_for_timeout(500)
+        check("Transcriptie: gesproken taal bewaard", app_settings.stored("transcription.language") == "nl")
+        page.get_by_text("Aanbevolen grenzen").wait_for(timeout=5000)
+        page.get_by_role("button", name="Aanpassen…").click()
+        free = page.locator("#f-transcription-auto_min_free_gb")
+        free.fill("16")
+        free.press("Enter")
+        page.get_by_text("Eigen grenzen").wait_for(timeout=5000)
+        check("Transcriptie: eigen grens bewaard", app_settings.stored("transcription.auto_min_free_gb") == 16)
+        free = page.locator("#f-transcription-auto_min_free_gb")
+        free.fill("-3")
+        free.press("Enter")
+        page.locator(".err").first.wait_for(timeout=5000)
+        check("Transcriptie: ongeldige grens geweigerd met melding", app_settings.stored("transcription.auto_min_free_gb") == 16)
+        page.get_by_role("button", name="Terug naar aanbevolen").click()
+        page.get_by_text("Aanbevolen grenzen").wait_for(timeout=5000)
+        check("Transcriptie: terug naar aanbevolen haalt de waarde uit het bestand",
+              app_settings.stored("transcription.auto_min_free_gb") is None)
+        check("Transcriptie: Geavanceerd is dicht", page.locator("#f-transcription-mlx_cache_gb").count() == 0)
+        page.get_by_role("button", name="Geavanceerd").click()
+        cache = page.locator("#f-transcription-mlx_cache_gb")
+        cache.fill("0")
+        cache.press("Enter")
+        page.wait_for_timeout(500)
+        check("Geavanceerd: buffer 0 mag (geen buffer)", app_settings.stored("transcription.mlx_cache_gb") == 0)
+
+        # De originelen van Refine: één weghalen uit de lijst, daarna de rest leegmaken.
+        serve.refine.DRAFTS_DIR.mkdir(parents=True, exist_ok=True)
+        secret = serve.refine.DRAFTS_DIR / "A9.original.json"
+        other = serve.refine.DRAFTS_DIR / "B7.original.json"
+        secret.write_text(json.dumps({"transcript": {"source": {"connector": "iconik", "title": "Vertrouwelijk interview"}}}))
+        other.write_text(json.dumps({"transcript": {"source": {"connector": "iconik", "title": "Ander interview"}}}))
+        page.reload()
+        page.get_by_text("Originelen van 2 gecorrigeerde transcripten").wait_for(timeout=5000)
+        page.get_by_role("button", name="Toon lijst…").click()
+        dialog = page.get_by_role("dialog")
+        dialog.get_by_label("Vertrouwelijk interview").check()
+        dialog.get_by_role("button", name="Verwijder geselecteerde").click()
+        dialog.get_by_text("Vertrouwelijk interview").wait_for(state="detached", timeout=5000)
+        check("originelen: één weghalen uit de lijst", not secret.exists() and other.exists())
+        dialog.get_by_role("button", name="Klaar").click()
+        page.get_by_role("button", name="Leegmaken").click()
+        page.get_by_role("button", name="Zeker? Klik nogmaals").click()
+        page.get_by_text("Geen originelen van gecorrigeerde transcripten").wait_for(timeout=5000)
+        check("originelen: leegmaken werkt (de route ontbrak tot nu)", not other.exists())
+
         browser.close()
     except Exception as error:
         # Een stap liep vast: zeg welke, en welke verzoeken de ontvanger weigerde.
-        check("browsertest liep vast", False, f"{type(error).__name__}: {str(error).splitlines()[0]}; "
+        here = [f.lineno for f in traceback.extract_tb(error.__traceback__) if f.filename.endswith("test_e2e.py")]
+        check("browsertest liep vast", False, f"regel {here[-1] if here else '?'}: "
+              f"{type(error).__name__}: {str(error).splitlines()[0]}; "
               f"fouten van de ontvanger: {errors or 'geen'}; pagina: {page.url}")
         browser.close()
 

@@ -224,6 +224,27 @@ check("kopjes: de drie ruimtegrenzen onder 'Werk dat de app vanzelf oppakt'",
 check("kopjes: auto transcribe bij Iconik verwijst ernaar", "Transcriptie" in base_help if (base_help := next(
       i["help"] for i in settings.describe("iconik") if i["key"] == "iconik.auto_transcribe")) else False)
 
+# --- terug naar de standaard en wat iemand zelf instelde ---
+settings.put("transcription.auto_max_cpu", 55)
+check("aangepast: een bewaarde waarde telt als eigen keuze", "transcription.auto_max_cpu" in settings.custom("transcription"))
+check("aangepast: een andere groep telt niet mee", "transcription.auto_max_cpu" not in settings.custom("general"))
+check("terugzetten: geeft wat er stond", settings.reset(["transcription.auto_max_cpu"]) == ["transcription.auto_max_cpu"])
+check("terugzetten: weg uit het bestand, standaard geldt weer",
+      settings.stored("transcription.auto_max_cpu") is None and settings.get("transcription.auto_max_cpu") == 40.0)
+check("terugzetten: wat er niet stond is geen fout", settings.reset(["transcription.auto_max_cpu"]) == [])
+try:
+    settings.reset(["bestaat.niet"])
+    check("terugzetten: onbekende sleutel geweigerd", False)
+except KeyError:
+    check("terugzetten: onbekende sleutel geweigerd", True)
+spoken = next(i for i in settings.describe("transcription") if i["key"] == "transcription.language")
+check("venster: de gesproken taal heeft een keuzelijst met de geteste talen",
+      spoken.get("options", [])[:3] == ["auto", "nl", "en"] and spoken.get("tested") == ["auto", "nl", "en"], spoken)
+
+check("venster: describe zegt welke instellingen geavanceerd zijn",
+      {i["key"]: i["advanced"] for i in settings.describe("transcription", advanced=True)}.get("transcription.prefetch_min_free_gb") is True
+      and all(i["advanced"] is False for i in settings.describe("transcription")))
+
 # --- via de vaste ingang ---
 check("transcribe kent settings als deel", settings in transcribe.PARTS
       and transcribe.PARTS.index(settings) == transcribe.PARTS.index(transcribe.base) + 1)

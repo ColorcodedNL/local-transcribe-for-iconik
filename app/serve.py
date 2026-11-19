@@ -738,6 +738,43 @@ AFTER_SAVE = {
 }
 
 
+def reset_settings(keys):
+    """Zet instellingen terug op hun standaardwaarde. Alleen gewone instellingen; mounts en ondertitels hebben
+    hun eigen weg. Daarna dezelfde stappen als na bewaren."""
+    if not isinstance(keys, list) or not keys or not all(isinstance(k, str) for k in keys):
+        return {"ok": False, "error": transcribe.L("Niets om terug te zetten.", "Nothing to reset.")}
+    unknown = [k for k in keys if k not in setting.SCHEMA or setting.SCHEMA[k].kind == "mapping"]
+    if unknown:
+        return {"ok": False, "error": transcribe.L("Onbekende instelling.", "Unknown setting."), "keys": unknown}
+    old = {key: setting.get(key) for key in keys}
+    setting.reset(keys)
+    for key in keys:
+        if key in AFTER_SAVE and old[key] != setting.get(key):
+            AFTER_SAVE[key](old[key], setting.get(key))
+    return {"ok": True, "values": {key: setting.get(key) for key in keys}}
+
+
+def _general_extra():
+    return {"login": {"on": login_item_on(), "available": bundle_path() is not None}}
+
+
+def _transcription_extra():
+    local = (transcribe.LOCAL_SPEAKER_MODEL / "config.yaml").is_file()
+    return {"model": settings.get("model", ""), "version": transcribe.APP_VERSION,
+            "speakers": "lokaal" if local else "huggingface" if settings.get("hf_token") else "uit",
+            "originals": refine.originals_info()}
+
+
+# Wat het venster Instellingen per tab ophaalt: het schema (ook wat geavanceerd is), de waarden, wat iemand
+# zelf heeft ingesteld en wat er verder op die tab staat maar geen instelling is.
+SETTINGS_DATA = {"general": _general_extra, "transcription": _transcription_extra}
+
+
+def settings_data(group):
+    return {"settings": setting.describe(group, advanced=True), "values": setting.values(group),
+            "custom": setting.custom(group), "extra": SETTINGS_DATA[group]()}
+
+
 def apply_settings(changes):
     """Eén ingang voor elke wijziging uit het venster: {sleutel: waarde}. Alles wordt eerst gecontroleerd
     tegen het schema; mag één waarde niet, dan verandert er niets. Geeft {"ok": True, "values": ...} of
@@ -912,6 +949,15 @@ class Handler(BaseHTTPRequestHandler):
             if title_hook:
                 title_hook(" ".join(title.split())[:60])
             return self.reply_json({"ok": True})
+        if url.path == "/settings/reset":
+            # {"keys": [...]}: terug naar de standaardwaarde ("Terug naar aanbevolen" in Instellingen).
+            if not 0 < size <= 4096:
+                return self.send_error(413)
+            try:
+                keys = json.loads(self.rfile.read(size)).get("keys")
+            except (ValueError, AttributeError):
+                keys = None
+            return self.reply_json(reset_settings(keys))
         if url.path in PROTECTED:
             if size:
                 self.rfile.read(min(size, 65536))   # het venster stuurt hier niets mee; wat er toch is, weg
@@ -920,6 +966,12 @@ class Handler(BaseHTTPRequestHandler):
         if url.path != "/refine/originals/clear" and not valid_asset_id(asset_id):
             return self.reply_json({"error": "asset"})
         try:
+            if url.path == "/refine/originals/clear":
+                refine.clear_originals()
+                return self.reply_json({"ok": True})
+            if url.path == "/refine/originals/remove":   # één origineel, uit de lijst in Instellingen
+                refine.remove_original(asset_id)
+                return self.reply_json({"ok": True})
             if url.path == "/refine/draft":
                 if not 0 < size <= refine.DRAFT_LIMIT:
                     return self.send_error(413)
@@ -988,10 +1040,17 @@ class Handler(BaseHTTPRequestHandler):
         first = lambda name: query.get(name, [""])[0]
         if url.path == "/":
             return self.reply(200, status_page())
+        if url.path == "/refine/originals":   # voor de lijst in Instellingen; vóór de rest van /refine/
+            return self.reply_json(refine.originals_list())
         if url.path == "/refine" or url.path.startswith("/refine/"):
             return self.refine_route(url.path, first)
         if url.path == "/settings-window":
             return self.reply(200, settings_page())
+        if url.path == "/settings-data":
+            group = first("group")
+            if group not in SETTINGS_DATA:
+                return self.send_error(404)
+            return self.reply_json(settings_data(group))
         if url.path == "/window/settings":
             # Het venster Instellingen openen, eventueel op een tab (later: tandwiel en status in het venster).
             tab = first("tab")

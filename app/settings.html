@@ -6,13 +6,13 @@
 <title>Instellingen</title>
 <style>
 :root {
-  --window: #f5f6f7; --bar: #eceef1; --surface: #ffffff; --line: #d9dde2;
-  --text: #1c1f23; --muted: #5b636d; --accent: #1a6fe0; --accent-text: #0f5bc4;
+  --window: #f5f6f7; --bar: #eceef1; --surface: #ffffff; --line: #d9dde2; --line-soft: #e8ebee;
+  --text: #1c1f23; --muted: #5b636d; --accent: #1a6fe0; --accent-text: #0f5bc4; --bad: #b3321f; --switch-off: #c4c9cf;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --window: #1d2025; --bar: #23272d; --surface: #262a30; --line: #343941;
-    --text: #e8eaed; --muted: #9aa2ad; --accent: #4c9dff; --accent-text: #7ab6ff;
+    --window: #1d2025; --bar: #23272d; --surface: #262a30; --line: #343941; --line-soft: #30353c;
+    --text: #e8eaed; --muted: #9aa2ad; --accent: #4c9dff; --accent-text: #7ab6ff; --bad: #ef7a66; --switch-off: #4a505a;
   }
 }
 * { box-sizing: border-box; }
@@ -21,7 +21,7 @@ body {
   margin: 0; display: flex; flex-direction: column;
   background: var(--window); color: var(--text);
   font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
-  -webkit-user-select: none; user-select: none; cursor: default;
+  font-variant-numeric: tabular-nums; -webkit-user-select: none; user-select: none; cursor: default;
 }
 nav { display: flex; justify-content: center; gap: 4px; padding: 6px 0 10px; background: var(--bar); border-bottom: 1px solid var(--line); }
 nav button {
@@ -29,11 +29,46 @@ nav button {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
 }
 nav button[aria-selected="true"] { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent-text); }
-nav button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 nav svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-main { flex: 1; overflow-y: auto; padding: 20px 26px 24px; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+main { flex: 1; overflow-y: auto; padding: 20px 26px 28px; }
 .empty { color: var(--muted); text-align: center; padding: 40px 0; }
 [hidden] { display: none !important; }
+
+.gh { font-weight: 650; margin: 0 0 6px 2px; }
+.gsub { color: var(--muted); font-size: 12px; margin: -2px 0 8px 2px; }
+.grp { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; margin-bottom: 18px; }
+.row { display: flex; align-items: center; gap: 16px; padding: 9px 14px; border-top: 1px solid var(--line-soft); }
+.grp > .row:first-child { border-top: 0; }
+.lbl { flex: 1; min-width: 0; }
+.help { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.err { color: var(--bad); font-size: 12px; margin-top: 3px; }
+.ctl { display: flex; align-items: center; gap: 8px; flex: none; }
+.state { color: var(--muted); font-size: 12px; }
+code { font: 12px ui-monospace, Menlo, monospace; -webkit-user-select: text; user-select: text; }
+input[type=text], input[type=number], select {
+  font: inherit; padding: 4px 7px; border: 1px solid var(--line); border-radius: 5px; background: var(--window); color: var(--text);
+}
+input[type=text] { width: 230px; } input[type=number] { width: 72px; text-align: right; } select { min-width: 170px; }
+input.switch { appearance: none; -webkit-appearance: none; margin: 0; width: 32px; height: 19px; border-radius: 10px; background: var(--switch-off); position: relative; flex: none; }
+input.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 15px; height: 15px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: left .15s; }
+input.switch:checked { background: var(--accent); } input.switch:checked::after { left: 15px; }
+button.btn { font: inherit; padding: 3px 11px; border-radius: 5px; border: 1px solid var(--line); background: var(--surface); color: var(--text); }
+button.btn:disabled { opacity: .5; }
+button.btn.danger { color: var(--bad); }
+button.go { font: inherit; padding: 4px 14px; border-radius: 6px; border: 0; background: var(--accent); color: #fff; }
+button.fold { all: unset; display: flex; align-items: center; gap: 6px; font-weight: 650; margin: 0 0 6px 2px; }
+button.fold span { color: var(--muted); width: 10px; display: inline-block; }
+
+.back { position: fixed; inset: 0; background: rgba(0,0,0,.25); display: flex; align-items: flex-start; justify-content: center; padding-top: 40px; }
+.sheet { width: 600px; max-height: calc(100% - 60px); display: flex; flex-direction: column; background: var(--window);
+         border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 12px 34px rgba(0,0,0,.3); padding: 18px 20px; }
+.sheet h2 { font-size: 15px; margin: 0 0 4px; }
+.sheet .grp { overflow-y: auto; margin: 12px 0 14px; }
+.sheet .row { padding: 7px 12px; }
+.sheet .title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sheet .foot { display: flex; gap: 8px; align-items: center; }
+.tag { font-size: 11px; font-weight: 600; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; }
 </style>
 </head>
 <body>
@@ -52,42 +87,253 @@ main { flex: 1; overflow-y: auto; padding: 20px 26px 24px; }
     <span data-t="integrations"></span></button>
 </nav>
 <main>
-  <section role="tabpanel" data-panel="general"><p class="empty" data-t="soon"></p></section>
-  <section role="tabpanel" data-panel="transcription"><p class="empty" data-t="soon"></p></section>
-  <section role="tabpanel" data-panel="files"><p class="empty" data-t="soon"></p></section>
+  <section role="tabpanel" data-panel="general"></section>
+  <section role="tabpanel" data-panel="transcription"></section>
+  <section role="tabpanel" data-panel="files"><p class="empty" data-t="filesSoon"></p></section>
   <section role="tabpanel" data-panel="integrations"><p class="empty" data-t="soon"></p></section>
 </main>
+<div class="back" id="sheet" hidden></div>
 <script>
 const LANG = "__LANG__";
 const TEXT = {
-  nl: {general: "Algemeen", transcription: "Transcriptie", files: "Bestanden", integrations: "Integraties",
-       soon: "Volgt in een volgende stap."},
-  en: {general: "General", transcription: "Transcription", files: "Files", integrations: "Integrations",
-       soon: "Follows in a next step."},
+  nl: {
+    general: "Algemeen", transcription: "Transcriptie", files: "Bestanden", integrations: "Integraties",
+    soon: "Volgt in een volgende stap.", filesSoon: "Komt met het werken met losse bestanden.",
+    choices: {"general.app_language": {auto: "Volg macOS", nl: "Nederlands", en: "English"}},
+    languages: {auto: "Herken per opdracht", nl: "Nederlands", en: "English", de: "Deutsch", fr: "Français", es: "Español", it: "Italiano", sv: "Svenska"},
+    untested: "niet getest",
+    login: "Opstarten bij inloggen", loginHelp: "Opent de app bij het inloggen. Staan opdrachten op afstand aan, dan blijft hij in de menubalk.",
+    language: "Taal", models: "Modellen", speech: "Spraak", speakers: "Sprekers", version: "Versie",
+    spLocal: "pyannote community-1, meegeleverd met de app", spHub: "pyannote community-1, via Hugging Face", spOff: "geen model gevonden, sprekerherkenning staat uit",
+    credit: "Sprekerherkenning gebruikt pyannote speaker-diarization-community-1 van pyannoteAI, licentie CC-BY-4.0. Spraakherkenning gebruikt Whisper large-v3 van OpenAI via MLX.",
+    recommended: "Aanbevolen grenzen", ownLimits: "Eigen grenzen", inUse: "In gebruik", adjusted: "Aangepast",
+    adjust: "Aanpassen…", backToRecommended: "Terug naar aanbevolen",
+    limits: (gb, cpu, gpu) => `Alleen op netstroom, minstens ${gb} GB geheugen vrij, processor onder ${cpu}% en GPU onder ${gpu}%.`,
+    refine: "Refine", refineSub: "Regels voor ondertitels kies je in Refine, bij + Ondertitels.",
+    originals: (n, mb) => n ? `Originelen van ${n} ${n === 1 ? "gecorrigeerd transcript" : "gecorrigeerde transcripten"} staan op deze Mac (${mb} MB).` : "Geen originelen van gecorrigeerde transcripten op deze Mac.",
+    originalsHelp: "Daarmee zet je in Refine een origineel terug. In de lijst haal je er één weg, Leegmaken haalt ze allemaal weg.",
+    showList: "Toon lijst…", clear: "Leegmaken", clearSure: "Zeker? Klik nogmaals",
+    advanced: "Geavanceerd",
+    sheetTitle: "Originelen op deze Mac",
+    sheetHelp: "Wat Refine bewaart om een origineel terug te zetten. Weghalen raakt de correctie in Iconik of naast de media niet.",
+    colName: "Asset of bestand", colSource: "Bron", colDate: "Gecorrigeerd", colSize: "Grootte",
+    selected: n => `${n} geselecteerd`, removeSelected: "Verwijder geselecteerde", done: "Klaar", noneLeft: "Geen originelen meer.",
+    failed: "Bewaren lukte niet.",
+  },
+  en: {
+    general: "General", transcription: "Transcription", files: "Files", integrations: "Integrations",
+    soon: "Follows in a next step.", filesSoon: "Comes with working on separate files.",
+    choices: {"general.app_language": {auto: "Follow macOS", nl: "Nederlands", en: "English"}},
+    languages: {auto: "Detect per job", nl: "Nederlands", en: "English", de: "Deutsch", fr: "Français", es: "Español", it: "Italiano", sv: "Svenska"},
+    untested: "untested",
+    login: "Open at login", loginHelp: "Opens the app when you log in. With remote jobs on, it stays in the menu bar.",
+    language: "Language", models: "Models", speech: "Speech", speakers: "Speakers", version: "Version",
+    spLocal: "pyannote community-1, included with the app", spHub: "pyannote community-1, via Hugging Face", spOff: "no model found, speaker detection is off",
+    credit: "Speaker detection uses pyannote speaker-diarization-community-1 by pyannoteAI, licence CC-BY-4.0. Speech recognition uses Whisper large-v3 by OpenAI via MLX.",
+    recommended: "Recommended limits", ownLimits: "Own limits", inUse: "In use", adjusted: "Adjusted",
+    adjust: "Adjust…", backToRecommended: "Back to recommended",
+    limits: (gb, cpu, gpu) => `Only on mains power, at least ${gb} GB memory free, processor below ${cpu}% and GPU below ${gpu}%.`,
+    refine: "Refine", refineSub: "Subtitle rules are chosen in Refine, under + Subtitles.",
+    originals: (n, mb) => n ? `Originals of ${n} corrected ${n === 1 ? "transcript are" : "transcripts are"} kept on this Mac (${mb} MB).` : "No originals of corrected transcripts on this Mac.",
+    originalsHelp: "With them Refine puts an original back. In the list you remove one, Clear removes them all.",
+    showList: "Show list…", clear: "Clear", clearSure: "Sure? Click again",
+    advanced: "Advanced",
+    sheetTitle: "Originals on this Mac",
+    sheetHelp: "What Refine keeps to put an original back. Removing does not touch the correction in Iconik or next to the media.",
+    colName: "Asset or file", colSource: "Source", colDate: "Corrected", colSize: "Size",
+    selected: n => `${n} selected`, removeSelected: "Remove selected", done: "Done", noneLeft: "No originals left.",
+    failed: "Saving failed.",
+  },
 };
 const TABS = ["general", "transcription", "files", "integrations"];
-const T = TEXT[LANG === "nl" ? "nl" : "en"];
+const lang = LANG === "nl" ? "nl" : "en";
+const T = TEXT[lang];
 const KEY = "settings.tab";   // de laatste tab; het venster bewaart zijn opslag tussen starts
+const AUTO = ["transcription.auto_min_free_gb", "transcription.auto_max_cpu", "transcription.auto_max_gpu"];
+const HDR = {"X-Local-Transcribe": "1"};
+let current = "general", data = {}, errors = {}, ui = {adjust: false, advanced: false, clearArmed: false};
 
-// Lezen en schrijven van localStorage kan mislukken; dan begint het venster gewoon bij Algemeen.
+const $ = id => document.getElementById(id);
+const esc = text => String(text ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+const num = n => (lang === "nl" ? String(n).replace(".", ",") : String(n));
 const remembered = () => { try { return localStorage.getItem(KEY); } catch (e) { return null; } };
 const remember = tab => { try { localStorage.setItem(KEY, tab); } catch (e) {} };
+const post = (path, body) => fetch(path, {method: "POST", headers: Object.assign({"Content-Type": "application/json"}, HDR),
+                                          body: body === undefined ? "" : JSON.stringify(body)}).then(r => r.json());
 
+// --- één instelling als rij, naar het soort uit het schema ---
+function control(s, value) {
+  const id = "f-" + s.key.replace(/\./g, "-");
+  if (s.kind === "bool")
+    return `<input type="checkbox" class="switch" role="switch" id="${id}" data-key="${s.key}" ${value ? "checked" : ""} aria-label="${esc(s.label)}">`;
+  if (s.kind === "choice" || (s.kind === "text" && s.options)) {
+    const options = s.choices || s.options;
+    const names = (s.options ? T.languages : T.choices[s.key]) || {};
+    const opts = options.map(o => {
+      const untested = s.tested && !s.tested.includes(o) ? ` (${T.untested})` : "";
+      return `<option value="${esc(o)}" ${o === value ? "selected" : ""}>${esc((names[o] || o) + untested)}</option>`;
+    }).join("");
+    return `<select id="${id}" data-key="${s.key}" aria-label="${esc(s.label)}">${opts}</select>`;
+  }
+  if (s.kind === "number")
+    return `<input type="number" id="${id}" data-key="${s.key}" value="${esc(value)}" step="any" ${s.minimum !== undefined ? `min="${s.minimum}"` : ""} aria-label="${esc(s.label)}">`;
+  if (s.kind === "languages")
+    return `<input type="text" id="${id}" data-key="${s.key}" data-kind="languages" value="${esc((value || []).join(", "))}" aria-label="${esc(s.label)}">`;
+  return `<input type="text" id="${id}" data-key="${s.key}" value="${esc(value)}" ${s.max_length ? `maxlength="${s.max_length}"` : ""} aria-label="${esc(s.label)}">`;
+}
+
+function row(label, help, ctl, key) {
+  const err = key && errors[key] ? `<div class="err">${esc(errors[key])}</div>` : "";
+  return `<div class="row"><div class="lbl">${label}${help ? `<div class="help">${help}</div>` : ""}${err}</div><div class="ctl">${ctl}</div></div>`;
+}
+const settingRow = s => row(esc(s.label), esc(s.help), control(s, data.values[s.key]), s.key);
+const group = (title, rows, sub) => (title ? `<div class="gh">${esc(title)}</div>` : "") + (sub ? `<div class="gsub">${esc(sub)}</div>` : "") + `<div class="grp">${rows.join("")}</div>`;
+const spec = key => data.settings.find(s => s.key === key);
+
+// --- de tabs ---
+function drawGeneral() {
+  const rows = data.settings.filter(s => !s.section).map(settingRow);
+  const login = data.extra.login;
+  if (login && login.available)
+    rows.push(row(esc(T.login), esc(T.loginHelp), `<input type="checkbox" class="switch" role="switch" id="loginOn" ${login.on ? "checked" : ""} aria-label="${esc(T.login)}">`));
+  return group("", rows);
+}
+
+function drawTranscription() {
+  const x = data.extra, v = data.values;
+  const custom = AUTO.some(k => data.custom.includes(k));
+  const section = spec(AUTO[0]).section;
+  const autoRows = [row(esc(custom ? T.ownLimits : T.recommended),
+                        esc(T.limits(num(v[AUTO[0]]), num(v[AUTO[1]]), num(v[AUTO[2]]))),
+                        `<span class="state">${esc(custom ? T.adjusted : T.inUse)}</span>` +
+                        (custom ? `<button class="btn" id="backRecommended">${esc(T.backToRecommended)}</button>`
+                                : (ui.adjust ? "" : `<button class="btn" id="adjust">${esc(T.adjust)}</button>`)))];
+  if (custom || ui.adjust) AUTO.forEach(k => autoRows.push(settingRow(spec(k))));
+  const mb = (x.originals.bytes / 1e6).toFixed(1);
+  const advanced = data.settings.filter(s => s.kind !== "mapping" && !s.section && s.key !== "transcription.language");
+  return group(T.language, [settingRow(spec("transcription.language"))])
+    + group(T.models, [
+        row(esc(T.speech), "", `<code>${esc(x.model)}</code>`),
+        row(esc(T.speakers), "", `<span class="state">${esc({lokaal: T.spLocal, huggingface: T.spHub, uit: T.spOff}[x.speakers])}</span>`),
+        `<div class="row"><div class="help" style="margin:0">${esc(T.credit)} ${esc(T.version)} ${esc(x.version)}.</div></div>`])
+    + group(section.title, autoRows, section.help)
+    + group(T.refine, [row(esc(T.originals(x.originals.count, num(mb))), esc(T.originalsHelp),
+        `<button class="btn" id="showList" ${x.originals.count ? "" : "disabled"}>${esc(T.showList)}</button>` +
+        `<button class="btn" id="clearOriginals" ${x.originals.count ? "" : "disabled"}>${esc(ui.clearArmed ? T.clearSure : T.clear)}</button>`)], T.refineSub)
+    + `<button class="fold" id="advanced" aria-expanded="${ui.advanced}"><span>${ui.advanced ? "▾" : "▸"}</span>${esc(T.advanced)}</button>`
+    + (ui.advanced ? group("", advanced.filter(s => s.advanced).map(settingRow)) : "");
+}
+
+const DRAW = {general: drawGeneral, transcription: drawTranscription};
+
+function draw() {
+  const panel = document.querySelector(`[data-panel="${current}"]`);
+  if (!DRAW[current] || !data.settings) return;
+  const focused = document.activeElement && document.activeElement.id;
+  panel.innerHTML = DRAW[current]();
+  if (focused && $(focused)) $(focused).focus();
+}
+
+async function load(tab) {
+  if (!DRAW[tab]) return;
+  const r = await fetch("/settings-data?group=" + tab);
+  if (!r.ok) return;
+  if (tab !== current) return;
+  data = await r.json();
+  draw();
+}
+
+// --- bewaren: meteen, tekstvelden bij Enter of het verlaten van het veld ---
+async function save(key, value) {
+  const result = await post("/settings", {[key]: value}).catch(() => ({ok: false, errors: {[key]: T.failed}}));
+  if (result.ok) {
+    delete errors[key];
+    if (key === "general.app_language") { location.reload(); return; }   // de pagina komt terug in de nieuwe taal
+  } else {
+    errors[key] = (result.errors && result.errors[key]) || result.error || T.failed;
+  }
+  await load(current);
+}
+
+function valueOf(el) {
+  if (el.type === "checkbox") return el.checked;
+  if (el.type === "number") return el.value === "" ? null : Number(el.value);
+  if (el.dataset.kind === "languages") return el.value.split(/[\s,]+/).filter(Boolean).map(s => s.toLowerCase());
+  return el.value;
+}
+
+document.addEventListener("change", e => {
+  const el = e.target;
+  if (el.id === "loginOn") { fetch("/login-item?value=" + (el.checked ? "on" : "off"), {method: "POST", headers: HDR}).then(() => load(current)); return; }
+  if (el.dataset && el.dataset.key) save(el.dataset.key, valueOf(el));
+});
+document.addEventListener("keydown", e => {
+  if (e.key === "Enter" && e.target.dataset && e.target.dataset.key && e.target.tagName === "INPUT") e.target.blur();
+});
+
+document.addEventListener("click", async e => {
+  const id = e.target.closest("button") && e.target.closest("button").id;
+  if (ui.clearArmed && id !== "clearOriginals") { ui.clearArmed = false; draw(); }   // Leegmaken vraagt twee klikken achter elkaar
+  if (id === "adjust") { ui.adjust = true; draw(); }
+  else if (id === "backRecommended") { ui.adjust = false; await post("/settings/reset", {keys: AUTO}); AUTO.forEach(k => delete errors[k]); load(current); }
+  else if (id === "advanced") { ui.advanced = !ui.advanced; draw(); }
+  else if (id === "showList") openSheet();
+  else if (id === "clearOriginals") {
+    if (!ui.clearArmed) { ui.clearArmed = true; draw(); return; }
+    ui.clearArmed = false;
+    await fetch("/refine/originals/clear", {method: "POST", headers: HDR});
+    load(current);
+  }
+});
+
+// --- de lijst met originelen ---
+async function openSheet() {
+  const list = await fetch("/refine/originals").then(r => r.json()).then(x => Array.isArray(x) ? x : []).catch(() => []);
+  const sheet = $("sheet");
+  const rows = list.map(o => `<div class="row"><input type="checkbox" data-asset="${esc(o.asset)}" aria-label="${esc(o.title || o.asset)}">
+      <div class="title">${esc(o.title || o.asset)}</div>${o.connector ? `<span class="tag">${esc(o.connector === "iconik" ? "Iconik" : o.connector)}</span>` : ""}
+      <span class="state" style="width:84px">${esc(new Date(o.time * 1000).toLocaleDateString(lang, {day: "numeric", month: "short"}))}</span>
+      <span class="state" style="width:56px;text-align:right">${esc(num((o.bytes / 1e6).toFixed(1)))} MB</span></div>`).join("");
+  sheet.innerHTML = `<div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(T.sheetTitle)}">
+      <h2>${esc(T.sheetTitle)}</h2><div class="help">${esc(T.sheetHelp)}</div>
+      <div class="grp">${rows || `<div class="row state">${esc(T.noneLeft)}</div>`}</div>
+      <div class="foot"><span class="state" id="count" style="flex:1">${esc(T.selected(0))}</span>
+      <button class="btn danger" id="removeSelected" disabled>${esc(T.removeSelected)}</button><button class="go" id="sheetDone">${esc(T.done)}</button></div></div>`;
+  sheet.hidden = false;
+  $("sheetDone").focus();
+  const picked = () => [...sheet.querySelectorAll("input[data-asset]:checked")].map(i => i.dataset.asset);
+  sheet.onchange = () => { $("count").textContent = T.selected(picked().length); $("removeSelected").disabled = !picked().length; };
+  $("removeSelected").onclick = async () => {
+    for (const asset of picked())
+      await fetch("/refine/originals/remove?asset=" + encodeURIComponent(asset), {method: "POST", headers: HDR});
+    openSheet();
+    load(current);
+  };
+  $("sheetDone").onclick = closeSheet;
+}
+function closeSheet() { $("sheet").hidden = true; $("sheet").innerHTML = ""; load(current); }
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("sheet").hidden) closeSheet(); });
+
+// --- tabs ---
 function show(tab) {
   if (!TABS.includes(tab)) tab = "general";
+  current = tab;
   document.querySelectorAll("nav button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === tab)));
   document.querySelectorAll("[data-panel]").forEach(p => p.hidden = p.dataset.panel !== tab);
   document.title = T[tab];
   remember(tab);
   // pywebview neemt de <title> niet over; de app zet de titel van het venster zelf.
-  fetch("/window/title", {method: "POST", headers: {"X-Local-Transcribe": "1", "Content-Type": "application/json"},
-                          body: JSON.stringify({title: T[tab]})}).catch(() => {});
+  post("/window/title", {title: T[tab]}).catch(() => {});
+  load(tab);
 }
 
-document.documentElement.lang = LANG === "nl" ? "nl" : "en";
+document.documentElement.lang = lang;
 document.querySelectorAll("[data-t]").forEach(el => el.textContent = T[el.dataset.t]);
 document.querySelectorAll("nav button").forEach(b => b.addEventListener("click", () => show(b.dataset.tab)));
+window.addEventListener("focus", () => { if ($("sheet").hidden && !document.activeElement.matches("input, select")) load(current); });   // het hoofdvenster kan intussen iets veranderd hebben
 show(new URLSearchParams(location.search).get("tab") || remembered());
+// ?tab= geldt alleen bij het openen; daarna uit het adres, zodat opnieuw laden (taalwissel) op de huidige tab blijft.
+if (location.search) history.replaceState(null, "", location.pathname);
 </script>
 </body>
 </html>

@@ -75,7 +75,9 @@ _SCHEMA = [
     # --- transcriptie ---
     S("transcription.language", "text", "auto", ("Gesproken taal", "Spoken language"),
       ("Automatisch herkent de taal per opdracht.", "Automatic detects the language per job."),
-      flat="language", pattern=r"auto|[a-z]{2,3}"),
+      flat="language", pattern=r"auto|[a-z]{2,3}",
+      # Voor het venster: de keuzes in de lijst; getest zijn alleen automatisch, Nederlands en Engels.
+      extra={"options": ["auto", "nl", "en", "de", "fr", "es", "it", "sv"], "tested": ["auto", "nl", "en"]}),
     S("transcription.expected_languages", "languages", ["nl", "en"], ("Te verwachten talen", "Expected languages"),
       ("Een paar woorden in een andere taal worden overgeslagen.", "A few words in another language are skipped."),
       flat="expected_languages", advanced=True),
@@ -371,6 +373,29 @@ def defaults():
     return {key: _copy(s.default) for key, s in SCHEMA.items()}
 
 
+def reset(keys):
+    """Terug naar de standaardwaarde: de sleutels gaan uit config.json, zodat een latere andere standaard
+    (bijvoorbeeld per Mac) vanzelf geldt. Geeft de sleutels die er echt stonden."""
+    specs = [spec(key) for key in keys]
+    removed = []
+
+    def change(config):
+        for s in specs:
+            home = _home(config, s)
+            if home is not None and _name(s) in home:
+                del home[_name(s)]
+                removed.append(s.key)
+    if specs and _config():
+        base.update_config(change)
+    return removed
+
+
+def custom(group):
+    """De sleutels van een groep die echt in config.json staan: wat iemand zelf heeft ingesteld."""
+    config = _config()
+    return [key for key, s in SCHEMA.items() if s.group == group and _read(config, s) is not None]
+
+
 def describe(group=None, advanced=False):
     """Het schema als gewone gegevens, voor het venster: per instelling soort, standaard, grenzen en tekst
     in de taal van de app. Zonder advanced alleen wat in het gewone venster hoort."""
@@ -378,7 +403,7 @@ def describe(group=None, advanced=False):
     for s in _SCHEMA:
         if (group and s.group != group) or (s.advanced and not advanced):
             continue
-        item = {"key": s.key, "kind": s.kind, "default": _copy(s.default),
+        item = {"key": s.key, "kind": s.kind, "default": _copy(s.default), "advanced": s.advanced,
                 "label": base.L(*s.label), "help": base.L(*s.help) if any(s.help) else ""}
         if s.choices:
             item["choices"] = list(s.choices)
@@ -386,6 +411,9 @@ def describe(group=None, advanced=False):
             item["minimum"] = s.minimum
         if s.max_length:
             item["max_length"] = s.max_length
+        for hint in ("options", "tested"):   # aanwijzingen voor het venster, zoals de talen in een keuzelijst
+            if hint in s.extra:
+                item[hint] = list(s.extra[hint])
         if s.section:
             heading, text = SECTIONS[s.section]
             item["section"] = {"id": s.section, "title": base.L(*heading), "help": base.L(*text)}
