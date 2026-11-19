@@ -3,6 +3,7 @@
 Draaien: uv run --no-project --with pynacl --with requests python -B tests/test_serve_worker.py
 """
 import http.client
+import json
 import sys
 import tempfile
 import threading
@@ -49,24 +50,36 @@ def get(path, headers=None):
 
 
 header = {"X-Local-Transcribe": "1"}
+
+
+def put(changes, with_header=True):
+    """Zoals het venster Instellingen: POST /settings met JSON. Geeft de status; een weigering is 200 met ok false."""
+    conn = http.client.HTTPConnection("127.0.0.1", srv.server_address[1])
+    headers = {"Cookie": f"{serve.SESSION_COOKIE}={serve.SESSION}", "Content-Type": "application/json"}
+    if with_header:
+        headers.update(header)
+    conn.request("POST", "/settings", body=json.dumps(changes), headers=headers)
+    return conn.getresponse().status
+
+
 check("standaard staat de werker uit", serve.worker_enabled() is False)
-check("zonder header: 403 en niets veranderd", get("/worker?value=on") == 403 and serve.worker_enabled() is False)
+check("zonder header: 403 en niets veranderd", put({"iconik.worker_enabled": True}, with_header=False) == 403 and serve.worker_enabled() is False)
 
 worker.pause()
 worker.wake.clear()
-check("met header aan: 200", get("/worker?value=on", header) == 200)
+check("met header aan: 200", put({"iconik.worker_enabled": True}) == 200)
 check("  staat nu in de voorkeuren", serve.worker_enabled() is True and settings.stored("iconik.worker_enabled") is True)
 check("  en de werker wordt wakker gemaakt", worker.wake.is_set())
 check("  en een pauze na een fout vervalt", worker.paused() is False and worker.state["paused_until"] is None)
-check("onbekende waarde verandert niets", get("/worker?value=misschien", header) == 200 and serve.worker_enabled() is True)
+check("onbekende waarde verandert niets", put({"iconik.worker_enabled": "misschien"}) == 200 and serve.worker_enabled() is True)
 worker.pause(reason="Geen internet")
 worker.wake.clear()
 check("hervatten zonder header: 403 en de pauze blijft", get("/worker?value=resume") == 403 and worker.paused() is True)
 check("hervatten met header: pauze weg en de werker wordt wakker", get("/worker?value=resume", header) == 200
       and worker.paused() is False and worker.wake.is_set() and serve.worker_enabled() is True)
-check("met header uit: 200 en uit", get("/worker?value=off", header) == 200 and serve.worker_enabled() is False)
+check("met header uit: 200 en uit", put({"iconik.worker_enabled": False}) == 200 and serve.worker_enabled() is False)
 check("andere voorkeuren blijven staan", (transcribe.save_config({**transcribe.load_config(), "language": "nl"}) or True)
-      and get("/worker?value=on", header) == 200 and settings.stored("transcription.language") == "nl")
+      and put({"iconik.worker_enabled": True}) == 200 and settings.stored("transcription.language") == "nl")
 
 try:
     transcribe.fail("x", local=True)
@@ -80,7 +93,7 @@ except transcribe.Problem as problem:
 state = serve.app_state()
 check("het venster krijgt de status mee", state["worker"]["enabled"] is True and state["worker"]["machine"], state.get("worker"))
 check("de status bevat geen geheimen", set(state["worker"]) <= {"enabled", "last_poll", "last_asset", "error", "machine", "machine_alias", "computer", "paused_until", "pause_reason", "login", "login_available", "iconik_language", "last_auto", "auto", "auto_on", "auto_audio", "awake"}, state["worker"])
-get("/worker?value=off", header)
+put({"iconik.worker_enabled": False})
 check("uit staat ook zo in de status", serve.app_state()["worker"]["enabled"] is False)
 
 # taal van de velden in Iconik
@@ -100,32 +113,32 @@ class StubQueue:
 
 real_queue, real_client = serve.remote.Queue, serve.client
 serve.remote.Queue, serve.client = StubQueue, lambda: object()
-check("taal van de velden: zonder header 403", get("/iconik-language?value=en") == 403 and not calls)
-check("taal van de velden: onbekende taal doet niets", get("/iconik-language?value=fr", header) == 200 and not calls
+check("taal van de velden: zonder header 403", put({"iconik.iconik_language": "en"}, with_header=False) == 403 and not calls)
+check("taal van de velden: onbekende taal doet niets", put({"iconik.iconik_language": "fr"}) == 200 and not calls
       and settings.stored("iconik.iconik_language") is None)
 check("taal van de velden: Engels kiezen maakt eerst de velden af en zet dan de labels",
-      get("/iconik-language?value=en", header) == 200 and calls == [("setup", True, "en"), ("apply", "en")])
+      put({"iconik.iconik_language": "en"}) == 200 and calls == [("setup", True, "en"), ("apply", "en")])
 check("  en onthoudt de keuze", settings.stored("iconik.iconik_language") == "en"
       and serve.worker_languages()[1] == "en")
 serve.client = lambda: None
 calls.clear()
 before = settings.stored("iconik.iconik_language")
-get("/iconik-language?value=nl", header)
+put({"iconik.iconik_language": "nl"})
 check("  niet ingelogd: niets gewijzigd, keuze blijft", not calls and settings.stored("iconik.iconik_language") == before)
 serve.remote.Queue, serve.client = real_queue, real_client
 check("  en het venster krijgt de gekozen taal mee", serve.app_state()["worker"]["iconik_language"] == "en")
 
 # --- auto transcribe: schakelaars, instellingen, wakker houden
-check("auto: zonder header 403 en niets veranderd", get("/auto?value=on") == 403
+check("auto: zonder header 403 en niets veranderd", put({"iconik.auto_transcribe": True}, with_header=False) == 403
       and not settings.stored("iconik.auto_transcribe"))
 worker.wake.clear()
-check("auto aan met header", get("/auto?value=on", header) == 200 and settings.stored("iconik.auto_transcribe") is True
+check("auto aan met header", put({"iconik.auto_transcribe": True}) == 200 and settings.stored("iconik.auto_transcribe") is True
       and worker.wake.is_set())
-check("audio apart aan te zetten", get("/auto?audio=on", header) == 200 and settings.stored("iconik.auto_audio") is True
+check("audio apart aan te zetten", put({"iconik.auto_audio": True}) == 200 and settings.stored("iconik.auto_audio") is True
       and settings.stored("iconik.auto_transcribe") is True)
 state = serve.app_state()["worker"]
 check("het venster krijgt auto en audio mee", state["auto_on"] is True and state["auto_audio"] is True and "awake" in state)
-get("/auto?audio=off", header)
+put({"iconik.auto_audio": False})
 check("audio uit laat auto aan", settings.stored("iconik.auto_audio") is False and settings.stored("iconik.auto_transcribe") is True)
 
 
@@ -169,7 +182,7 @@ check("menubalk: klaar", "automatisch" in (serve.auto_status_text() or "").lower
 serve.meter.verdict = (False, "gpu", {"gpu": 63.0})
 check("geen ruimte: niets, met reden", serve.auto_settings() is None and worker.state["auto"]["reason"] == "gpu")
 check("menubalk: waarop hij wacht", "GPU 63%" in (serve.auto_status_text() or ""), serve.auto_status_text())
-get("/auto?value=off", header)
+put({"iconik.auto_transcribe": False})
 check("auto uit: niets en geen status", serve.auto_settings() is None and worker.state["auto"] is None
       and serve.auto_status_text() is None)
 serve.meter = real_meter
@@ -270,16 +283,16 @@ transcribe.save_config({**transcribe.load_config(), "worker_enabled": False, "au
 # --- eigen naam voor deze Mac in Iconik
 real_busy = serve.busy
 serve.busy = lambda: False
-check("naam: zonder header 403", get("/machine-name?value=Montage") == 403 and not worker.machine_alias[0])
-check("naam: bewaard en meteen in gebruik", get("/machine-name?value=Montage%203", header) == 200
+check("naam: zonder header 403", put({"iconik.machine_name": "Montage"}, with_header=False) == 403 and not worker.machine_alias[0])
+check("naam: bewaard en meteen in gebruik", put({"iconik.machine_name": "Montage 3"}) == 200
       and settings.stored("iconik.machine_name") == "Montage 3" and worker.machine_name() == "Montage 3")
 check("naam: het venster krijgt de eigen naam en de computernaam", serve.app_state()["worker"]["machine_alias"] == "Montage 3"
       and serve.app_state()["worker"]["computer"] == worker.computer_name() and serve.app_state()["worker"]["machine"] == "Montage 3")
 serve.busy = lambda: True
-check("naam: niet tijdens een opdracht", get("/machine-name?value=Anders", header) == 200 and worker.machine_name() == "Montage 3"
+check("naam: niet tijdens een opdracht", put({"iconik.machine_name": "Anders"}) == 200 and worker.machine_name() == "Montage 3"
       and settings.stored("iconik.machine_name") == "Montage 3")
 serve.busy = lambda: False
-check("naam: leeg maken geeft de computernaam terug", get("/machine-name?value=", header) == 200
+check("naam: leeg maken geeft de computernaam terug", put({"iconik.machine_name": ""}) == 200
       and worker.machine_name() == worker.computer_name() and settings.stored("iconik.machine_name") == "")
 serve.busy = real_busy
 

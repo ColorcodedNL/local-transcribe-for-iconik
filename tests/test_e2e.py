@@ -171,10 +171,10 @@ with sync_playwright() as p:
         page.on("response", lambda r: errors.append(f"{r.status} {r.url}")
                 if r.url.startswith(BASE) and r.status >= 400 else None)
         page.on("pageerror", lambda e: console.append(str(e)))
-        settings = page.locator('.nav[data-view="settings"]')
-        account = page.locator("#account")
+        opened = []   # wat het opdrachtenvenster in Instellingen wil openen
+        serve.settings_hook = opened.append
 
-        # 1. Eerste start, nog niet ingelogd: het venster opent op Instellingen.
+        # 1. Eerste start, nog niet ingelogd: lege lijst met de knop naar Integraties, rechtsboven de status.
         # Zonder sessie komt een browser er niet in; het venster meldt zich eerst en krijgt de cookie.
         outsider = browser.new_page()
         refused = outsider.goto(BASE + "/").status
@@ -182,39 +182,52 @@ with sync_playwright() as p:
         check("een andere browser op deze Mac krijgt de app niet te zien", refused == 403, refused)
         page.goto(f"{BASE}/window/open?t={serve.SESSION}")
         page.wait_for_url(BASE + "/", timeout=5000)
-        account.get_by_text("Niet ingelogd.").wait_for(timeout=5000)
-        check("uitgelogd: Instellingen open met 'Niet ingelogd'", True)
+        connect = page.get_by_role("button", name="Verbinden met Iconik…")
+        connect.wait_for(timeout=5000)
+        check("uitgelogd: lege lijst met Verbinden met Iconik, status rechtsboven", page.locator("#who").inner_text() == "Niet ingelogd")
+        check("geen zijbalk en geen Voorkeuren meer in het venster", page.locator("aside, #settings, .nav").count() == 0)
+        check("venstertitel zonder 'for Iconik'", page.title() == "Local Transcribe", page.title())
+        connect.click()
+        page.locator("#status").click()
+        page.locator("#gear").click()
+        page.wait_for_timeout(300)
+        check("de knop en de status openen Integraties, het tandwiel de laatste tab", opened == ["integrations", "integrations", None], opened)
 
-        # 2. Inloggen via de link
-        account.get_by_role("link", name="Log in bij Iconik").click()
-        page.wait_for_url(BASE + "/", timeout=10000)
-        settings.click()
-        account.get_by_text("Ingelogd als Test Gebruiker (test@example.com).").wait_for(timeout=5000)
-        check("inloggen via de link: ingelogd als Test Gebruiker", logged_in())
+        # 2. Inloggen vanuit Instellingen › Integraties
+        page.goto(BASE + "/settings-window?tab=integrations")
+        page.locator("#login").click()
+        page.locator("#logout").wait_for(timeout=10000)
+        check("inloggen vanuit Instellingen: ingelogd", logged_in())
         check("Iconik kreeg een geldige PKCE-uitwisseling", iconik["pkce_ok"] == 1 and not iconik["bad"], iconik)
+        page.goto(BASE + "/")
+        page.get_by_text("Ingelogd bij Iconik").wait_for(timeout=5000)
+        check("het opdrachtenvenster toont de verbinding", page.locator("#dot.on").count() == 1)
 
         # 3. Uitloggen
-        account.get_by_role("link", name="Log uit").click()
-        account.get_by_text("Niet ingelogd.").wait_for(timeout=5000)
+        page.goto(BASE + "/settings-window?tab=integrations")
+        page.locator("#logout").click()
+        page.locator("#login").wait_for(timeout=5000)
         check("uitloggen: inlog weg uit de sleutelhanger", not logged_in())
 
-        # 4. Andere client-ID: eerst een ongeldige, dan een geldige
-        account.get_by_text("Andere Client ID gebruiken").click()
-        account.locator('input[name="client_id"]').fill("geen-id")
-        account.get_by_role("button", name="Opslaan en inloggen").click()
+        # 4. Andere client-ID: eerst een ongeldige, dan een geldige (in hoofdletters)
+        cid = page.locator("#f-iconik-client_id")
+        cid.fill("geen-id")
+        cid.press("Enter")
         page.get_by_text("Dat lijkt geen geldige client-ID.").wait_for(timeout=5000)
         check("ongeldige client-ID: melding, niets bewaard", app_settings.stored("iconik.client_id") == sorted(CLIENT_IDS)[0])
         other = sorted(CLIENT_IDS)[1]
-        account.locator('input[name="client_id"]').fill(other.upper())
-        account.get_by_role("button", name="Opslaan en inloggen").click()
-        page.wait_for_url(BASE + "/", timeout=10000)
-        settings.click()
-        account.get_by_text("Ingelogd als").wait_for(timeout=5000)
-        check("geldige client-ID: bewaard en ingelogd", app_settings.stored("iconik.client_id") == other and logged_in())
+        cid = page.locator("#f-iconik-client_id")
+        cid.fill(other.upper())
+        cid.press("Enter")
+        page.wait_for_timeout(500)
+        check("geldige client-ID: in kleine letters bewaard", app_settings.stored("iconik.client_id") == other)
+        page.locator("#login").click()
+        page.locator("#logout").wait_for(timeout=10000)
+        check("ingelogd met de nieuwe client-ID", logged_in())
 
         # 5. Klik vanuit Iconik terwijl je uitgelogd bent: eerst inloggen, daarna staan de opdrachten in de rij
-        account.get_by_role("link", name="Log uit").click()
-        account.get_by_text("Niet ingelogd.").wait_for(timeout=5000)
+        page.locator("#logout").click()
+        page.locator("#login").wait_for(timeout=5000)
         page.goto(f"{BASE}/transcribe/sleutel?asset_ids=A1,A2")
         page.wait_for_url(BASE + "/", timeout=10000)
         page.get_by_text("Titel A1").wait_for(timeout=10000)
@@ -225,75 +238,70 @@ with sync_playwright() as p:
         errors[:] = [e for e in errors if "/transcribe/fout" not in e]   # deze 403 is de bedoeling
         check("verkeerde sleutel geweigerd", status == 403 and "A3" not in {j["asset_id"] for j in serve.jobs}, status)
 
-        # 6. Schakelaars en keuzes in Instellingen
-        settings.click()
-        page.locator("#workerOn").check()
-        page.wait_for_timeout(500)
+        # 6. Op afstand en automatisch in Instellingen, en wat het opdrachtenvenster daarvan laat zien
+        main = page.context.new_page()   # het opdrachtenvenster naast Instellingen, met dezelfde sessie
+        main.on("response", lambda r: errors.append(f"{r.status} {r.url}") if r.url.startswith(BASE) and r.status >= 400 else None)
+        main.on("pageerror", lambda e: console.append(str(e)))
+        main.goto(BASE + "/")
+        main.locator("#strip").get_by_text("Uit", exact=True).wait_for(timeout=5000)
+        page.goto(BASE + "/settings-window?tab=integrations")
+        page.locator("#f-iconik-worker_enabled").check()
+        name = page.locator("#f-iconik-machine_name")
+        name.wait_for(timeout=5000)
         check("opdrachten op afstand aan", app_settings.stored("iconik.worker_enabled") is True)
+        # De werker kijkt nu echt bij de nep-Iconik; wat hij daar vindt maakt niet uit, wel dat "Uit" weg is.
+        main.locator("#strip").get_by_text("Uit", exact=True).wait_for(state="detached", timeout=5000)
+        check("de statusstrook toont dat op afstand aan staat", True)
 
-        # Eigen naam voor deze Mac in Iconik: niet tijdens een opdracht, daarna wel
-        name_field = page.locator('#nameForm input[name="machine"]')
-        name_field.fill("Montage 3")
-        page.locator("#nameForm button").click()
+        # Eigen naam voor deze Mac in Iconik: niet tijdens een opdracht (A1 en A2 wachten nog), daarna wel
+        name.fill("Montage 3")
+        name.press("Enter")
         page.get_by_text("Wacht tot de lopende opdracht klaar is.").wait_for(timeout=5000)
         check("naam van de Mac: geweigerd terwijl er opdrachten wachten", not app_settings.stored("iconik.machine_name"))
         real_busy, serve.busy = serve.busy, lambda: False
-        name_field.fill("Montage 3")
-        page.locator("#nameForm button").click()
-        page.locator("#worker p.dim", has_text="Montage 3").first.wait_for(timeout=5000)
+        name = page.locator("#f-iconik-machine_name")
+        name.fill("Montage 3")
+        name.press("Enter")
+        page.get_by_text("Naam: Montage 3").wait_for(timeout=5000)
         check("naam van de Mac: bewaard en getoond", app_settings.stored("iconik.machine_name") == "Montage 3")
-        name_field.fill("")
-        page.locator("#nameForm button").click()
+        name = page.locator("#f-iconik-machine_name")
+        name.fill("")
+        name.press("Enter")
         page.wait_for_timeout(500)
         check("naam van de Mac: leeg maken geeft de computernaam terug", app_settings.stored("iconik.machine_name") == ""
               and serve.remote.machine_name() == serve.remote.computer_name())
         serve.busy = real_busy
 
-        # Auto transcribe: schakelaar en vinkje onder opdrachten op afstand, status van de meter
-        page.locator("#autoOn").check()
-        page.wait_for_timeout(500)
+        # Automatisch transcriberen: schakelaar, ook audio, en waarop het wacht (Instellingen en statusstrook)
+        page.locator("#f-iconik-auto_transcribe").check()
+        page.locator("#f-iconik-auto_audio").wait_for(timeout=5000)
         check("automatisch transcriberen aan", app_settings.stored("iconik.auto_transcribe") is True)
         serve.remote.state["auto"] = {"ready": False, "reason": "gpu", "values": {"gpu": 63.0}}
-        page.get_by_text("GPU 63% bezet").wait_for(timeout=5000)
-        check("het venster zegt waarop auto wacht", True)
-        gap = page.locator(".autostate").evaluate("e => parseFloat(getComputedStyle(e).marginBottom)")
-        check("ruimte onder de statusregel, zodat het volgende onderdeel los staat", gap > 10, gap)
+        page.get_by_text("GPU 63% bezet").wait_for(timeout=10000)
+        main.locator("#strip").get_by_text("GPU 63% bezet").wait_for(timeout=5000)
+        check("Instellingen en de statusstrook zeggen waarop automatisch wacht", True)
         serve.remote.state["auto"] = {"ready": True, "reason": None, "values": {}}
-        page.get_by_text("Klaar: pakt een asset").wait_for(timeout=5000)
-        check("en wanneer hij klaar is", True)
-        page.locator("#autoAudio").check()
+        main.locator("#strip").get_by_text("Klaar: pakt een asset").wait_for(timeout=5000)
+        check("en wanneer het klaar is", True)
+        page.locator("#f-iconik-auto_audio").check()
         page.wait_for_timeout(500)
         check("ook audio aan", app_settings.stored("iconik.auto_audio") is True)
-        page.locator("#autoOn").uncheck()
+        page.locator("#f-iconik-auto_transcribe").uncheck()
         page.wait_for_timeout(500)
         check("automatisch transcriberen uit, audio-keuze blijft bewaard",
               app_settings.stored("iconik.auto_transcribe") is False and app_settings.stored("iconik.auto_audio") is True)
-        check("vinkje voor audio verdwijnt als auto uit staat", page.locator("#autoAudio").count() == 0)
+        check("Ook audio verdwijnt als automatisch uit staat", page.locator("#f-iconik-auto_audio").count() == 0)
         serve.remote.state["auto"] = None
         serve.jobs[0]["auto"] = True
-        page.locator('.nav[data-view="jobs"]').click()
-        page.locator(".tag", has_text="Auto").first.wait_for(timeout=5000)
-        check("automatisch opgepakte job heeft het label Auto", page.locator(".tag").count() == 1)
+        main.locator(".tag", has_text="Auto").first.wait_for(timeout=5000)
+        check("automatisch opgepakte job heeft het label Auto", main.locator(".tag").count() == 1)
         serve.jobs[0]["auto"] = False
-        settings.click()
-
-        page.locator("#workerOn").uncheck()
+        page.locator("#f-iconik-worker_enabled").uncheck()
         page.wait_for_timeout(500)
         check("opdrachten op afstand uit", app_settings.stored("iconik.worker_enabled") is False)
-        page.locator("#loginOn").check()
-        page.wait_for_timeout(500)
-        check("opstarten bij inloggen aan", serve.login_item_on())
-        page.locator("#loginOn").uncheck()
-        page.wait_for_timeout(500)
-        check("opstarten bij inloggen uit", not serve.login_item_on())
-        page.locator("#lang").select_option("en")
-        account.get_by_role("link", name="Log out").wait_for(timeout=5000)
-        check("taal van de app naar Engels", app_settings.stored("general.app_language") == "en")
-        page.locator("#lang").select_option("nl")
-        account.get_by_role("link", name="Log uit").wait_for(timeout=5000)
-        page.locator("#spoken").select_option("en")
-        page.wait_for_timeout(500)
-        check("gesproken taal bewaard", app_settings.stored("transcription.language") == "en")
+        main.locator("#strip").get_by_text("Uit", exact=True).wait_for(timeout=5000)
+        check("de statusstrook zegt dat op afstand uit staat", True)
+        main.close()
         check("client-ID bleef bij al die wijzigingen staan", app_settings.stored("iconik.client_id") == other)
 
         # 7. Een andere website probeert uit te loggen en de lijst te wissen
@@ -308,7 +316,7 @@ with sync_playwright() as p:
         # 8. Lijst opruimen vanuit het venster
         for job in serve.jobs:
             job["status"] = "klaar"
-        page.locator('.nav[data-view="jobs"]').click()
+        page.goto(BASE + "/")
         page.locator("#clear").click()
         page.get_by_text("Nog geen opdrachten").wait_for(timeout=5000)
         check("lijst opruimen vanuit het venster", not serve.jobs)

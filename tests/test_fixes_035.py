@@ -79,7 +79,7 @@ status, _, _ = get("/login-item?value=off")
 check("/login-item zonder header geweigerd", status == 403, status)
 status, _, body = get("/login-item?value=off", WINDOW)
 check("/login-item met header werkt", status == 200 and json.loads(body)["ok"], status)
-for path in ("/clear", "/logout", "/applang?value=nl", "/language?value=nl", "/actions/install", "/settings?client_id=x"):
+for path in ("/clear", "/logout", "/settings", "/actions/install", "/window/settings", "/integrations/remove?id=x"):
     status, _, _ = get(path)
     check(f"{path} zonder header geweigerd", status == 403, status)
 status, _, _ = get("/state", host="evil.example:%d" % PORT)
@@ -135,13 +135,11 @@ serve.pending_ids.clear()
 with serve.jobs_lock:
     serve.jobs.clear()
 
-status, _, body = get("/settings?client_id=nee", WINDOW)
-check("ongeldige client-ID geeft een melding", status == 200 and not json.loads(body)["ok"], body)
-status, _, body = get("/settings?client_id=ABCDEF12-1234-1234-1234-123456789ABC", WINDOW)
-check("geldige client-ID wordt bewaard", json.loads(body)["ok"] and settings.stored("iconik.client_id").startswith("abcdef12"))
-status, _, body = get("/applang?value=en", WINDOW)
-check("taal zetten laat de client-ID staan", settings.stored("general.app_language") == "en"
-      and (settings.stored("iconik.client_id") or "").startswith("abcdef12"), transcribe.load_config())
+for path in ("/applang?value=en", "/language?value=en", "/settings?client_id=x", "/auto?value=on", "/machine-name?value=x",
+             "/iconik-language?value=en"):
+    status, _, _ = get(path, WINDOW)
+    check(f"{path}: de oude route bestaat niet meer (dat gaat nu via POST /settings)", status == 404, status)
+check("niets veranderd door de oude routes", settings.stored("general.app_language") != "en" and not settings.stored("iconik.auto_transcribe"))
 
 
 def boom():

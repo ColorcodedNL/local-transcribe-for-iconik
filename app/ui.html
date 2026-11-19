@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Local Transcribe for Iconik</title>
+<title>Local Transcribe</title>
 <style>
 :root {
   --window: #f5f6f7; --side: #e9ebee; --surface: #ffffff; --line: #d9dde2;
@@ -20,22 +20,20 @@
 * { box-sizing: border-box; }
 html, body { height: 100%; }
 body {
-  margin: 0; display: grid; grid-template-columns: 190px 1fr;
+  margin: 0; display: flex; flex-direction: column;
   background: var(--window); color: var(--text);
   font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
   font-variant-numeric: tabular-nums; -webkit-user-select: none; user-select: none; cursor: default;
 }
-aside { background: var(--side); border-right: 1px solid var(--line); padding: 18px 10px 12px;
-        display: flex; flex-direction: column; gap: 2px; }
-aside h1 { font-size: 14px; font-weight: 650; margin: 0 8px 16px; letter-spacing: -.01em; }
-aside h1 span { display: block; font-weight: 400; color: var(--muted); }
-.nav { all: unset; padding: 6px 8px; border-radius: 6px; color: var(--text); }
-.nav[aria-current="true"] { background: var(--accent); color: #fff; }
-.nav:focus-visible, button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.who { margin-top: auto; padding: 8px; color: var(--muted); display: flex; gap: 7px; align-items: baseline; }
+.bar { display: flex; align-items: center; gap: 10px; padding: 10px 14px 10px 22px; background: var(--side); border-bottom: 1px solid var(--line); }
+.bar h1 { font-size: 14px; font-weight: 650; margin: 0; flex: 1; letter-spacing: -.01em; }
+.bar button { all: unset; display: flex; align-items: center; gap: 7px; padding: 4px 7px; border-radius: 6px; color: var(--muted); }
+.bar button:hover { background: color-mix(in srgb, var(--line) 60%, transparent); }
+.bar svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--idle); flex: none; }
-.dot.on { background: var(--good); } .dot.off { background: var(--bad); }
-main { overflow-y: auto; padding: 18px 22px 28px; }
+.dot.on { background: var(--good); } .dot.off { background: var(--bad); } .dot.wait { background: var(--warn); }
+main { flex: 1; overflow-y: auto; padding: 18px 22px 28px; }
 header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
 header h2 { font-size: 20px; font-weight: 650; margin: 0; letter-spacing: -.015em; flex: 1; }
 button.plain, a.plain { font: inherit; color: var(--accent); background: none; border: 0; padding: 0; text-decoration: none; cursor: pointer; }
@@ -84,24 +82,22 @@ button.tag.jump:hover { background: var(--accent); color: #fff; }
 .tracks .what { font-size: 11px; color: var(--muted); white-space: nowrap; }
 .tracks .what.on { color: var(--text); }
 .more { font-size: 11px; margin-left: 2px; }
-.empty { color: var(--muted); padding: 36px 0; text-align: center; max-width: 46ch; margin: 0 auto; }
+.empty { color: var(--muted); padding: 60px 0 36px; text-align: center; max-width: 48ch; margin: 0 auto; }
+.empty svg { width: 40px; height: 40px; fill: none; stroke: var(--idle); stroke-width: 1.5; stroke-linecap: round; }
+.empty .et { font-size: 15px; font-weight: 600; color: var(--text); margin: 8px 0 4px; }
+.strip { display: flex; gap: 18px; padding: 10px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; margin-bottom: 12px; }
+.strip > div { flex: 1; min-width: 0; } .strip dt { color: var(--muted); font-size: 12px; } .strip dd { margin: 0; display: flex; align-items: center; gap: 6px; }
 
-section.set { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin-bottom: 14px; max-width: 640px; }
-section.set h3 { font-size: 13px; font-weight: 650; margin: 0 0 6px; }
-section.set p { margin: 4px 0; } section.set .dim { color: var(--muted); }
-section.set code { font: 12px ui-monospace, Menlo, monospace; -webkit-user-select: text; user-select: text; }
-input, select { font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: 5px; background: var(--window); color: var(--text); width: 300px; }
 button.go { font: inherit; padding: 4px 10px; border-radius: 5px; border: 0; background: var(--accent); color: #fff; margin-left: 6px; }
 [hidden] { display: none !important; }
 </style>
 </head>
 <body>
-<aside>
-  <h1>Local Transcribe <span>for Iconik</span></h1>
-  <button class="nav" data-view="jobs" aria-current="true" data-t="jobs"></button>
-  <button class="nav" data-view="settings" data-t="settings"></button>
-  <div class="who"><i class="dot" id="dot"></i><span id="who"></span></div>
-</aside>
+<div class="bar">
+  <h1>Local Transcribe</h1>
+  <button id="status" hidden><i class="dot" id="dot"></i><span id="who"></span></button>
+  <button id="gear"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M9.23 4.92 L10.24 2.16 L13.76 2.16 L14.77 4.92 L15.05 5.04 L17.72 3.80 L20.20 6.28 L18.96 8.95 L19.08 9.23 L21.84 10.24 L21.84 13.76 L19.08 14.77 L18.96 15.05 L20.20 17.72 L17.72 20.20 L15.05 18.96 L14.77 19.08 L13.76 21.84 L10.24 21.84 L9.23 19.08 L8.95 18.96 L6.28 20.20 L3.80 17.72 L5.04 15.05 L4.92 14.77 L2.16 13.76 L2.16 10.24 L4.92 9.23 L5.04 8.95 L3.80 6.28 L6.28 3.80 L8.95 5.04Z"/><circle cx="12" cy="12" r="3"/></svg></button>
+</div>
 <main>
   <div class="note" id="note" hidden></div>
   <div class="note" id="storageOff" hidden></div>
@@ -109,28 +105,20 @@ button.go { font: inherit; padding: 4px 10px; border-radius: 5px; border: 0; bac
   <div class="note" id="update" hidden><span id="updateText"></span> <button class="plain" id="getUpdate"></button> <button class="plain" id="openUpdate" hidden></button></div>
   <div id="jobs">
     <header><h2 data-t="jobs"></h2><button class="plain" id="clear" data-t="clear"></button></header>
+    <div class="strip" id="strip" hidden></div>
     <div class="summary" id="summary"></div>
     <div id="list"></div>
-  </div>
-  <div id="settings" hidden>
-    <header><h2 data-t="settings"></h2></header>
-    <section class="set"><h3>Iconik</h3><div id="account"></div></section>
-    <section class="set"><h3 data-t="mountsTitle"></h3><div id="mounts"></div></section>
-    <section class="set"><h3 data-t="modelsTitle"></h3><div id="models"></div></section>
-    <section class="set"><h3 data-t="workerTitle"></h3><div id="worker"></div></section>
-    <section class="set"><h3>Refine</h3><div id="refineSet"></div></section>
-    <section class="set"><h3 data-t="spoken"></h3><p>
-      <select id="spoken"><option value="auto" data-t="spokenAuto"></option><option value="nl">Nederlands</option><option value="en">English</option><option value="de" data-name="Deutsch" data-untested>Deutsch</option><option value="fr" data-name="Français" data-untested>Français</option><option value="es" data-name="Español" data-untested>Español</option><option value="it" data-name="Italiano" data-untested>Italiano</option><option value="sv" data-name="Svenska" data-untested>Svenska</option></select></p>
-      <p class="dim" data-t="spokenHelp"></p></section>
-    <section class="set"><h3 data-t="language"></h3><p>
-      <select id="lang"><option value="auto" data-t="langAuto"></option><option value="nl">Nederlands</option><option value="en">English</option></select></p></section>
   </div>
 </main>
 <script>
 const NOTE = "__NOTE__";
 const TEXT = {
   nl: {
-    jobs: "Opdrachten", settings: "Voorkeuren", clear: "Wis afgeronde", mountsTitle: "ISG Mount Points",
+    jobs: "Opdrachten", settings: "Instellingen", clear: "Wis afgeronde",
+    emptyTitle: "Nog geen opdrachten", connect: "Verbinden met Iconik…",
+    emptyConnect: "Opdrachten komen uit Iconik. Verbind deze Mac eerst, kies daarna in Iconik een asset of collectie en kies Local Transcribe.",
+    stripRemote: "Op afstand", stripAuto: "Automatisch", stripStorage: "Opslag (ISG)", remoteOn: "Aan, wacht op aanvragen", remoteOff: "Uit",
+    storageOk: "gekoppeld", toIntegrations: "Opent Instellingen › Integraties", mountsTitle: "ISG Mount Points",
     change: "Kies andere map", remove: "Verwijder",
     updateAvail: v => `Versie ${v} van Local Transcribe for Iconik is beschikbaar.`, updateGet: "Downloaden", updateInstall: "Installeren", updateRetry: "Opnieuw proberen", updateFull: "Deze versie vraagt een nieuwe installatie.", updateBusy: v => `Versie ${v} wordt gedownload en gecontroleerd...`, updateReady: v => `Versie ${v} is geïnstalleerd. De app start opnieuw op...`, updateWaiting: v => `Versie ${v} staat klaar. De app start opnieuw op zodra de opdrachten klaar zijn.`, updateFail: e => `Updaten is mislukt: ${e}`, version: "Versie",
     btnMissing: "De knoppen Local Transcribe en Refine transcript staan nog niet (allebei) in deze Iconik-omgeving. Dat hoeft maar één keer, voor alle gebruikers tegelijk.",
@@ -158,7 +146,7 @@ const TEXT = {
     doneIn: (t, x) => `klaar in ${t} (${x} keer realtime)`, hide: "Verberg sporen", tracks: n => `${n} ${n === 1 ? "spoor" : "sporen"}`,
     ignored: "genegeerd", done: "Afgerond", of: "van", audioDone: "Audio getranscribeerd", skipped: "Overgeslagen of fout",
     speed: "Snelheid, keer realtime", average: x => `gemiddeld ${x} keer realtime`, times: "keer realtime",
-    empty: "Nog geen opdrachten. Kies in Iconik een asset of collectie en kies Local Transcribe.",
+    empty: "Kies in Iconik een asset of collectie en kies Local Transcribe. Opdrachten verschijnen hier.",
     clientId: "Client-ID van de applicatie die je Iconik-beheerder heeft aangemaakt:", save: "Opslaan en inloggen",
     accNone: "Nog niet verbonden met Iconik.", accOut: "Niet ingelogd.", otherId: "Andere Client ID gebruiken", login: "Log in bij Iconik", accUser: "Verbonden met Iconik.", accAs: "Ingelogd als",
     logout: "Log uit", accToken: "Verbonden met een persoonlijk token uit", loginOwn: "Log in met je eigen account",
@@ -172,7 +160,11 @@ const TEXT = {
     clearOriginals: "Leegmaken", clearSure: "Zeker? Daarna kan geen origineel meer terug. Klik nogmaals",
   },
   en: {
-    jobs: "Jobs", settings: "Preferences", clear: "Clear finished", mountsTitle: "ISG Mount Points",
+    jobs: "Jobs", settings: "Settings", clear: "Clear finished",
+    emptyTitle: "No jobs yet", connect: "Connect to Iconik…",
+    emptyConnect: "Jobs come from Iconik. Connect this Mac first, then pick an asset or collection in Iconik and choose Local Transcribe.",
+    stripRemote: "Remote", stripAuto: "Automatic", stripStorage: "Storage (ISG)", remoteOn: "On, waiting for requests", remoteOff: "Off",
+    storageOk: "linked", toIntegrations: "Opens Settings › Integrations", mountsTitle: "ISG Mount Points",
     change: "Choose another folder", remove: "Remove",
     updateAvail: v => `Version ${v} of Local Transcribe for Iconik is available.`, updateGet: "Download", updateInstall: "Install", updateRetry: "Try again", updateFull: "This version needs a full install.", updateBusy: v => `Downloading and checking version ${v}...`, updateReady: v => `Version ${v} is installed. The app is restarting...`, updateWaiting: v => `Version ${v} is ready. The app restarts when the jobs are done.`, updateFail: e => `Updating failed: ${e}`, version: "Version",
     btnMissing: "The Local Transcribe and Refine transcript buttons are not (both) in this Iconik environment yet. This is needed only once, for all users at the same time.",
@@ -200,7 +192,7 @@ const TEXT = {
     doneIn: (t, x) => `done in ${t} (${x}x realtime)`, hide: "Hide tracks", tracks: n => `${n} ${n === 1 ? "track" : "tracks"}`,
     ignored: "ignored", done: "Finished", of: "of", audioDone: "Audio transcribed", skipped: "Skipped or failed",
     speed: "Speed, times realtime", average: x => `average ${x}x realtime`, times: "x realtime",
-    empty: "No jobs yet. Pick an asset or collection in Iconik and choose Local Transcribe.",
+    empty: "Pick an asset or collection in Iconik and choose Local Transcribe. Jobs appear here.",
     clientId: "Client ID of the application your Iconik admin created:", save: "Save and log in",
     accNone: "Not connected to Iconik yet.", accOut: "Not logged in.", otherId: "Use another Client ID", login: "Log in to Iconik", accUser: "Connected to Iconik.", accAs: "Logged in as",
     logout: "Log out", accToken: "Connected with a personal token from", loginOwn: "Log in with your own account",
@@ -217,7 +209,7 @@ const TEXT = {
 };
 const STAGE_KEYS = ["audio", "transcriberen", "sprekers", "schrijven"];
 const open = {};
-let drawn = {}, view = "jobs", lang = "en", T = TEXT.en, started = false, landed = false;
+let drawn = {}, lang = "en", T = TEXT.en, started = false;
 
 const $ = id => document.getElementById(id);
 // Verzoeken die iets veranderen gaan met deze header; de ontvanger weigert ze zonder (zie PROTECTED in serve.py).
@@ -232,7 +224,6 @@ function setLanguage(choice) {
   T = TEXT[lang]; drawn = {}; $("list").innerHTML = "";
   document.documentElement.lang = lang;
   document.querySelectorAll("[data-t]").forEach(el => el.textContent = T[el.dataset.t]);
-  document.querySelectorAll("option[data-untested]").forEach(el => el.textContent = el.dataset.name + " (" + T.untested + ")");
 }
 function note(text) {
   if (lang === "nl") return text;
@@ -241,81 +232,20 @@ function note(text) {
 }
 
 if (NOTE) { $("note").textContent = NOTE; $("note").hidden = false; }
-document.querySelectorAll(".nav").forEach(b => b.onclick = () => {
-  view = b.dataset.view;
-  document.querySelectorAll(".nav").forEach(x => x.setAttribute("aria-current", x === b));
-  $("jobs").hidden = view !== "jobs"; $("settings").hidden = view !== "settings";
-});
 $("clear").onclick = () => act("/clear").then(tick);
 $("list").onclick = e => {
+  if (e.target.id === "connect") { act("/window/settings?tab=integrations"); return; }
   const s = e.target.closest("[data-subtitles]"); if (s) { location.href = "/refine?asset=" + encodeURIComponent(s.dataset.subtitles) + "&tab=subtitles"; return; }
   const r = e.target.closest("[data-refine]"); if (r) { location.href = "/refine?asset=" + encodeURIComponent(r.dataset.refine); return; }
   const a = e.target.closest("[data-asset]"); if (a && !window.getSelection().toString()) { act("/asset/open?id=" + encodeURIComponent(a.dataset.asset)); return; }
   const b = e.target.closest("[data-toggle]"); if (b) { open[b.dataset.toggle] = b.dataset.open !== "1"; tick(); }
 };
-$("mounts").onclick = e => { const b = e.target.closest("[data-mount]"); if (b) { b.blur(); act(`/mount/${b.dataset.mount}?id=${encodeURIComponent(b.dataset.id)}`).then(tick); } };
-$("spoken").onchange = e => { e.target.blur(); act("/language?value=" + e.target.value).then(tick); };
+// Instellingen: het tandwiel opent de laatste tab, de status en de knop in de lege lijst openen Integraties.
+$("gear").onclick = () => act("/window/settings");
+$("status").onclick = () => act("/window/settings?tab=integrations");
 $("getUpdate").onclick = () => act("/update/install");
 $("openUpdate").onclick = () => act("/update/open");
 $("install").onclick = e => { e.target.disabled = true; act("/actions/install").then(tick).finally(() => e.target.disabled = false); };
-function autoHtml(w) {
-  const box = (id, on, label) => `<label><input type="checkbox" id="${id}" style="width:auto;margin:0 .5em 0 0;vertical-align:middle"${on ? " checked" : ""}> ${label}</label>`;
-  let html = `<p>${box("autoOn", w.auto_on, T.autoOn)}</p><p class="dim">${T.autoHelp}</p>`;
-  if (!w.auto_on) return html;
-  html += `<p>${box("autoAudio", w.auto_audio, T.autoAudio)}</p><p class="dim">${T.autoAudioHelp}</p>`;
-  const a = w.auto;
-  if (a) {
-    const v = a.values || {}, why = T.autoWhy[a.reason];
-    const value = { memory: v.free_gb, cpu: v.cpu, gpu: v.gpu }[a.reason];
-    const reason = typeof why === "function" ? why(value == null ? "?" : num(value, a.reason === "memory" ? 1 : 0)) : (why || a.reason || "");
-    html += `<p class="autostate">${a.ready ? T.autoReady : `${T.autoWait}: ${esc(reason)}.`}${w.awake ? " " + T.autoAwake : ""}</p>`;
-  }
-  return html;
-}
-let fieldsMsg = "";
-function fieldsHtml(w) {
-  const cur = w.iconik_language || "nl";
-  return `<p>${T.fieldsLang} <select id="fieldsLang" style="width:auto"><option value="nl"${cur === "nl" ? " selected" : ""}>Nederlands</option><option value="en"${cur === "en" ? " selected" : ""}>English</option></select></p><p class="dim">${T.fieldsHelp}</p>` + (fieldsMsg ? `<p>${esc(fieldsMsg)}</p>` : "");
-}
-$("worker").onchange = e => {
-  const h = H;
-  if (e.target.id === "loginOn") { e.target.blur(); fetch("/login-item?value=" + (e.target.checked ? "on" : "off"), h).then(tick); return; }
-  if (e.target.id === "workerOn") { e.target.blur(); fetch("/worker?value=" + (e.target.checked ? "on" : "off"), h).then(tick); return; }
-  if (e.target.id === "autoOn") { e.target.blur(); fetch("/auto?value=" + (e.target.checked ? "on" : "off"), h).then(tick); return; }
-  if (e.target.id === "autoAudio") { e.target.blur(); fetch("/auto?audio=" + (e.target.checked ? "on" : "off"), h).then(tick); return; }
-  if (e.target.id === "fieldsLang") {
-    const value = e.target.value; e.target.blur(); fieldsMsg = "";
-    fetch("/iconik-language?value=" + value, h).then(r => r.json()).then(r => { fieldsMsg = r.ok ? T.fieldsDone : T.fieldsFail + ": " + (r.error || ""); tick(); }).catch(() => { fieldsMsg = T.fieldsFail; tick(); });
-  }
-};
-$("worker").onsubmit = e => {
-  if (e.target.id !== "nameForm") return;
-  e.preventDefault();
-  const name = new FormData(e.target).get("machine") || "";
-  document.activeElement && document.activeElement.blur();   // anders tekent settings() dit blok niet opnieuw
-  act("/machine-name?value=" + encodeURIComponent(name)).then(r => r.json()).then(r => {
-    if (!r.ok) { $("note").textContent = r.error; $("note").hidden = false; }
-    tick();
-  });
-};
-$("worker").onclick = e => {
-  if (e.target.id === "resumeNow") { e.target.disabled = true; act("/worker?value=resume").then(tick); }
-};
-$("account").onclick = e => {
-  if (e.target.id !== "logout") return;
-  e.preventDefault(); e.target.blur(); act("/logout").then(tick);   // blur: anders tekent settings() dit blok niet opnieuw
-};
-$("account").onsubmit = e => {
-  if (e.target.id !== "clientForm") return;
-  e.preventDefault();
-  const id = new FormData(e.target).get("client_id") || "";
-  act("/settings?client_id=" + encodeURIComponent(id)).then(r => r.json()).then(r => {
-    if (r.ok) { location.href = "/login"; return; }
-    $("note").textContent = r.error; $("note").hidden = false;
-  });
-};
-$("lang").onchange = e => { e.target.blur(); act("/applang?value=" + e.target.value).then(tick); };
-
 function wave(track) {
   const env = track.env || [], n = env.length;
   if (n < 2) return "<svg></svg>";
@@ -379,32 +309,22 @@ function summary(all) {
   $("clear").disabled = !all.some(j => !["wachtend", "bezig"].includes(j.status));
 }
 
-let clearArmed = 0;
-function refineSet(s) {
-  const o = s.originals || {count: 0, bytes: 0}, mb = num(o.bytes / 1e6, 1);
-  const html = `<p>${T.originals(o.count, mb)}</p>` + (o.count ? `<p><button class="plain" id="clearOriginals">${clearArmed ? T.clearSure : T.clearOriginals}</button></p>` : "");
-  if (drawn.refineSet !== html) { $("refineSet").innerHTML = html; drawn.refineSet = html; }
+function autoReason(a) {
+  const v = a.values || {}, why = T.autoWhy[a.reason];
+  const value = { memory: v.free_gb, cpu: v.cpu, gpu: v.gpu }[a.reason];
+  return typeof why === "function" ? why(value == null ? "?" : num(value, a.reason === "memory" ? 1 : 0)) : (why || a.reason || "");
 }
-$("refineSet").onclick = e => {
-  if (e.target.id !== "clearOriginals") return;
-  if (!clearArmed) { clearArmed = setTimeout(() => { clearArmed = 0; tick(); }, 4000); tick(); return; }
-  clearTimeout(clearArmed); clearArmed = 0;
-  fetch("/refine/originals/clear", {method: "POST", headers: {"X-Local-Transcribe": "1"}, body: "{}"}).then(tick);
-};
-function settings(s) {
-  refineSet(s);
-  const form = `<form id="clientForm"><p>${T.clientId}</p><p><input name="client_id" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"><button class="go">${T.save}</button></p></form>`;
-  const account = {
-    geen: `<p>${T.accNone}</p>` + form,
-    uitgelogd: `<p>${T.accOut} <a class="plain" href="/login">${T.login}</a></p><details><summary>${T.otherId}</summary>${form}</details>`,
-    gebruiker: `<p>${s.user ? T.accAs + " " + esc(s.user) + "." : T.accUser} <a class="plain" href="/" id="logout">${T.logout}</a></p>` + (s.actions === "aanwezig" ? `<p class="dim">${T.btnPresent}</p>` : ""),
-    token: `<p>${T.accToken} <code>~/.iconik-env</code>.</p>` + (s.has_client_id ? `<p><a class="plain" href="/login">${T.loginOwn}</a></p>` : form),
-  }[s.account];
-  const mounts = s.mounts;
+// Wat er naast de lijst speelt: de verbinding rechtsboven, de balken bovenaan en de statusstrook.
+function status(s) {
+  const online = s.account === "gebruiker" || s.account === "token";
+  $("status").hidden = s.account === "geen";
+  $("status").title = T.toIntegrations;
+  $("dot").className = "dot " + (online ? "on" : "off");
+  $("who").textContent = T.who[s.account];
   $("button").hidden = !["ontbreekt", "geweigerd"].includes(s.actions);
   $("buttonText").textContent = s.actions === "geweigerd" ? T.btnDenied : T.btnMissing;
   $("install").textContent = T.btnInstall; $("install").hidden = s.actions === "geweigerd";
-  const w0 = s.worker || {}, off = (w0.enabled && w0.auto_on && w0.auto && w0.auto.offline) || [];
+  const w = s.worker || {}, off = (w.enabled && w.auto_on && w.auto && w.auto.offline) || [];
   $("storageOff").hidden = !off.length;
   if (off.length) $("storageOff").textContent = T.storageOff(off.join(", "));
   $("update").hidden = !s.update;
@@ -420,31 +340,39 @@ function settings(s) {
     $("getUpdate").hidden = !install; $("getUpdate").textContent = u.state === "error" ? T.updateRetry : T.updateInstall;
     $("openUpdate").hidden = !download; $("openUpdate").textContent = T.updateGet;
   }
-  const html = {
-    account,
-    mounts: mounts.length ? mounts.map(m => `<div class="mount"><div><strong>${esc(m.name || "ISG " + m.id)}</strong><br><code>${esc(m.path)}</code></div><button class="plain" data-mount="change" data-id="${esc(m.id)}">${T.change}</button><button class="plain" data-mount="remove" data-id="${esc(m.id)}">${T.remove}</button></div>`).join("") : `<p class="dim">${T.noMounts}</p>`,
-    worker: (w => `<p><label><input type="checkbox" id="workerOn" style="width:auto;margin:0 .5em 0 0;vertical-align:middle"${w.enabled ? " checked" : ""}> ${T.workerOn}</label></p><p class="dim">${T.workerHelp}</p>${w.login_available ? `<p><label><input type="checkbox" id="loginOn" style="width:auto;margin:0 .5em 0 0;vertical-align:middle"${w.login ? " checked" : ""}> ${T.loginOn}</label></p><p class="dim">${T.loginHelp}</p>` : ""}` + (w.enabled ? autoHtml(w) : "") + fieldsHtml(w) + (w.enabled ? `<form id="nameForm" style="margin:.8em 0 .2em"><label>${T.nameLabel}<br><input name="machine" maxlength="40" value="${esc(w.machine_alias || "")}" placeholder="${esc(w.computer || "")}" style="width:18em;margin:.3em .5em 0 0"></label><button>${T.nameSave}</button></form><p class="dim">${T.nameHelp}</p>` : "") + (w.enabled ? `<p class="dim">${T.workerAs}: ${esc(w.machine || "")}${w.last_poll ? `. ${T.workerLast}: ${esc(w.last_poll)}` : ""}${w.last_asset ? `. ${T.workerAsset}: <code>${esc(w.last_asset)}</code>` : ""}</p>` + (w.paused_until ? `<p>${T.workerPaused} ${esc(w.paused_until)}${w.pause_reason ? ": " + esc(w.pause_reason) : ""}. <button class="plain" id="resumeNow">${T.resumeNow}</button></p>` : "") + (w.error ? `<p>${T.workerProblem}: ${esc(w.error)}</p>` : "") : ""))(s.worker || {}),
-    models: `<p>${T.speech}: <code>${esc(s.model)}</code></p><p>${T.speakers}: ${{lokaal: T.spLocal, huggingface: T.spHub, uit: T.spOff}[s.speakers]}</p><p class="dim">${T.credit}</p><p class="dim">${T.version} ${esc(s.version)}</p>`,
-  };
-  for (const id in html) if (drawn["set-" + id] !== html[id] && !$(id).contains(document.activeElement)) { $(id).innerHTML = html[id]; drawn["set-" + id] = html[id]; }
-  if (document.activeElement !== $("spoken")) { $("spoken").value = s.spoken; $("spoken").disabled = s.spoken_fixed; }
-  $("dot").className = "dot " + (s.account === "gebruiker" || s.account === "token" ? "on" : "off");
-  $("who").textContent = T.who[s.account];
+  // De statusstrook: alleen wat aan staat. Instellen gebeurt in Instellingen.
+  const cells = [];
+  if (online) {
+    const remote = !w.enabled ? ["", T.remoteOff] : w.paused_until ? ["wait", `${T.workerPaused} ${w.paused_until}`]
+                 : w.error ? ["off", `${T.workerProblem}: ${w.error}`] : ["on", T.remoteOn];
+    cells.push([T.stripRemote, ...remote]);
+    if (w.enabled && w.auto_on && w.auto) cells.push([T.stripAuto, w.auto.ready ? "on" : "wait", w.auto.ready ? T.autoReady : `${T.autoWait}: ${autoReason(w.auto)}.`]);
+    if ((s.mounts || []).length) {
+      const names = s.mounts.map(m => m.name || "ISG " + m.id).join(", ");
+      cells.push([T.stripStorage, off.length ? "off" : "on", off.length ? T.storageOff(off.join(", ")) : `${names} ${T.storageOk}`]);
+    }
+  }
+  const html = cells.map(([label, dot, text]) => `<div><dt>${esc(label)}</dt><dd><i class="dot ${dot}"></i>${esc(text)}</dd></div>`).join("");
+  $("strip").hidden = !html;
+  if (drawn.strip !== html) { $("strip").innerHTML = html; drawn.strip = html; }
 }
-
 async function tick() {
   let s;
   try { s = await (await fetch("/state")).json(); } catch { $("who").textContent = T.down; $("dot").className = "dot off"; return; }
   if (s.lang !== lang || !started) { started = true; setLanguage(s.lang); }
-  if (!landed) { landed = true; if (s.account === "geen" || s.account === "uitgelogd") document.querySelector('.nav[data-view="settings"]').click(); }
-  if (document.activeElement !== $("lang")) $("lang").value = s.app_language;
-  summary(s.jobs); settings(s);
+  summary(s.jobs); status(s);
+  $("summary").hidden = !s.jobs.length;
   const list = $("list"), seen = new Set();
   if (!s.jobs.length) {
-    if (drawn.empty !== true) { list.innerHTML = `<p class="empty">${T.empty}</p>`; drawn.empty = true; }
+    const connect = s.account === "geen" || s.account === "uitgelogd";
+    const html = `<div class="empty"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h8M4 6h0M4 12h0M4 18h0"/></svg>`
+      + `<p class="et">${T.emptyTitle}</p><p>${connect ? T.emptyConnect : T.empty}</p>`
+      + (connect ? `<p><button class="go" id="connect">${T.connect}</button></p>` : "") + `</div>`;
+    if (drawn.empty !== html) { list.innerHTML = html; drawn.empty = html; }
     return;
   }
   if (drawn.empty) { list.innerHTML = ""; drawn.empty = false; }
+  $("connect") && $("connect").remove();
   s.jobs.forEach((job, index) => {
     const id = "job-" + job.n, isOpen = open[job.n] ?? job.status === "bezig";
     seen.add(id);

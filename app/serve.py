@@ -539,22 +539,11 @@ def app_state():
             "elapsed": (end - job["started"]).total_seconds() if job["started"] else None,
             "auto": bool(job.get("auto")),
         })
-    account, client_id = iconik_account()
-    local = (transcribe.LOCAL_SPEAKER_MODEL / "config.yaml").is_file()
+    account, _ = iconik_account()
+    # Alleen wat het opdrachtenvenster gebruikt; het venster Instellingen haalt zijn gegevens bij /settings-data.
     return {
-        "jobs": out, "account": account, "user": who.get("name", ""), "actions": actions.get("state", "onbekend"),
-        "lang": transcribe.app_language(), "app_language": setting.get("general.app_language"),
-        "originals": refine.originals_info(),
-        "version": transcribe.APP_VERSION, "update": update_view(),
-        "spoken": settings.get("language") or setting.get("transcription.language"),
-        "spoken_fixed": bool(settings.get("language")), "has_client_id": bool(client_id),
-        "mounts": mount_list(setting.get("iconik.mounts")), "model": settings.get("model", ""),
-        "speakers": "lokaal" if local else "huggingface" if settings.get("hf_token") else "uit",
-        # Voor het venster Instellingen (stap 3): per groep de waarden, en de koppelingen. De velden hierboven
-        # blijven tot het huidige venster weg is.
-        "general": setting.values("general"),
-        "integrations": [dict(item, values=setting.values(item["type"])) for item in setting.integrations()
-                         if item["type"] in setting.INTEGRATIONS],
+        "jobs": out, "account": account, "actions": actions.get("state", "onbekend"), "lang": transcribe.app_language(),
+        "update": update_view(), "mounts": mount_list(setting.get("iconik.mounts")),
         "worker": dict(remote.state, enabled=worker_enabled(), machine=remote.machine_name(),
                        machine_alias=remote.machine_alias[0], computer=remote.computer_name(),
                        login=login_item_on(), login_available=bundle_path() is not None,
@@ -887,9 +876,8 @@ def apply_settings(changes):
     return {"ok": True, "values": cleaned}
 
 
-PROTECTED = {"/clear", "/mount/change", "/mount/remove", "/language", "/applang", "/actions/install",
-             "/update/open", "/update/install", "/worker", "/iconik-language", "/login-item", "/settings",
-             "/logout", "/window/show", "/auto", "/asset/open", "/machine-name", "/window/settings",
+PROTECTED = {"/clear", "/mount/change", "/mount/remove", "/actions/install", "/update/open", "/update/install",
+             "/worker", "/login-item", "/settings", "/logout", "/window/show", "/asset/open", "/window/settings",
              "/window/title", "/integrations/remove"}
 
 
@@ -1033,6 +1021,8 @@ class Handler(BaseHTTPRequestHandler):
             if size:
                 self.rfile.read(min(size, 65536))   # het venster stuurt hier niets mee; wat er toch is, weg
             return self.run_route(url)
+        if not url.path.startswith("/refine/"):
+            return self.send_error(404)   # geen route van het venster en niet van Refine
         asset_id = parse_qs(url.query).get("asset", [""])[0]
         if url.path != "/refine/originals/clear" and not valid_asset_id(asset_id):
             return self.reply_json({"error": "asset"})
@@ -1137,32 +1127,11 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/update/install":
             install_update()
             return self.reply_json({"ok": True})
-        if url.path == "/worker":
+        if url.path == "/worker":   # alleen "Nu hervatten"; aan en uit gaat via POST /settings
             if first("value") == "resume":
                 remote.resume()
                 remote.wake.set()
-            if first("value") in ("on", "off"):
-                apply_settings({"iconik.worker_enabled": first("value") == "on"})   # maakt de werker wakker
             return self.reply_json({"ok": True})
-        if url.path == "/machine-name":
-            # De naam van deze Mac in Iconik (niet tijdens een opdracht; zie apply_settings).
-            result = apply_settings({"iconik.machine_name": first("value")})
-            if not result["ok"]:
-                return self.reply_json({"ok": False, "error": result["error"]})
-            return self.reply_json({"ok": True, "name": remote.machine_name()})
-        if url.path == "/auto":
-            for key, name in (("value", "iconik.auto_transcribe"), ("audio", "iconik.auto_audio")):
-                if first(key) in ("on", "off"):
-                    apply_settings({name: first(key) == "on"})
-            storage_wake.set()  # meteen kijken of de opslag er is
-            remote.wake.set()   # meteen kijken, en de meter begint te meten
-            return self.reply_json({"ok": True})
-        if url.path == "/iconik-language":
-            code = first("value")
-            if code not in ("nl", "en"):
-                return self.reply_json({"ok": False, "error": "language"})
-            result = apply_settings({"iconik.iconik_language": code})   # eerst in Iconik, dan bewaren
-            return self.reply_json({"ok": True} if result["ok"] else {"ok": False, "error": result["error"]})
         if url.path == "/login-item":   # opstarten bij inloggen op de Mac; /login is inloggen bij Iconik
             if first("value") in ("on", "off"):
                 set_login_item(first("value") == "on")
@@ -1182,15 +1151,6 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply_json({"ok": True})
         if url.path == "/integrations/remove":
             return self.reply_json(remove_integration(first("id")))
-        if url.path == "/applang":
-            if first("value") in ("auto", "nl", "en"):
-                apply_settings({"general.app_language": first("value")})
-            return self.reply_json({"ok": True})
-        if url.path == "/language":
-            value = first("value")
-            if re.fullmatch(r"auto|[a-z]{2,3}", value):
-                apply_settings({"transcription.language": value})
-            return self.reply_json({"ok": True})
         if url.path == "/clear":
             clear_finished()
             return self.reply_json({"ok": True})
@@ -1206,8 +1166,6 @@ class Handler(BaseHTTPRequestHandler):
             if show_hook:
                 show_hook(window_state["page"])
             return self.reply_json(window_state)
-        if url.path == "/settings":
-            return self.save_settings(first("client_id").strip())
         if url.path == "/login":
             address, state, verifier = transcribe.start_login()
             pending_login.clear()
@@ -1224,12 +1182,6 @@ class Handler(BaseHTTPRequestHandler):
             actions.clear()
             return self.reply_json({"ok": True})
         return self.transcribe(url, query)
-
-    def save_settings(self, client_id):
-        """Het venster stuurt de client-ID; daarna gaat het zelf naar /login. (De oude vorm van /settings;
-        het nieuwe venster stuurt JSON, zie do_POST.)"""
-        result = apply_settings({"iconik.client_id": client_id})
-        return self.reply_json({"ok": True} if result["ok"] else {"ok": False, "error": result["error"]})
 
     def finish_login(self, code, state, error):
         verifier = pending_login.pop(state, None)

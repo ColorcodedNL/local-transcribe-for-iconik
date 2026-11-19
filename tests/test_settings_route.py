@@ -139,17 +139,26 @@ check("ander Iconik-adres: uitgelogd", r["ok"] and logouts == [1] and transcribe
 status, r = post({"iconik.host": "http://eu.iconik.io"})
 check("Iconik-adres zonder https geweigerd", not r["ok"] and settings.stored("iconik.host") == "https://eu.iconik.io", r)
 
-# --- /state: de blokken voor het venster Instellingen, naast de oude velden ---
-_c = http.client.HTTPConnection("127.0.0.1", PORT, timeout=10)
-_c.request("GET", "/state", headers={"Host": f"localhost:{PORT}", "Cookie": f"{serve.SESSION_COOKIE}={serve.SESSION}"})
-state = json.loads(_c.getresponse().read())
-check("/state: general met de taal van de app", state.get("general") == {"general.app_language": "en"}, state.get("general"))
-check("/state: één Iconik-koppeling met zijn waarden", len(state.get("integrations", [])) == 1
-      and state["integrations"][0]["type"] == "iconik" and state["integrations"][0]["values"]["iconik.host"] == "https://eu.iconik.io",
-      state.get("integrations"))
-check("/state: de oude velden zijn er nog", "worker" in state and "mounts" in state and "app_language" in state)
+# --- /state is voor het opdrachtenvenster; Instellingen haalt zijn gegevens bij /settings-data ---
+def fetch(path):
+    c = http.client.HTTPConnection("127.0.0.1", PORT, timeout=10)
+    c.request("GET", path, headers={"Host": f"localhost:{PORT}", "Cookie": f"{serve.SESSION_COOKIE}={serve.SESSION}"})
+    r = c.getresponse()
+    body = r.read()
+    return r.status, (json.loads(body) if r.status == 200 else None)
 
-# --- de oude knoppen gaan via dezelfde ingang ---
+
+_, state = fetch("/state")
+check("/state: wat het opdrachtenvenster nodig heeft", {"jobs", "account", "actions", "lang", "update", "mounts", "worker"} <= set(state), sorted(state))
+check("/state: niets meer van het oude Voorkeuren-blok", not {"general", "integrations", "app_language", "spoken", "model", "originals"} & set(state), sorted(state))
+_, data = fetch("/settings-data?group=iconik")
+check("/settings-data: de waarden van Iconik", data["values"]["iconik.host"] == "https://eu.iconik.io"
+      and [i["type"] for i in data["extra"]["instances"]] == ["iconik"], data["values"])
+_, data = fetch("/settings-data?group=general")
+check("/settings-data: Algemeen met de taal van de app", data["values"] == {"general.app_language": "en"}, data["values"])
+check("/settings-data: een onbekende groep bestaat niet", fetch("/settings-data?group=elders")[0] == 404)
+
+# --- elke wijziging gaat via dezelfde ingang ---
 check("alle wijzigingen in serve.py via apply_settings", "set_config(" not in Path("app/serve.py").read_text())
 check("elke sleutel in AFTER_SAVE bestaat", all(k in serve.setting.SCHEMA for k in serve.AFTER_SAVE))
 
