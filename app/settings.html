@@ -139,7 +139,7 @@ const TEXT = {
     account: "Account", short: {gebruiker: "Ingelogd", token: "Persoonlijk token", uitgelogd: "Niet ingelogd", geen: "Nog niet verbonden"},
     accAs: u => u ? `Ingelogd als ${u}` : "Ingelogd bij Iconik", accToken: "Verbonden met een persoonlijk token uit ~/.iconik-env",
     accOut: "Niet ingelogd.", accNone: "Nog niet verbonden met Iconik.", accNeedId: "Vul eerst de client-ID in van de applicatie die je Iconik-beheerder heeft aangemaakt.",
-    login: "Log in bij Iconik", logout: "Log uit", loginFailed: "Inloggen lukte niet. Probeer het opnieuw.",
+    iconikLogin: "Log in bij Iconik", logout: "Log uit", loginFailed: "Inloggen lukte niet. Probeer het opnieuw.",
     buttons: "Knoppen in Iconik", btnPresent: "De knoppen Local Transcribe en Refine transcript staan in Iconik.",
     btnMissing: "De knoppen staan nog niet (allebei) in deze Iconik-omgeving. Dat hoeft maar één keer, voor alle gebruikers tegelijk.",
     btnDenied: "Je account mag geen Custom Actions aanmaken. Vraag een Iconik-beheerder om één keer in deze app in te loggen en de knoppen te plaatsen.",
@@ -187,7 +187,7 @@ const TEXT = {
     account: "Account", short: {gebruiker: "Logged in", token: "Personal token", uitgelogd: "Not logged in", geen: "Not connected yet"},
     accAs: u => u ? `Logged in as ${u}` : "Logged in to Iconik", accToken: "Connected with a personal token from ~/.iconik-env",
     accOut: "Not logged in.", accNone: "Not connected to Iconik yet.", accNeedId: "First fill in the client ID of the application your Iconik admin created.",
-    login: "Log in to Iconik", logout: "Log out", loginFailed: "Logging in did not work. Try again.",
+    iconikLogin: "Log in to Iconik", logout: "Log out", loginFailed: "Logging in did not work. Try again.",
     buttons: "Buttons in Iconik", btnPresent: "The Local Transcribe and Refine transcript buttons are in Iconik.",
     btnMissing: "The buttons are not (both) in this Iconik environment yet. This is needed only once, for all users at the same time.",
     btnDenied: "Your account may not create Custom Actions. Ask an Iconik admin to log in to this app once and add the buttons.",
@@ -333,7 +333,7 @@ function drawIntegrations() {
   if (x.account === "gebruiker") account.push(row(esc(T.accAs(x.user)), "", `<button class="btn" id="logout">${esc(T.logout)}</button>`));
   else if (x.account !== "token")
     account.push(row(esc(x.has_client_id ? T.accOut : T.accNeedId), ui.loginFailed ? `<span class="err">${esc(T.loginFailed)}</span>` : "",
-                     `<button class="go" id="login" ${x.has_client_id ? "" : "disabled"}>${esc(T.login)}</button>`));
+                     `<button class="go" id="login" ${x.has_client_id ? "" : "disabled"}>${esc(T.iconikLogin)}</button>`));
   html += group(T.account, account);
   const online = x.account === "gebruiker" || x.account === "token";
   if (online) {

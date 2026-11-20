@@ -57,6 +57,32 @@ def check(name, cond, detail=""):
     print(("OK   " if cond else "FOUT ") + name + (f"  [{detail}]" if detail and not cond else ""))
 
 
+def text_keys(html):
+    """De sleutels van TEXT.nl en TEXT.en in een venster, met dubbele. Een dubbele sleutel overschrijft stil de
+    eerste (zo stond "Log in bij Iconik" ooit bij Opstarten bij inloggen)."""
+    import re
+    block = html[html.index("const TEXT = {"):]
+    block = block[:block.index("\n};") + 3]
+    found = {}
+    for lang in ("nl", "en"):
+        part = block[block.index(f"\n  {lang}: {{"):]
+        part = part[:part.index("\n  },") if "\n  }," in part else part.index("\n};")]
+        part = re.sub(r'"(?:[^"\\]|\\.)*"|`(?:[^`\\]|\\.)*`|\'(?:[^\'\\]|\\.)*\'', '""', part)   # geen tekst binnen strings
+        while True:   # kleinere lijstjes binnen de tabel (taalkeuzes, redenen) tellen niet mee
+            flat = re.sub(r"\{[^{}]*\}", "0", part)
+            if flat == part:
+                break
+            part = flat
+        keys = re.findall(r"(?:^|,|\{)\s*([A-Za-z_]\w*)\s*:", part, re.M)[1:]   # de eerste is "nl" of "en" zelf
+        found[lang] = sorted({k for k in keys if keys.count(k) > 1})
+    return found
+
+
+for page_file in ("ui.html", "settings.html", "refine.html"):
+    dupes = text_keys((Path("app") / page_file).read_text())
+    check(f"{page_file}: geen tekstsleutel twee keer", not dupes["nl"] and not dupes["en"], dupes)
+
+
 # --- Nep-Iconik: OAuth met PKCE, token, gebruiker, knoppen, titels
 ICON_PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==")
 CLIENT_IDS = {"11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"}
@@ -412,6 +438,9 @@ with sync_playwright() as p:
         check("Algemeen: andere taal bewaard, het venster komt terug in die taal", app_settings.stored("general.app_language") == "en")
         page.locator("#f-general-app_language").select_option("nl")
         page.wait_for_function("document.title === 'Algemeen'", timeout=5000)
+        login_row = page.locator(".row", has=page.locator("#loginOn"))
+        check("Algemeen: de schakelaar heet Opstarten bij inloggen (niet de knop van Iconik)",
+              "Opstarten bij inloggen" in login_row.inner_text() and "Iconik" not in login_row.inner_text(), login_row.inner_text())
         page.locator("#loginOn").check()
         page.wait_for_timeout(500)
         check("Algemeen: opstarten bij inloggen aan", serve.login_item_on())
