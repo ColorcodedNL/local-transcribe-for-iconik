@@ -811,9 +811,84 @@ def apply_settings(changes):
     return {"ok": True, "values": cleaned}
 
 
-PROTECTED = {"/clear", "/mount/change", "/mount/remove", "/actions/install", "/update/open", "/update/install",
-             "/worker", "/login-item", "/settings", "/logout", "/window/show", "/asset/open", "/window/settings",
-             "/window/title", "/integrations/remove", "/jobs/remove", "/log/clear"}
+# --- de routes -------------------------------------------------------------------------------------------------
+#
+# Elke route staat één keer in ROUTES, met wie er bij mag. Handler hieronder doet de controles voor alle routes
+# hetzelfde; een route hoeft dat dus niet zelf te onthouden.
+#
+#   session    het verzoek moet van het venster komen (cookie) of van de app zelf (sleutel). Uit voor wat van
+#              buiten komt: de knop in Iconik (heeft de sleutel in het pad), de terugkeer van het inloggen (heeft
+#              zijn eigen state), het venster dat zich meldt (heeft SESSION) en een tweede start van de app.
+#   protected  verandert iets: alleen als POST en met de header X-Local-Transcribe, die een andere webpagina niet
+#              naar localhost kan meesturen. Een GET op zo'n route krijgt 405.
+#   kind       window: het venster van de app; link: van buiten (Iconik, inloggen); app: een tweede start van
+#              de app. API_PREFIX is gereserveerd voor een gedocumenteerde, versioneerde API (nog leeg).
+#   errors     page: een fout wordt een pagina met de melding; json: {"error": ...}.
+
+API_PREFIX = "/api/v1/"
+KINDS = ("window", "link", "app", "api")
+
+
+class Route:
+    __slots__ = ("path", "methods", "handler", "session", "protected", "kind", "errors")
+
+    def __init__(self, path, handler, methods, session, protected, kind, errors):
+        self.path, self.handler, self.methods = path, handler, tuple(methods)
+        self.session, self.protected, self.kind, self.errors = session, protected, kind, errors
+
+
+ROUTES = {}
+PREFIXES = {}     # routes waar na het pad nog iets komt (/transcribe/<sleutel>)
+
+
+def route(path, methods=None, session=True, protected=False, kind="window", errors="page", prefix=False):
+    """Legt een route vast. Zonder methods: POST als hij beschermd is, anders GET."""
+    if kind not in KINDS or (kind == "api") != path.startswith(API_PREFIX):
+        raise ValueError(f"route {path}: soort {kind}")
+
+    def add(handler):
+        table = PREFIXES if prefix else ROUTES
+        if path in table:
+            raise ValueError(f"route {path} staat er al")
+        table[path] = Route(path, handler, methods or (("POST",) if protected else ("GET",)),
+                            session, protected, kind, errors)
+        return handler
+    return add
+
+
+def find_route(path):
+    found = ROUTES.get(path)
+    if found is None:
+        found = next((r for p, r in PREFIXES.items() if path.startswith(p)), None)
+    return found
+
+
+def protected_paths():
+    """De paden die iets veranderen (wat vroeger PROTECTED was)."""
+    return {p for p, r in ROUTES.items() if r.protected}
+
+
+class Request:
+    """Wat een route nodig heeft van een verzoek: de query, de inhoud en de antwoorden van Handler."""
+
+    def __init__(self, handler, url):
+        self.handler, self.url, self.path = handler, url, url.path
+        self.query = parse_qs(url.query)
+        self.size = int(handler.headers.get("Content-Length") or 0)
+        self._read = False
+
+    def first(self, name):
+        return self.query.get(name, [""])[0]
+
+    def body(self):
+        self._read = True
+        return self.handler.rfile.read(self.size) if self.size else b""
+
+    def drain(self):
+        """Wat het venster toch meestuurt bij een route zonder inhoud: weg (hooguit 64 kB)."""
+        if self.size and not self._read:
+            self._read = True
+            self.handler.rfile.read(min(self.size, 65536))
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -844,28 +919,6 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def refine_route(self, path, first):
-        """De editor: alleen lezen in deel 1, dus geen PROTECTED-routes."""
-        asset_id = first("asset")
-        if path == "/refine":
-            return self.reply(200, page_text(REFINE_FILE))
-        if not valid_asset_id(asset_id):
-            return self.reply_json({"error": "asset"})
-        try:
-            if path == "/refine/view":
-                return self.reply_json(refine.view(asset_id))
-            if path == "/refine/chunk":
-                body = refine.chunk(asset_id, first("t") or 0, first("d") or refine.CHUNK_SECONDS, int(first("solo") or 0))
-                return self.reply_bytes(body, "video/mp4")
-            if path == "/refine/waves":
-                body, fraction = refine.waves(asset_id)
-                if body is None:
-                    return self.reply_json({"fraction": fraction})
-                return self.reply_bytes(body, "application/octet-stream")
-        except (refine.RefineError, Problem) as error:
-            return self.reply_json({"error": str(error)})
-        return self.send_error(404)
-
     def redirect(self, location):
         self.send_response(303)
         self.send_header("Location", location)
@@ -886,245 +939,57 @@ class Handler(BaseHTTPRequestHandler):
         given, key = self.headers.get(KEY_HEADER) or "", settings.get("key") or ""
         return bool(given and key) and secrets.compare_digest(given.encode(), key.encode())
 
-    def open_window(self, token, target=""):
-        """Het venster van de app meldt zich met SESSION en krijgt de cookie. Daarna gaat het naar de app,
-        of naar de pagina in next (alleen een eigen pad, nooit een ander adres)."""
-        if not secrets.compare_digest((token or "").encode(), SESSION.encode()):
-            return self.send_error(403)
-        if not target.startswith("/") or target.startswith("//") or "\\" in target or any(ord(c) < 32 for c in target):
-            target = "/"
-        self.send_response(303)
-        self.send_header("Location", target)
-        # Lax: de cookie gaat mee als Iconik na het inloggen terugstuurt naar /oauth/callback en door naar /.
-        self.send_header("Set-Cookie", f"{SESSION_COOKIE}={SESSION}; Path=/; HttpOnly; SameSite=Lax")
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-
-    def run_route(self, url):
-        try:
-            return self.route(url)
-        except Problem as problem:
-            return self.reply(200, status_page(str(problem)))
-        except Exception as error:
-            # Geen netwerk of een onverwachte fout: een pagina met de fout, geen verbroken verbinding.
-            print(f"Fout bij {url.path}: {type(error).__name__}: {error}")
-            try:
-                return self.reply(500, status_page(f"{type(error).__name__}: {error}"))
-            except Exception:
-                pass
-
-    def do_POST(self):
-        """Alles wat iets verandert: de routes in PROTECTED en die van Refine."""
-        url = urlparse(self.path)
-        if not self.host_ok() or self.headers.get("X-Local-Transcribe") != "1":
-            return self.send_error(403)
-        if url.path != "/window/show" and not self.session_ok():
-            return self.send_error(403)
-        size = int(self.headers.get("Content-Length") or 0)
-        if url.path == "/settings" and size:
-            # De nieuwe vorm: {sleutel: waarde, ...} als JSON, alles of niets.
-            if size > 16384:
-                return self.send_error(413)
-            try:
-                changes = json.loads(self.rfile.read(size))
-            except ValueError:
-                return self.reply_json({"ok": False, "errors": {}, "error": "json"})
-            return self.reply_json(apply_settings(changes))
-        if url.path == "/window/title":
-            # {"title": tekst}: de titel van het venster Instellingen volgt de tab.
-            if not 0 < size <= 1024:
-                return self.send_error(413)
-            try:
-                title = json.loads(self.rfile.read(size)).get("title")
-            except (ValueError, AttributeError):
-                title = None
-            if not isinstance(title, str) or not title.strip():
-                return self.reply_json({"ok": False})
-            if title_hook:
-                title_hook(" ".join(title.split())[:60])
-            return self.reply_json({"ok": True})
-        if url.path == "/settings/reset":
-            # {"keys": [...]}: terug naar de standaardwaarde ("Terug naar aanbevolen" in Instellingen).
-            if not 0 < size <= 4096:
-                return self.send_error(413)
-            try:
-                keys = json.loads(self.rfile.read(size)).get("keys")
-            except (ValueError, AttributeError):
-                keys = None
-            return self.reply_json(reset_settings(keys))
-        if url.path in PROTECTED:
-            if size:
-                self.rfile.read(min(size, 65536))   # het venster stuurt hier niets mee; wat er toch is, weg
-            return self.run_route(url)
-        if not url.path.startswith("/refine/"):
-            return self.send_error(404)   # geen route van het venster en niet van Refine
-        asset_id = parse_qs(url.query).get("asset", [""])[0]
-        if url.path != "/refine/originals/clear" and not valid_asset_id(asset_id):
-            return self.reply_json({"error": "asset"})
-        try:
-            if url.path == "/refine/originals/clear":
-                refine.clear_originals()
-                return self.reply_json({"ok": True})
-            if url.path == "/refine/originals/remove":   # één origineel, uit de lijst in Instellingen
-                refine.remove_original(asset_id)
-                return self.reply_json({"ok": True})
-            if url.path == "/refine/draft":
-                if not 0 < size <= refine.DRAFT_LIMIT:
-                    return self.send_error(413)
-                return self.reply_json({"saved_at": refine.save_draft(asset_id, self.rfile.read(size))})
-            if url.path == "/refine/discard":
-                refine.discard_draft(asset_id)
-                return self.reply_json({"ok": True})
-            if url.path == "/refine/save":
-                return self.reply_json(refine.save_to_iconik(asset_id))
-            if url.path.startswith("/refine/subtitles/"):
-                action = url.path.rsplit("/", 1)[1]
-                if size > (refine.DRAFT_LIMIT if action == "draft" else 4096):
-                    return self.send_error(413)
-                body = self.rfile.read(size) if size else b""
-                if action == "preview":
-                    return self.reply_json(refine.preview_subtitles(asset_id, body))
-                if action == "make":        # ook het bewaarvenster, als iemand een andere plek kiest
-                    return self.reply_json(refine.make_subtitles(asset_id, body, save_hook))
-                if action == "import":      # een bestaand .srt of .vtt inladen
-                    return self.reply_json(refine.import_subtitles(asset_id, body, open_hook))
-                if action == "draft":
-                    return self.reply_json({"saved_at": refine.save_subtitles(asset_id, body)})
-                if action == "write":
-                    return self.reply_json(refine.write_subtitles(asset_id))
-                if action == "write-as":
-                    return self.reply_json(refine.write_subtitles(asset_id, save_hook, elsewhere=True))
-                if action == "fit":
-                    return self.reply_json(refine.fit_subtitles(asset_id, body))
-                if action == "discard":
-                    refine.discard_subtitles(asset_id)
-                    return self.reply_json({"ok": True})
-        except (refine.RefineError, Problem, ValueError, KeyError, TypeError) as error:
-            return self.reply_json({"error": str(error) or type(error).__name__})
-        return self.send_error(404)
+    def header_ok(self):
+        return self.headers.get("X-Local-Transcribe") == "1"
 
     def do_GET(self):
+        self.dispatch("GET")
+
+    def do_POST(self):
+        self.dispatch("POST")
+
+    def dispatch(self, method):
+        """Dezelfde controles voor elke route, in deze volgorde: deze Mac, (bij POST) de header, de sessie,
+        de bescherming, de methode."""
         url = urlparse(self.path)
-        if not self.host_ok():
+        if not self.host_ok() or (method == "POST" and not self.header_ok()):
             return self.send_error(403)
-        if url.path == "/window/open":
-            query = parse_qs(url.query)
-            return self.open_window(query.get("t", [""])[0], query.get("next", [""])[0])
-        # Open zonder sessie: de terugkeer van het inloggen (heeft zijn eigen state), de link uit Iconik
-        # (heeft de sleutel in het pad), en de twee routes waarmee een tweede start van de app kijkt of er al
-        # een exemplaar draait en het venster naar voren haalt. Die laatste twee blijven open voor een oudere
-        # versie van de app die de sleutel nog niet meestuurt; ze geven niets prijs en veranderen niets.
-        open_route = (url.path in ("/oauth/callback", "/window/state", "/window/show")
-                      or url.path == "/transcribe" or url.path.startswith("/transcribe/"))
-        if not open_route and not self.session_ok():
+        found = find_route(url.path)
+        known = found is not None and method in found.methods   # een methode die de route niet kent: als onbekend
+        if (not known or found.session) and not self.session_ok():
             return self.send_error(403)
-        # Wat iets verandert, mag alleen het venster zelf: een andere webpagina kan deze header niet
-        # meesturen naar localhost. Links (inloggen, de knop in Iconik met sleutel) staan hier niet in.
-        if url.path in PROTECTED:
-            if self.headers.get("X-Local-Transcribe") != "1":
-                return self.send_error(403)
-            if url.path != "/window/show":   # alleen dit mag nog als GET (zie hierboven)
+        if found is not None and found.protected and not self.header_ok():
+            return self.send_error(403)
+        if not known:
+            if method == "GET" and found is not None and found.protected:
                 self.send_response(405)
                 self.send_header("Allow", "POST")
                 self.send_header("Content-Length", "0")
                 self.end_headers()
-                return
-        return self.run_route(url)
-
-    def route(self, url):
-        query = parse_qs(url.query)
-        first = lambda name: query.get(name, [""])[0]
-        if url.path == "/":
-            return self.reply(200, status_page())
-        if url.path == "/refine/originals":   # voor de lijst in Instellingen; vóór de rest van /refine/
-            return self.reply_json(refine.originals_list())
-        if url.path == "/refine" or url.path.startswith("/refine/"):
-            return self.refine_route(url.path, first)
-        if url.path == "/settings-window":
-            return self.reply(200, settings_page())
-        if url.path == "/settings-data":
-            group = first("group")
-            if group not in SETTINGS_DATA:
+                return None
+            if method == "POST":
                 return self.send_error(404)
-            return self.reply_json(settings_data(group))
-        if url.path == "/window/settings":
-            # Het venster Instellingen openen, eventueel op een tab (later: tandwiel en status in het venster).
-            tab = first("tab")
-            if settings_hook:
-                settings_hook(tab if tab in SETTINGS_TABS else None)
-            return self.reply_json({"ok": True})
-        if url.path == "/state":
-            activity["poll"] = time.time()
-            return self.reply_json(app_state())
-        if url.path in ("/mount/change", "/mount/remove"):
-            change_mount(first("id"), remove=url.path.endswith("remove"))
-            return self.reply_json({"ok": True})
-        if url.path == "/update/install":
-            install_update()
-            return self.reply_json({"ok": True})
-        if url.path == "/worker":   # alleen "Nu hervatten"; aan en uit gaat via POST /settings
-            if first("value") == "resume":
-                remote.resume()
-                remote.wake.set()
-            return self.reply_json({"ok": True})
-        if url.path == "/login-item":   # opstarten bij inloggen op de Mac; /login is inloggen bij Iconik
-            if first("value") in ("on", "off"):
-                set_login_item(first("value") == "on")
-            return self.reply_json({"ok": True})
-        if url.path == "/asset/open":
-            # Het asset in Iconik, in de gewone browser. Alleen een asset-ID: geen willekeurige adressen openen.
-            asset_id = first("id")
-            if re.fullmatch(r"[0-9a-fA-F-]{8,64}", asset_id or ""):
-                system.open_url(f"{transcribe.api_host()}/asset/{asset_id}")
-            return self.reply_json({"ok": True})
-        if url.path == "/update/open":
-            if update.get("url"):
-                system.open_url(update["url"])  # in de gewone browser, niet in het venster
-            return self.reply_json({"ok": True})
-        if url.path == "/actions/install":
-            install_actions()
-            return self.reply_json({"ok": True})
-        if url.path == "/log/clear":
-            return self.reply_json({"ok": bool(clear_log_hook and clear_log_hook())})
-        if url.path == "/jobs/remove":
-            try:
-                number = int(first("n"))
-            except ValueError:
-                return self.reply_json({"ok": False, "error": "n"})
-            return self.reply_json(remove_jobs(number, everything=first("all") == "1"))
-        if url.path == "/integrations/remove":
-            return self.reply_json(remove_integration(first("id")))
-        if url.path == "/clear":
-            clear_finished()
-            return self.reply_json({"ok": True})
-        if url.path == "/window/state":
-            # Zonder sessie alleen dat de app er is (een tweede start kijkt hiernaar), niet welke pagina openstaat.
-            return self.reply_json(window_state if self.session_ok() else {"ok": True})
-        if url.path == "/window/show":
-            # De app vraagt het venster een pagina te tonen en naar voren te komen.
-            page = first("page")
-            refine_link = re.fullmatch(r"/refine\?asset=[0-9a-fA-F-]{8,64}", page or "")
-            window_state["page"] = page if page == "/login" or refine_link else "/"
-            window_state["n"] += 1
-            if show_hook:
-                show_hook(window_state["page"])
-            return self.reply_json(window_state)
-        if url.path == "/login":
-            address, state, verifier = transcribe.start_login()
-            pending_login.clear()
-            pending_back.clear()
-            pending_login[state] = verifier
-            if first("back") == "settings":   # ingelogd vanuit Instellingen: daarna daar terug, niet naar /
-                pending_back[state] = "/settings-window?tab=integrations"
-            return self.redirect(address)
-        if url.path == "/oauth/callback":
-            return self.finish_login(first("code"), first("state"), first("error"))
-        if url.path == "/logout":
-            transcribe.clear_login()
-            who.clear()
-            actions.clear()
-            return self.reply_json({"ok": True})
-        return self.transcribe(url, query)
+            return self.reply(404, "Niet gevonden.")
+        request = Request(self, url)
+        try:
+            return found.handler(self, request)
+        except Exception as error:
+            return self.failed(found, url, error)
+        finally:
+            request.drain()
+
+    def failed(self, found, url, error):
+        if found.errors == "json":
+            if isinstance(error, (refine.RefineError, Problem, ValueError, KeyError, TypeError)):
+                return self.reply_json({"error": str(error) or type(error).__name__})
+        elif isinstance(error, Problem):
+            return self.reply(200, status_page(str(error)))
+        # Geen netwerk of een onverwachte fout: een pagina met de fout, geen verbroken verbinding.
+        print(f"Fout bij {url.path}: {type(error).__name__}: {error}")
+        try:
+            return self.reply(500, status_page(f"{type(error).__name__}: {error}"))
+        except Exception:
+            pass
 
     def finish_login(self, code, state, error):
         verifier = pending_login.pop(state, None)
@@ -1142,33 +1007,390 @@ class Handler(BaseHTTPRequestHandler):
         print("Ingelogd bij Iconik.")
         waiting, pending_ids[:] = list(pending_ids), []
         if waiting:
-            self.queue_request(waiting)
+            queue_request(waiting)
         return self.redirect(back or "/")
 
-    def queue_request(self, requests_waiting):
-        queue_request(requests_waiting)
 
-    def transcribe(self, url, query):
-        # De sleutel staat in het pad: /transcribe/<sleutel>
-        parts = url.path.strip("/").split("/")
-        if parts[0] != "transcribe" or len(parts) > 2:
-            return self.reply(404, "Niet gevonden.")
-        given = parts[1] if len(parts) == 2 else query.get("key", [""])[0]
-        if given != settings["key"]:
-            print("Geweigerd: verzoek zonder geldige sleutel.")
-            return self.reply(403, "Geen geldige sleutel.")
+def _ok(handler):
+    return handler.reply_json({"ok": True})
 
-        request = (split_ids(query.get("asset_ids", [])), split_ids(query.get("collection_ids", [])))
-        if client() is None:
-            # Eerst inloggen; de opdracht gaat daarna alsnog de rij in.
-            pending_ids.append(request)
-            if setting.get("iconik.client_id"):
-                return self.redirect("/login")
-            return self.redirect("/")
-        self.queue_request([request])
-        # Doorsturen naar de statuspagina, zodat de sleutel uit de adresbalk verdwijnt
-        # en verversen de opdracht niet opnieuw instuurt.
-        return self.redirect("/")
+
+def _json_body(handler, request, limit, minimum=0):
+    """De inhoud als JSON, of None als die te groot is (dan is er al 413 gestuurd)."""
+    if not minimum <= request.size <= limit:
+        handler.send_error(413)
+        return None
+    return json.loads(request.body())
+
+
+# --- het venster: pagina's en gegevens
+
+@route("/")
+def _page_jobs(h, r):
+    return h.reply(200, status_page())
+
+
+@route("/state")
+def _state(h, r):
+    activity["poll"] = time.time()
+    return h.reply_json(app_state())
+
+
+@route("/settings-window")
+def _page_settings(h, r):
+    return h.reply(200, settings_page())
+
+
+@route("/settings-data")
+def _settings_data(h, r):
+    group = r.first("group")
+    if group not in SETTINGS_DATA:
+        return h.send_error(404)
+    return h.reply_json(settings_data(group))
+
+
+@route("/window/open", session=False)
+def _window_open(h, r):
+    """Het venster van de app meldt zich met SESSION en krijgt de cookie. Daarna gaat het naar de app,
+    of naar de pagina in next (alleen een eigen pad, nooit een ander adres)."""
+    token, target = r.first("t"), r.first("next")
+    if not secrets.compare_digest((token or "").encode(), SESSION.encode()):
+        return h.send_error(403)
+    if not target.startswith("/") or target.startswith("//") or "\\" in target or any(ord(c) < 32 for c in target):
+        target = "/"
+    h.send_response(303)
+    h.send_header("Location", target)
+    # Lax: de cookie gaat mee als Iconik na het inloggen terugstuurt naar /oauth/callback en door naar /.
+    h.send_header("Set-Cookie", f"{SESSION_COOKIE}={SESSION}; Path=/; HttpOnly; SameSite=Lax")
+    h.send_header("Cache-Control", "no-store")
+    h.end_headers()
+
+
+# --- een tweede start van de app: kijken of er al een exemplaar draait en het venster naar voren halen.
+# Open zonder sessie voor een oudere versie van de app die de sleutel nog niet meestuurt; ze geven niets prijs.
+
+@route("/window/state", session=False, kind="app")
+def _window_state(h, r):
+    # Zonder sessie alleen dat de app er is, niet welke pagina openstaat.
+    return h.reply_json(window_state if h.session_ok() else {"ok": True})
+
+
+@route("/window/show", methods=("GET", "POST"), session=False, protected=True, kind="app")
+def _window_show(h, r):
+    # De app vraagt het venster een pagina te tonen en naar voren te komen. Ook nog als GET (oudere versies).
+    page = r.first("page")
+    refine_page = re.fullmatch(r"/refine\?asset=[0-9a-fA-F-]{8,64}", page or "")
+    window_state["page"] = page if page == "/login" or refine_page else "/"
+    window_state["n"] += 1
+    if show_hook:
+        show_hook(window_state["page"])
+    return h.reply_json(window_state)
+
+
+# --- het venster: wat iets verandert
+
+@route("/settings", protected=True)
+def _settings(h, r):
+    # {sleutel: waarde, ...} als JSON, alles of niets.
+    if not r.size:
+        return h.reply(404, "Niet gevonden.")
+    if r.size > 16384:
+        return h.send_error(413)
+    try:
+        changes = json.loads(r.body())
+    except ValueError:
+        return h.reply_json({"ok": False, "errors": {}, "error": "json"})
+    return h.reply_json(apply_settings(changes))
+
+
+@route("/settings/reset", protected=True)
+def _settings_reset(h, r):
+    # {"keys": [...]}: terug naar de standaardwaarde ("Terug naar aanbevolen" in Instellingen).
+    try:
+        data = _json_body(h, r, 4096, minimum=1)
+        if data is None:
+            return None
+        keys = data.get("keys")
+    except (ValueError, AttributeError):
+        keys = None
+    return h.reply_json(reset_settings(keys))
+
+
+@route("/window/title", protected=True)
+def _window_title(h, r):
+    # {"title": tekst}: de titel van het venster Instellingen volgt de tab.
+    try:
+        data = _json_body(h, r, 1024, minimum=1)
+        if data is None:
+            return None
+        title = data.get("title")
+    except (ValueError, AttributeError):
+        title = None
+    if not isinstance(title, str) or not title.strip():
+        return h.reply_json({"ok": False})
+    if title_hook:
+        title_hook(" ".join(title.split())[:60])
+    return _ok(h)
+
+
+@route("/window/settings", protected=True)
+def _window_settings(h, r):
+    # Het venster Instellingen openen, eventueel op een tab.
+    tab = r.first("tab")
+    if settings_hook:
+        settings_hook(tab if tab in SETTINGS_TABS else None)
+    return _ok(h)
+
+
+@route("/mount/change", protected=True)
+def _mount_change(h, r):
+    change_mount(r.first("id"))
+    return _ok(h)
+
+
+@route("/mount/remove", protected=True)
+def _mount_remove(h, r):
+    change_mount(r.first("id"), remove=True)
+    return _ok(h)
+
+
+@route("/update/install", protected=True)
+def _update_install(h, r):
+    install_update()
+    return _ok(h)
+
+
+@route("/update/open", protected=True)
+def _update_open(h, r):
+    if update.get("url"):
+        system.open_url(update["url"])  # in de gewone browser, niet in het venster
+    return _ok(h)
+
+
+@route("/worker", protected=True)
+def _worker(h, r):   # alleen "Nu hervatten"; aan en uit gaat via POST /settings
+    if r.first("value") == "resume":
+        remote.resume()
+        remote.wake.set()
+    return _ok(h)
+
+
+@route("/login-item", protected=True)
+def _login_item(h, r):   # opstarten bij inloggen op de Mac; /login is inloggen bij Iconik
+    if r.first("value") in ("on", "off"):
+        set_login_item(r.first("value") == "on")
+    return _ok(h)
+
+
+@route("/asset/open", protected=True)
+def _asset_open(h, r):
+    # Het asset in Iconik, in de gewone browser. Alleen een asset-ID: geen willekeurige adressen openen.
+    asset_id = r.first("id")
+    if re.fullmatch(r"[0-9a-fA-F-]{8,64}", asset_id or ""):
+        system.open_url(f"{transcribe.api_host()}/asset/{asset_id}")
+    return _ok(h)
+
+
+@route("/actions/install", protected=True)
+def _actions_install(h, r):
+    install_actions()
+    return _ok(h)
+
+
+@route("/log/clear", protected=True)
+def _log_clear(h, r):
+    return h.reply_json({"ok": bool(clear_log_hook and clear_log_hook())})
+
+
+@route("/jobs/remove", protected=True)
+def _jobs_remove(h, r):
+    try:
+        number = int(r.first("n"))
+    except ValueError:
+        return h.reply_json({"ok": False, "error": "n"})
+    return h.reply_json(remove_jobs(number, everything=r.first("all") == "1"))
+
+
+@route("/integrations/remove", protected=True)
+def _integrations_remove(h, r):
+    return h.reply_json(remove_integration(r.first("id")))
+
+
+@route("/clear", protected=True)
+def _clear(h, r):
+    clear_finished()
+    return _ok(h)
+
+
+@route("/logout", protected=True)
+def _logout(h, r):
+    transcribe.clear_login()
+    who.clear()
+    actions.clear()
+    return _ok(h)
+
+
+# --- inloggen bij Iconik
+
+@route("/login")
+def _login(h, r):
+    address, state, verifier = transcribe.start_login()
+    pending_login.clear()
+    pending_back.clear()
+    pending_login[state] = verifier
+    if r.first("back") == "settings":   # ingelogd vanuit Instellingen: daarna daar terug, niet naar /
+        pending_back[state] = "/settings-window?tab=integrations"
+    return h.redirect(address)
+
+
+@route("/oauth/callback", session=False, kind="link")
+def _oauth_callback(h, r):
+    return h.finish_login(r.first("code"), r.first("state"), r.first("error"))
+
+
+# --- de knop in Iconik: /transcribe/<sleutel>?asset_ids=...&collection_ids=...
+
+def _transcribe(h, r):
+    parts = r.path.strip("/").split("/")
+    if parts[0] != "transcribe" or len(parts) > 2:
+        return h.reply(404, "Niet gevonden.")
+    given = parts[1] if len(parts) == 2 else r.first("key")
+    if given != settings["key"]:
+        print("Geweigerd: verzoek zonder geldige sleutel.")
+        return h.reply(403, "Geen geldige sleutel.")
+    request = (split_ids(r.query.get("asset_ids", [])), split_ids(r.query.get("collection_ids", [])))
+    if client() is None:
+        # Eerst inloggen; de opdracht gaat daarna alsnog de rij in.
+        pending_ids.append(request)
+        if setting.get("iconik.client_id"):
+            return h.redirect("/login")
+        return h.redirect("/")
+    queue_request([request])
+    # Doorsturen naar de statuspagina, zodat de sleutel uit de adresbalk verdwijnt
+    # en verversen de opdracht niet opnieuw instuurt.
+    return h.redirect("/")
+
+
+route("/transcribe", session=False, kind="link")(_transcribe)
+route("/transcribe/", session=False, kind="link", prefix=True)(_transcribe)
+
+
+# --- Refine
+
+@route("/refine")
+def _page_refine(h, r):
+    return h.reply(200, page_text(REFINE_FILE))
+
+
+@route("/refine/originals")
+def _refine_originals(h, r):   # de lijst in Instellingen
+    return h.reply_json(refine.originals_list())
+
+
+@route("/refine/originals/clear", protected=True, errors="json")
+def _refine_originals_clear(h, r):
+    refine.clear_originals()
+    return _ok(h)
+
+
+def refine_route(path, methods=("GET",), limit=0):
+    """Een route van Refine voor één asset (?asset=...). Een ongeldig asset geeft {"error": "asset"};
+    `limit`: de grootste inhoud die de route aanneemt (413 daarboven)."""
+    def add(handler):
+        def run(h, r):
+            asset_id = r.first("asset")
+            if not valid_asset_id(asset_id):
+                return h.reply_json({"error": "asset"})
+            if r.size > limit:
+                return h.send_error(413)
+            return handler(h, r, asset_id)
+        route(path, methods=methods, protected="POST" in methods, errors="json")(run)
+        return handler
+    return add
+
+
+@refine_route("/refine/view")
+def _refine_view(h, r, asset_id):
+    return h.reply_json(refine.view(asset_id))
+
+
+@refine_route("/refine/chunk")
+def _refine_chunk(h, r, asset_id):
+    body = refine.chunk(asset_id, r.first("t") or 0, r.first("d") or refine.CHUNK_SECONDS, int(r.first("solo") or 0))
+    return h.reply_bytes(body, "video/mp4")
+
+
+@refine_route("/refine/waves")
+def _refine_waves(h, r, asset_id):
+    body, fraction = refine.waves(asset_id)
+    if body is None:
+        return h.reply_json({"fraction": fraction})
+    return h.reply_bytes(body, "application/octet-stream")
+
+
+@refine_route("/refine/originals/remove", methods=("POST",), limit=65536)
+def _refine_original_remove(h, r, asset_id):   # één origineel, uit de lijst in Instellingen
+    refine.remove_original(asset_id)
+    return _ok(h)
+
+
+@refine_route("/refine/draft", methods=("POST",), limit=refine.DRAFT_LIMIT)
+def _refine_draft(h, r, asset_id):
+    if not r.size:
+        return h.send_error(413)
+    return h.reply_json({"saved_at": refine.save_draft(asset_id, r.body())})
+
+
+@refine_route("/refine/discard", methods=("POST",), limit=65536)
+def _refine_discard(h, r, asset_id):
+    refine.discard_draft(asset_id)
+    return _ok(h)
+
+
+@refine_route("/refine/save", methods=("POST",), limit=65536)
+def _refine_save(h, r, asset_id):
+    return h.reply_json(refine.save_to_iconik(asset_id))
+
+
+@refine_route("/refine/subtitles/preview", methods=("POST",), limit=4096)
+def _subtitles_preview(h, r, asset_id):
+    return h.reply_json(refine.preview_subtitles(asset_id, r.body()))
+
+
+@refine_route("/refine/subtitles/make", methods=("POST",), limit=4096)
+def _subtitles_make(h, r, asset_id):   # ook het bewaarvenster, als iemand een andere plek kiest
+    return h.reply_json(refine.make_subtitles(asset_id, r.body(), save_hook))
+
+
+@refine_route("/refine/subtitles/import", methods=("POST",), limit=4096)
+def _subtitles_import(h, r, asset_id):   # een bestaand .srt of .vtt inladen
+    return h.reply_json(refine.import_subtitles(asset_id, r.body(), open_hook))
+
+
+@refine_route("/refine/subtitles/draft", methods=("POST",), limit=refine.DRAFT_LIMIT)
+def _subtitles_draft(h, r, asset_id):
+    return h.reply_json({"saved_at": refine.save_subtitles(asset_id, r.body())})
+
+
+@refine_route("/refine/subtitles/write", methods=("POST",), limit=4096)
+def _subtitles_write(h, r, asset_id):
+    return h.reply_json(refine.write_subtitles(asset_id))
+
+
+@refine_route("/refine/subtitles/write-as", methods=("POST",), limit=4096)
+def _subtitles_write_as(h, r, asset_id):
+    return h.reply_json(refine.write_subtitles(asset_id, save_hook, elsewhere=True))
+
+
+@refine_route("/refine/subtitles/fit", methods=("POST",), limit=4096)
+def _subtitles_fit(h, r, asset_id):
+    return h.reply_json(refine.fit_subtitles(asset_id, r.body()))
+
+
+@refine_route("/refine/subtitles/discard", methods=("POST",), limit=4096)
+def _subtitles_discard(h, r, asset_id):
+    refine.discard_subtitles(asset_id)
+    return _ok(h)
 
 
 def busy():
