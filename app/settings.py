@@ -408,6 +408,27 @@ def instance_id(kind, create=False):
     return made[0]
 
 
+def note(instance_id, key, value):
+    """Bewaart een feit dat de app zelf bijhoudt bij een koppeling, geen instelling: het staat niet in het schema
+    en niet in het venster (bijvoorbeeld bij welke Iconik-omgeving een exemplaar hoort). None haalt het weg."""
+    def change(config):
+        if config.get("version") != VERSION:
+            _migrate(config)
+        block = (config.get("integrations") or {}).get(instance_id)
+        if not isinstance(block, dict):
+            return
+        if value is None:
+            block.pop(key, None)
+        else:
+            block[key] = value
+    base.update_config(change)
+
+
+def noted(instance_id, key):
+    block = (_config().get("integrations") or {}).get(instance_id)
+    return block.get(key) if isinstance(block, dict) else None
+
+
 def remove_integration(instance_id):
     """Haalt een koppeling met al haar instellingen uit config.json."""
     if _config():

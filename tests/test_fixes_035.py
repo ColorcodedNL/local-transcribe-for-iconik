@@ -135,11 +135,7 @@ serve.pending_ids.clear()
 with serve.jobs_lock:
     serve.jobs.clear()
 
-for path in ("/applang?value=en", "/language?value=en", "/settings?client_id=x", "/auto?value=on", "/machine-name?value=x",
-             "/iconik-language?value=en"):
-    status, _, _ = get(path, WINDOW)
-    check(f"{path}: de oude route bestaat niet meer (dat gaat nu via POST /settings)", status == 404, status)
-check("niets veranderd door de oude routes", settings.stored("general.app_language") != "en" and not settings.stored("iconik.auto_transcribe"))
+# De oude instellingenroutes (/applang, /auto, ...) zijn weg: tests/test_routes.py legt de hele routetabel vast.
 
 
 def boom():

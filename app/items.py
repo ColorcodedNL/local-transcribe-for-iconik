@@ -78,6 +78,34 @@ def iconik(asset, source=None):
     return make(source or iconik_source(create=True), asset)
 
 
+# Een knop in Iconik wordt door één Mac neergezet en door iedereen in die omgeving gebruikt, terwijl elke Mac zijn
+# eigen exemplaar-ID maakt. De knop zegt daarom uit welke omgeving hij komt met het system_domain_id van Iconik
+# (?lt_domain=...); elke Mac onthoudt na het inloggen bij welk domein zijn exemplaar hoort (settings.note).
+DOMAIN_KEY = "system_domain_id"
+_DOMAIN = re.compile(r"[0-9A-Fa-f-]{8,64}")
+
+
+def valid_domain(domain):
+    return isinstance(domain, str) and _DOMAIN.fullmatch(domain) is not None
+
+
+def iconik_for_domain(domain=""):
+    """Het exemplaar van de Iconik-omgeving waar een knop vandaan komt, of None. Zonder domein (een knop van vóór
+    stap 4e): de enige Iconik. Weet het exemplaar zijn domein nog niet (net ingelogd, nog niet opgehaald) en is er
+    maar één Iconik, dan is het die."""
+    found = [item["id"] for item in settings.integrations() if item["type"] == "iconik"]
+    if not domain:
+        return found[0] if found else None
+    if not valid_domain(domain):
+        return None
+    for instance in found:
+        if settings.noted(instance, DOMAIN_KEY) == domain:
+            return instance
+    if len(found) == 1 and not settings.noted(found[0], DOMAIN_KEY):
+        return found[0]
+    return None
+
+
 def from_request(item="", asset=""):
     """Het item uit een link of verzoek van het venster: ?item=..., of een kaal ?asset=... van een oudere pagina
     (de enige Iconik). None als het geen item is. Maakt geen Iconik aan."""

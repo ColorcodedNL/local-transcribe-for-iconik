@@ -95,8 +95,9 @@ def listener_key():
         return key
 
 
-def enqueue(asset_ids):
-    added = sum(add_job(asset_id) for asset_id in dict.fromkeys(asset_ids))
+def enqueue(asset_ids, source=None):
+    """`source`: het exemplaar van de Iconik waar de klik vandaan kwam (zonder: de enige Iconik)."""
+    added = sum(add_job(asset_id, source=source) for asset_id in dict.fromkeys(asset_ids))
     waiting = [job for job in jobs if job.status == "wachtend"]
     threading.Thread(target=fill_titles, args=(waiting,), daemon=True).start()
     print(f"Ontvangen: {len(asset_ids)} asset(s), {added} toegevoegd aan de rij.")
@@ -358,16 +359,24 @@ def refine_link(url):
     ids = [i for value in query.get("asset_ids", []) for i in value.split(",") if i]
     if not ids or not re.fullmatch(r"[0-9a-fA-F-]{8,64}", ids[0]):
         return None
-    item = items.from_request(asset=ids[0])
-    return f"/refine?item={item}" if item else None
+    source = items.iconik_for_domain(query.get("lt_domain", [""])[0])
+    return f"/refine?item={items.make(source, ids[0])}" if source else None
+
+
+def action_url(url, domain):
+    """De link van een knop met de omgeving erin (?lt_domain=...), zodat elke Mac weet uit welke Iconik hij komt.
+    Iconik laat die query staan en zet er &asset_ids=... achter (gemeten op 20 november, tools/action_url_probe.py)."""
+    return f"{url}?lt_domain={domain}" if items.valid_domain(domain) else url
 
 
 def missing_actions(connection):
-    """De knoppen die nog niet in deze Iconik-omgeving staan, als (context, titel, link)."""
+    """De knoppen die nog niet in deze Iconik-omgeving staan, als (context, titel, link). Een knop van vóór stap 4e
+    (zonder lt_domain) telt als aanwezig: die blijft werken via de enige Iconik, en zo komt er geen tweede bij."""
+    domain = current_domain(connection)
     existing = connection.get("assets/v1/custom_actions/?per_page=200").get("objects", [])
     have = {(a.get("context"), a.get("url")) for a in existing}
-    return [(context, title, url) for title, url, contexts in ACTIONS for context in contexts
-            if (context, url) not in have]
+    return [(context, title, action_url(url, domain)) for title, url, contexts in ACTIONS for context in contexts
+            if (context, url) not in have and (context, action_url(url, domain)) not in have]
 
 
 def check_actions():
@@ -401,11 +410,30 @@ who = {}                  # "name": wie er is ingelogd, zodra dat is opgehaald
 def fetch_who():
     try:
         user = client().get("users/v1/users/current/")
+        remember_domain(user)
         full = " ".join(part for part in (user.get("first_name"), user.get("last_name")) if part)
         email = user.get("email") or ""
         who["name"] = f"{full} ({email})" if full and email else full or email
     except Exception:
         who["name"] = ""  # dan tonen we alleen dat er verbinding is
+
+
+def remember_domain(user):
+    """Onthoudt bij welke Iconik-omgeving (system_domain_id) het exemplaar hoort, voor de knoppen (items.py)."""
+    domain = (user or {}).get("system_domain_id")
+    source = items.iconik_source()
+    if source and items.valid_domain(domain) and setting.noted(source, items.DOMAIN_KEY) != domain:
+        setting.note(source, items.DOMAIN_KEY, domain)
+
+
+def current_domain(connection):
+    """Het system_domain_id van de verbonden omgeving: wat dit exemplaar weet, anders bij Iconik opgehaald."""
+    source = items.iconik_source()
+    domain = setting.noted(source, items.DOMAIN_KEY) if source else None
+    if not domain:
+        remember_domain(connection.get("users/v1/users/current/"))
+        domain = setting.noted(source, items.DOMAIN_KEY) if source else None
+    return domain or ""
 
 
 storage_names = {}        # storage-ID -> naam in Iconik, voor de instellingen
@@ -522,11 +550,12 @@ def add_failed(title, message):
     touch_jobs()
 
 
-def add_job(asset_id, remote=0, auto=False):
+def add_job(asset_id, remote=0, auto=False, source=None):
     """`remote`: de opdracht komt uit de rij in Iconik (werker-modus), het resultaat gaat daar terug.
     Het is het nummer van de poging (1, 2 of 3); 0 betekent een gewone opdracht.
-    `auto`: automatisch opgepakt door auto transcribe, niet aangevraagd (alleen voor de weergave)."""
-    item = items.iconik(asset_id)
+    `auto`: automatisch opgepakt door auto transcribe, niet aangevraagd (alleen voor de weergave).
+    `source`: het exemplaar van de Iconik; zonder de enige Iconik."""
+    item = items.iconik(asset_id, source)
     if item is None:
         return False
     job = jobs.add(item, remote=remote, auto=auto)
@@ -572,20 +601,32 @@ def collection_assets(iconik, collection_id, depth=0):
 
 
 def queue_request(requests_waiting):
-    """Zet opdrachten in de rij; `requests_waiting` is een lijst (asset_ids, collection_ids).
+    """Zet opdrachten in de rij; `requests_waiting` is een lijst (asset_ids, collection_ids[, domein]). Het domein
+    is het system_domain_id uit de knop (?lt_domain=...); zonder komt de knop van vóór stap 4e: de enige Iconik.
+    Een knop uit een andere omgeving dan waarmee deze Mac verbonden is, wordt een rode regel.
     Losse assets meteen. Collecties worden in een eigen draad uitgepakt: een grote collectie kost
     vele pagina's bij Iconik, en binnen het verzoek liep dat tegen de 60 seconden van de klik aan."""
-    asset_ids, collection_ids = [], []
-    for assets, collections in requests_waiting:
-        asset_ids += assets
-        collection_ids += collections
-    if asset_ids:
-        enqueue(asset_ids)
-    if collection_ids:
-        threading.Thread(target=unpack_collections, args=(collection_ids,), daemon=True, name="collecties").start()
+    by_source = {}
+    for request in requests_waiting:
+        assets, collections, domain = (tuple(request) + ("",))[:3]
+        source = items.iconik_for_domain(domain)
+        if source is None:
+            print("Knop uit een andere Iconik-omgeving dan waarmee deze Mac verbonden is: niets in de rij.")
+            add_failed(transcribe.L("Knop uit een andere Iconik-omgeving", "Button from another Iconik environment"),
+                       transcribe.L("Deze Mac is met een andere Iconik-omgeving verbonden dan die van de knop. Niets in de rij gezet.",
+                                    "This Mac is connected to another Iconik environment than the button's. Nothing was queued."))
+            continue
+        assets_and_collections = by_source.setdefault(source, ([], []))
+        assets_and_collections[0].extend(assets)
+        assets_and_collections[1].extend(collections)
+    for source, (asset_ids, collection_ids) in by_source.items():
+        if asset_ids:
+            enqueue(asset_ids, source)
+        if collection_ids:
+            threading.Thread(target=unpack_collections, args=(collection_ids, source), daemon=True, name="collecties").start()
 
 
-def unpack_collections(collection_ids):
+def unpack_collections(collection_ids, source=None):
     """Pakt collecties uit en zet de assets in de rij. Lukt dat niet, dan een rode regel in de lijst."""
     for collection_id in collection_ids:
         try:
@@ -604,7 +645,7 @@ def unpack_collections(collection_ids):
                        transcribe.L(f"Uitpakken mislukte: {error}", f"Could not unpack: {error}")[:300])
             continue
         if found:
-            enqueue(found)
+            enqueue(found, source)
         else:
             print(f"Collectie {collection_id} bevat geen assets.")
 
@@ -652,10 +693,13 @@ def set_labels_language(code):
 
 
 def _after_host(old, new):
-    if old != new:   # een andere Iconik-omgeving: de inlog hoort bij de oude
+    if old != new:   # een andere Iconik-omgeving: de inlog en het domein horen bij de oude
         transcribe.clear_login()
         who.clear()
         actions.clear()
+        source = items.iconik_source()
+        if source:
+            setting.note(source, items.DOMAIN_KEY, None)
 
 
 def _wake_worker(old, new):
@@ -1267,7 +1311,7 @@ def _transcribe(h, r):
     if given != settings["key"]:
         print("Geweigerd: verzoek zonder geldige sleutel.")
         return h.reply(403, "Geen geldige sleutel.")
-    request = (split_ids(r.query.get("asset_ids", [])), split_ids(r.query.get("collection_ids", [])))
+    request = (split_ids(r.query.get("asset_ids", [])), split_ids(r.query.get("collection_ids", [])), r.first("lt_domain"))
     if client() is None:
         # Eerst inloggen; de opdracht gaat daarna alsnog de rij in.
         pending_ids.append(request)
