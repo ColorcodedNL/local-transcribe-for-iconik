@@ -174,7 +174,8 @@ serve.clear_finished()
 serve.jobs.clear()
 while not serve.work.empty():
     serve.work.get()
-serve.add_job("na opruimen")
+check("een asset-ID dat er geen kan zijn komt niet in de rij", serve.add_job("na opruimen") is False and len(serve.jobs) == 0)
+serve.add_job("na-opruimen")
 check("na opruimen loopt de nummering door", serve.jobs[-1].n > 600, serve.jobs[-1].n)
 threading.Thread = RealThread
 
@@ -254,7 +255,7 @@ check("push gelukt: oud pas weg na het nieuwe", problem is None and deleted == [
 check("na vervangen wordt de zoekindex bijgewerkt", iconik.calls[-1][1].endswith("/reindex/"), iconik.calls[-1:])
 check("precies een transcript van de app over", [t["id"] for t in iconik.transcripts] == ["nieuw"], iconik.transcripts)
 import json as _json  # noqa: E402
-_files = sorted(transcribe.TRANSCRIPTS_DIR.glob("*.json"))
+_files = sorted(transcribe.TRANSCRIPTS_DIR.glob("*/*.json"))   # per bron een map (stap 4)
 _saved = _json.loads(_files[0].read_text()) if _files else {}
 check("kopie in het eigen model bewaard, met het id van het nieuwe transcript",
       len(_files) == 1 and _saved.get("format") == "local-transcribe" and _saved.get("source", {}).get("transcription_id") == "nieuw",

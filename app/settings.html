@@ -463,8 +463,8 @@ document.addEventListener("click", async e => {
 async function openSheet() {
   const list = await fetch("/refine/originals").then(r => r.json()).then(x => Array.isArray(x) ? x : []).catch(() => []);
   const sheet = $("sheet");
-  const rows = list.map(o => `<div class="row"><input type="checkbox" data-asset="${esc(o.asset)}" aria-label="${esc(o.title || o.asset)}">
-      <div class="title">${esc(o.title || o.asset)}</div>${o.connector ? `<span class="tag">${esc(o.connector === "iconik" ? "Iconik" : o.connector)}</span>` : ""}
+  const rows = list.map(o => `<div class="row"><input type="checkbox" data-item="${esc(o.item)}" aria-label="${esc(o.title || o.item)}">
+      <div class="title">${esc(o.title || o.item)}</div>${o.connector ? `<span class="tag">${esc(o.connector === "iconik" ? "Iconik" : o.connector)}</span>` : ""}
       <span class="state" style="width:84px">${esc(new Date(o.time * 1000).toLocaleDateString(lang, {day: "numeric", month: "short"}))}</span>
       <span class="state" style="width:56px;text-align:right">${esc(size(o.bytes))}</span></div>`).join("");
   sheet.innerHTML = `<div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(T.sheetTitle)}">
@@ -474,11 +474,11 @@ async function openSheet() {
       <button class="btn danger" id="removeSelected" disabled>${esc(T.removeSelected)}</button><button class="go" id="sheetDone">${esc(T.done)}</button></div></div>`;
   sheet.hidden = false;
   $("sheetDone").focus();
-  const picked = () => [...sheet.querySelectorAll("input[data-asset]:checked")].map(i => i.dataset.asset);
+  const picked = () => [...sheet.querySelectorAll("input[data-item]:checked")].map(i => i.dataset.item);
   sheet.onchange = () => { $("count").textContent = T.selected(picked().length); $("removeSelected").disabled = !picked().length; };
   $("removeSelected").onclick = async () => {
-    for (const asset of picked())
-      await fetch("/refine/originals/remove?asset=" + encodeURIComponent(asset), {method: "POST", headers: HDR});
+    for (const item of picked())
+      await fetch("/refine/originals/remove?item=" + encodeURIComponent(item), {method: "POST", headers: HDR});
     openSheet();
     load(current);
   };

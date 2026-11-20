@@ -16,6 +16,7 @@ import threading
 import types
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import quote
 
 # Playwright zoekt zijn browser onder HOME. Leg de echte plek vast voordat HOME hieronder verandert.
 os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(Path.home() / ("Library/Caches" if sys.platform == "darwin" else ".cache") / "ms-playwright"))
@@ -68,12 +69,14 @@ for speaker, start, per, text in TEXTS:
 doc = model.from_pieces(pieces, "nl", "Spreker",
                         tracks=[model.Track(1, "eigen microfoon", True, -12.0), model.Track(2, "eigen microfoon", True, -14.0)],
                         source={"connector": "iconik", "asset_id": "A1", "title": "Interview na de wedstrijd", "media": str(media)})
-transcribe.TRANSCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
-(transcribe.TRANSCRIPTS_DIR / "A1.json").write_text(json.dumps(model.to_dict(doc)))
+transcribe.save_config({"app_language": "nl"})
+import items  # noqa: E402
+A1 = items.iconik("A1")                 # het item van asset A1 in de (enige) Iconik van deze proefvoorkeuren
+items.path(transcribe.TRANSCRIPTS_DIR, A1, ".json").parent.mkdir(parents=True, exist_ok=True)
+items.path(transcribe.TRANSCRIPTS_DIR, A1, ".json").write_text(json.dumps(model.to_dict(doc)))
 
 app = ThreadingHTTPServer(("127.0.0.1", 0), serve.Handler)
 BASE = f"http://localhost:{app.server_address[1]}"
-transcribe.save_config({"app_language": "nl"})
 serve.settings.update(key="sleutel", hf_token=None, model="m", language=None, mount=None, idle_exit=False)
 out = TMP / "uit"
 out.mkdir()
@@ -87,7 +90,7 @@ SELECT_ALL = "Meta+a" if sys.platform == "darwin" else "Control+a"
 
 def python_view(rules):
     """Wat de export van de laag op deze Mac maakt: de regels per ondertitel en het niveau van de waarschuwing."""
-    lay = model.from_dict(refine.load_subtitles("A1")["transcript"])
+    lay = model.from_dict(refine.load_subtitles(A1)["transcript"])
     cues = subtitles.cues_of_layer(lay, rules)
     return [[c["lines"], subtitles.warnings(c, cues[i + 1] if i + 1 < len(cues) else None, subtitles.clean_rules(rules))[1]]
             for i, c in enumerate(cues)]
@@ -102,7 +105,7 @@ with sync_playwright() as p:
         page.on("pageerror", lambda e: console.append(str(e)))
         ev = page.evaluate
         page.goto(f"{BASE}/window/open?t={serve.SESSION}")
-        page.goto(f"{BASE}/refine?asset=A1")
+        page.goto(f"{BASE}/refine?item={quote(A1)}")
         page.wait_for_function("D && blocks.length === 6", timeout=15000)
         status = lambda: page.locator("#status").inner_text()   # noqa: E731
 
@@ -127,7 +130,7 @@ with sync_playwright() as p:
               page.is_disabled('input[name="mkPlace"][value="media"]') and page.is_checked('input[name="mkPlace"][value="other"]'))
         first_count = page.locator("#mkCount").inner_text()
         check("maakvenster: de telling, met wat het zonder uitloop zou zijn", "ondertitels" in first_count and "zonder uitloop" in first_count, first_count)
-        check("maakvenster: nog niets gemaakt of bewaard", refine.load_subtitles("A1") is None and ev("layer.subtitles") is None)
+        check("maakvenster: nog niets gemaakt of bewaard", refine.load_subtitles(A1) is None and ev("layer.subtitles") is None)
         page.uncheck("#ex_linger")
         page.wait_for_function("R.linger === 0 && !document.getElementById('mkCount').textContent.includes('zonder uitloop') && document.querySelector('#mkCount b')", timeout=5000)
         check("maakvenster: uitloop uit telt meteen opnieuw", page.locator("#mkCount").inner_text() != first_count and page.is_disabled("#ex_linger_ms"))
@@ -142,8 +145,8 @@ with sync_playwright() as p:
         page.wait_for_timeout(500)
         page.click("#mkGo")                                   # bewaarvenster geannuleerd
         page.wait_for_function("!busy && !document.getElementById('mkGo').disabled", timeout=5000)
-        check("maken: annuleren in het bewaarvenster maakt niets", page.locator("#makeBox").is_visible() and refine.load_subtitles("A1") is None,
-              refine.load_subtitles("A1"))
+        check("maken: annuleren in het bewaarvenster maakt niets", page.locator("#makeBox").is_visible() and refine.load_subtitles(A1) is None,
+              refine.load_subtitles(A1))
         answer["path"] = str(out / "interview.srt")
         page.click("#mkGo")
         page.wait_for_function("mode === 'subtitles'", timeout=5000)
@@ -192,7 +195,7 @@ with sync_playwright() as p:
         page.wait_for_function("R.cps === 17")
         page.wait_for_timeout(400)
         page.wait_for_function("saveTimer === null && saving === 0", timeout=4000)
-        check("instellingen: de regels gaan mee met de laag op deze Mac", refine.load_subtitles("A1")["rules"]["cps"] == 17)
+        check("instellingen: de regels gaan mee met de laag op deze Mac", refine.load_subtitles(A1)["rules"]["cps"] == 17)
 
         # 5. Naar de volgende waarschuwing, een ondertitel inkorten, en bewaren.
         page.click("#warnNext")
@@ -208,7 +211,7 @@ with sync_playwright() as p:
         check("ingekort: deze ondertitel is met de hand aangepast, de rest niet", ev(f"isTouched(blocks[{fast}])") and ev("blocks.filter(isTouched).length") == 1)
         page.wait_for_function("saveTimer === null && saving === 0", timeout=4000)
         check("ingekort: de laag is bewaard op deze Mac, het bestand en het transcript niet veranderd",
-              refine.load_subtitles("A1")["edits"] == 1 and srt.read_text(encoding="utf-8") == before_file and not refine._draft_path("A1").exists())
+              refine.load_subtitles(A1)["edits"] == 1 and srt.read_text(encoding="utf-8") == before_file and not refine._draft_path(A1).exists())
         page.click("#writeBtn")
         page.wait_for_function("edits === 0 && !busy", timeout=5000)
         check("bewaren: het bestand is bijgewerkt", short in srt.read_text(encoding="utf-8") and status().startswith("Bewaard: interview.srt"), status())
@@ -280,7 +283,7 @@ with sync_playwright() as p:
         # De opdrachtenlijst toont dat er ondertitels zijn; het label springt naar die tab in Refine.
         from datetime import datetime
         with serve.jobs_lock:
-            serve.jobs.append(serve.job_list.Job(n=1, asset_id="A1", title="Interview na de wedstrijd", status="klaar",
+            serve.jobs.append(serve.job_list.Job(n=1, item=A1, title="Interview na de wedstrijd", status="klaar",
                                                  started=datetime.now(), finished=datetime.now()))
         page.goto(f"{BASE}/")
         label = page.locator("[data-subtitles]")
@@ -291,7 +294,7 @@ with sync_playwright() as p:
         label.click()
         page.wait_for_function("typeof mode !== 'undefined' && D && mode === 'subtitles'", timeout=15000)
         check("opdrachtenlijst: het label opent Refine meteen in de ondertitels", ev("blocks[0].display") == "Toen we aankwamen," and "tab=subtitles" in page.url)
-        page.goto(f"{BASE}/refine?asset=A1")
+        page.goto(f"{BASE}/refine?asset=A1")   # een oude link met alleen het asset: de enige Iconik
         page.wait_for_function("D && layer.subtitles && layer.subtitles.blocks.length > 0", timeout=15000)
 
         # 11. Tijdlijn: een klik op de baan van de andere laag wisselt daarheen.
@@ -314,10 +317,10 @@ with sync_playwright() as p:
         page.click("#subMore")
         page.click('#subMenu [data-act="delete"]')
         check("verwijderen vraagt eerst om bevestiging", "Klik nogmaals" in page.locator('#subMenu [data-act="delete"]').inner_text()
-              and refine.load_subtitles("A1") is not None)
+              and refine.load_subtitles(A1) is not None)
         page.click('#subMenu [data-act="delete"]')
         page.wait_for_function("mode === 'transcript' && layer.subtitles === null && !busy", timeout=5000)
-        check("verwijderd: de laag weg, de bestanden blijven staan", refine.load_subtitles("A1") is None and (out / "kopie.srt").is_file() and srt.is_file())
+        check("verwijderd: de laag weg, de bestanden blijven staan", refine.load_subtitles(A1) is None and (out / "kopie.srt").is_file() and srt.is_file())
         check("verwijderd: weer alleen het transcript, met + Ondertitels",
               page.locator("#subAdd").is_visible() and not page.locator("#modeS").is_visible() and ev("laneTops().sub") is None)
 
@@ -332,7 +335,7 @@ with sync_playwright() as p:
               and page.locator("#ex_max_chars").is_visible() and page.locator("#mkLoadNote").is_visible())
         page.click("#mkGo")                                   # kiezen geannuleerd
         page.wait_for_function("!busy && !document.getElementById('mkGo').disabled", timeout=5000)
-        check("inladen: annuleren bij het kiezen laadt niets", page.locator("#makeBox").is_visible() and refine.load_subtitles("A1") is None)
+        check("inladen: annuleren bij het kiezen laadt niets", page.locator("#makeBox").is_visible() and refine.load_subtitles(A1) is None)
         answer["open"] = str(made_file)
         page.click("#mkGo")
         page.wait_for_function("mode === 'subtitles' && !busy", timeout=5000)

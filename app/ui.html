@@ -274,10 +274,10 @@ async function removeJob(n, everything) {
 }
 function closeMenu() { $("menu").hidden = true; $("menu").innerHTML = ""; }
 function openMenu(job, x, y) {
-  const can = removable(job), asset = job.asset_id;
+  const can = removable(job), ref = job.item, asset = job.asset_id;
   const item = (id, label, on, key = "", tip = "") => `<button role="menuitem" data-act="${id}"${on ? "" : " disabled"}${tip ? ` title="${esc(tip)}"` : ""}><span>${esc(label)}</span><kbd>${key}</kbd></button>`;
-  $("menu").innerHTML = item("refine", T.openRefine, job.status === "klaar" && asset) + item("iconik", T.openIconik, !!asset)
-    + "<hr>" + item("remove", T.removeRow, can, "⌫") + item("all", T.removeAll, can && !!asset, "", T.removeAllTip);
+  $("menu").innerHTML = item("refine", T.openRefine, job.status === "klaar" && !!ref) + item("iconik", T.openIconik, !!asset)
+    + "<hr>" + item("remove", T.removeRow, can, "⌫") + item("all", T.removeAll, can && !!ref, "", T.removeAllTip);
   const m = $("menu");
   m.hidden = false;
   m.style.left = Math.min(x, innerWidth - m.offsetWidth - 8) + "px";
@@ -285,7 +285,7 @@ function openMenu(job, x, y) {
   m.onclick = e => {
     const b = e.target.closest("button[data-act]"); if (!b || b.disabled) return;
     closeMenu();
-    if (b.dataset.act === "refine") location.href = "/refine?asset=" + encodeURIComponent(asset);
+    if (b.dataset.act === "refine") location.href = "/refine?item=" + encodeURIComponent(ref);
     else if (b.dataset.act === "iconik") act("/asset/open?id=" + encodeURIComponent(asset));
     else if (b.dataset.act === "remove") removeJob(job.n, false);
     else confirmAll(job);
@@ -323,8 +323,8 @@ $("list").addEventListener("contextmenu", e => {
 $("list").onclick = e => {
   if (e.target.id === "connect") { act("/window/settings?tab=integrations"); return; }
   const x = e.target.closest("[data-remove]"); if (x) { removeJob(Number(x.dataset.remove), false); return; }
-  const s = e.target.closest("[data-subtitles]"); if (s) { location.href = "/refine?asset=" + encodeURIComponent(s.dataset.subtitles) + "&tab=subtitles"; return; }
-  const r = e.target.closest("[data-refine]"); if (r) { location.href = "/refine?asset=" + encodeURIComponent(r.dataset.refine); return; }
+  const s = e.target.closest("[data-subtitles]"); if (s) { location.href = "/refine?item=" + encodeURIComponent(s.dataset.subtitles) + "&tab=subtitles"; return; }
+  const r = e.target.closest("[data-refine]"); if (r) { location.href = "/refine?item=" + encodeURIComponent(r.dataset.refine); return; }
   const a = e.target.closest("[data-asset]"); if (a && !window.getSelection().toString()) { act("/asset/open?id=" + encodeURIComponent(a.dataset.asset)); return; }
   const b = e.target.closest("[data-toggle]"); if (b) { open[b.dataset.toggle] = b.dataset.open !== "1"; tick(); return; }
   const j = e.target.closest(".job"); if (j) select(Number(j.id.slice(4)) === selected ? null : Number(j.id.slice(4)));
@@ -371,10 +371,10 @@ function row(job, isOpen) {
   } else if (job.status === "wachtend") state += " " + job.added;
   const tracks = job.tracks || [];
   const toggle = tracks.length ? `<button class="plain more" data-toggle="${job.n}" data-open="${isOpen ? 1 : 0}">${isOpen ? T.hide : T.tracks(tracks.length)}</button>` : "";
-  const refine = job.status === "klaar" ? `<button class="plain more" data-refine="${esc(job.asset_id)}">Refine</button>` : "";
+  const refine = job.status === "klaar" ? `<button class="plain more" data-refine="${esc(job.item)}">Refine</button>` : "";
   const rf = job.refine || {};
   const marks = (rf.refined ? `<span class="tag">${T.refinedTag}</span>` : "") + (rf.draft ? `<span class="tag draft">${T.draftTag}</span>` : "")
-    + (rf.subtitles ? `<button class="tag jump" data-subtitles="${esc(job.asset_id)}" title="${T.subtitlesOpen}">${T.subtitlesTag}</button>` : "");
+    + (rf.subtitles ? `<button class="tag jump" data-subtitles="${esc(job.item)}" title="${T.subtitlesOpen}">${T.subtitlesTag}</button>` : "");
   let html = `<div class="top"><div class="title"${job.asset_id ? ` data-asset="${esc(job.asset_id)}" title="${T.openIconik}"` : ""}>${esc(job.title || job.asset_id)}</div>${job.auto ? `<span class="tag">${T.autoTag}</span>` : ""}${marks}${refine}${toggle}<div class="state ${job.status}">${esc(state)}<span class="el"></span></div>${job.n === selected && removable(job) ? `<button class="x" data-remove="${job.n}" aria-label="${T.removeRow}" title="${T.removeRow}">✕</button>` : ""}</div>`;
   if (msg) html += `<div class="msg ${job.status === "fout" ? "fout" : ""}">${esc(msg)}</div>`;
   if (job.status === "bezig") html += stages(job);

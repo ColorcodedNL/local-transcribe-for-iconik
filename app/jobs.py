@@ -4,6 +4,10 @@ bewaard in jobs.json.
 Lezen mag altijd (één veld lezen is in Python heel). Veranderen gaat via job.set(...) of met de grendel vast,
 zodat bewaren en /state nooit een opdracht half veranderd zien (status klaar zonder eindtijd).
 
+Elke opdracht hoort bij een item (items.py): iconik-<exemplaar>:<asset>, later local:<id>. jobs.json heeft een
+formaatversie; een bestand zonder versie (tot stap 4) had alleen asset_id en wordt bij het lezen omgezet naar de
+enige Iconik.
+
 De lijst blijft bewaard tot de gebruiker hem zelf opruimt. Wat bij een herstart nog liep of wachtte, komt terug als
 "afgebroken": de opdracht wordt niet hervat. Opdrachten uit de rij in Iconik komen vanzelf terug, want die staan
 daar nog.
@@ -14,10 +18,14 @@ import threading
 from datetime import datetime
 
 import base   # base.L bij het aanroepen, zodat een test die transcribe.L vervangt ook hier telt
+import items
 
 ACTIVE = ("wachtend", "bezig")
 MAX_KEPT = 500
-KEPT_FIELDS = ("n", "asset_id", "title", "status", "message", "duration", "result", "language", "tracks", "auto")
+VERSION = 2
+# asset_id gaat mee voor een oudere versie van de app die dezelfde supportmap leest (0.6 slaat een regel zonder
+# asset_id over en zou de lijst leeg terugschrijven); bij het lezen van versie 2 telt alleen item.
+KEPT_FIELDS = ("n", "item", "asset_id", "title", "status", "message", "duration", "result", "language", "tracks", "auto")
 TIME_FIELDS = ("added", "started", "finished")
 
 lock = threading.RLock()     # één grendel: de lijst en alle velden van alle opdrachten
@@ -25,17 +33,19 @@ _save_lock = threading.Lock()
 
 
 class Job:
-    """Eén regel in de lijst. `remote`: het nummer van de poging als de opdracht uit de rij in Iconik komt
+    """Eén regel in de lijst. `item`: waar de opdracht over gaat; `asset_id` is het asset in Iconik (leeg voor
+    een item dat niet uit Iconik komt). `remote`: het nummer van de poging als de opdracht uit de rij in Iconik komt
     (0 is een gewone opdracht). `auto`: door auto transcribe opgepakt. `local`: de fout ligt aan deze Mac.
     `abandoned`: de watchdog gaf de opdracht op. `prefetch`: wat het vooruit lezen voor deze opdracht klaarzet."""
 
-    __slots__ = ("n", "asset_id", "title", "status", "message", "added", "remote", "started", "finished", "stage",
+    __slots__ = ("n", "item", "asset_id", "title", "status", "message", "added", "remote", "started", "finished", "stage",
                  "fraction", "tracks", "duration", "result", "language", "auto", "local", "abandoned", "prefetch")
 
-    def __init__(self, n=0, asset_id="", title="", status="wachtend", message="", added=None, remote=0, started=None,
+    def __init__(self, n=0, item="", asset_id="", title="", status="wachtend", message="", added=None, remote=0, started=None,
                  finished=None, stage="", fraction=None, tracks=None, duration=None, result=None, language=None,
                  auto=False, local=False, abandoned=False, prefetch=None):
-        self.n, self.asset_id, self.title, self.status, self.message = n, asset_id, title, status, message
+        self.n, self.item, self.title, self.status, self.message = n, item, title, status, message
+        self.asset_id = asset_id or (items.asset_id(item) if item else "")
         self.added = added or datetime.now()
         self.remote, self.started, self.finished, self.stage, self.fraction = remote, started, finished, stage, fraction
         self.tracks = list(tracks or [])
@@ -57,7 +67,7 @@ class Job:
         return {key: getattr(self, key) for key in self.__slots__ if key != "prefetch"}
 
     def __repr__(self):
-        return f"Job(n={self.n}, asset_id={self.asset_id!r}, status={self.status!r})"
+        return f"Job(n={self.n}, item={self.item!r}, status={self.status!r})"
 
 
 def _time(text):
@@ -114,12 +124,12 @@ class JobList:
         with lock:
             self._items.clear()
 
-    def add(self, asset_id, remote=0, auto=False):
-        """Een nieuwe wachtende opdracht, of None als dit asset al wacht of loopt."""
+    def add(self, item, remote=0, auto=False):
+        """Een nieuwe wachtende opdracht, of None als dit item al wacht of loopt."""
         with lock:
-            if any(j.asset_id == asset_id and j.active for j in self._items):
+            if any(j.item == item and j.active for j in self._items):
                 return None
-            return self.append(Job(n=self.next_number(), asset_id=asset_id, remote=remote, auto=auto))
+            return self.append(Job(n=self.next_number(), item=item, remote=remote, auto=auto))
 
     def add_failed(self, title, message):
         """Een rode regel zonder opdracht erachter (bijvoorbeeld een collectie die niet uit te pakken was)."""
@@ -135,8 +145,8 @@ class JobList:
             self._items[:] = keep
 
     def remove(self, number, everything=False):
-        """Eén regel weg; met everything ook de andere afgeronde regels van hetzelfde asset. Een opdracht die wacht
-        of loopt blijft staan. Geeft (weg, asset, foutmelding): de verwijderde opdrachten, het asset en bij een
+        """Eén regel weg; met everything ook de andere afgeronde regels van hetzelfde item. Een opdracht die wacht
+        of loopt blijft staan. Geeft (weg, item, foutmelding): de verwijderde opdrachten, het item en bij een
         weigering de reden in gewone woorden (dan is er niets weg)."""
         with lock:
             job = self.find(number)
@@ -145,14 +155,14 @@ class JobList:
             if job.active:
                 return [], "", base.L("Een opdracht die wacht of loopt, haal je zo niet weg.",
                                  "A job that is waiting or running cannot be removed this way.")
-            asset = job.asset_id or ""
-            if everything and asset and any(j.asset_id == asset and j.active for j in self._items):
+            item = job.item or ""
+            if everything and item and any(j.item == item and j.active for j in self._items):
                 return [], "", base.L("Er wacht of loopt nog een opdracht voor dit asset.",
                                  "A job for this asset is still waiting or running.")
-            gone = [j for j in self._items if j is job or (everything and asset and j.asset_id == asset)]
+            gone = [j for j in self._items if j is job or (everything and item and j.item == item)]
             self._items[:] = [j for j in self._items if not any(j is g for g in gone)]
             self.cleared += len(gone)
-        return gone, asset, ""
+        return gone, item, ""
 
     # --- bewaren ---
     def payload(self):
@@ -167,7 +177,7 @@ class JobList:
                     row[key] = value.isoformat() if value else None
                 rows.append(row)
             dropped = max(0, len(self._items) - MAX_KEPT)
-            return {"saved": datetime.now().isoformat(), "cleared": self.cleared + dropped, "jobs": rows}
+            return {"version": VERSION, "saved": datetime.now().isoformat(), "cleared": self.cleared + dropped, "jobs": rows}
 
     def save(self, path):
         """Schrijft de lijst weg. Mislukt dat, dan is de lijst alleen niet bewaard: nooit een reden om te stoppen."""
@@ -183,7 +193,8 @@ class JobList:
 
     def load(self, path):
         """Haalt de bewaarde lijst terug, bij de start, vóór wat er nu al in staat. Wat nog liep of wachtte is
-        afgebroken. Een kapot of ontbrekend bestand geeft niets."""
+        afgebroken. Een kapot of ontbrekend bestand geeft niets. Zonder versie (tot stap 4): asset_id wordt het
+        item van dat asset in de enige Iconik; een rode regel zonder asset blijft zonder item."""
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
@@ -191,10 +202,18 @@ class JobList:
         if not isinstance(data, dict) or not isinstance(data.get("jobs", []), list):
             return
         saved = _time(data.get("saved")) or datetime.now()
+        old = data.get("version") is None
         loaded = []
         for row in data.get("jobs", []):
             try:
-                job = Job(n=int(row["n"]), asset_id=str(row["asset_id"]), title=row.get("title") or "",
+                if old:
+                    asset = str(row["asset_id"])
+                    item = (items.iconik(asset) or "") if asset else ""
+                else:
+                    item = str(row["item"] or "")
+                    if item and not items.valid(item):
+                        continue
+                job = Job(n=int(row["n"]), item=item, title=row.get("title") or "",
                           status=row.get("status") or "fout", message=row.get("message") or "",
                           added=_time(row.get("added")) or saved, started=_time(row.get("started")),
                           finished=_time(row.get("finished")), tracks=row.get("tracks") or [],

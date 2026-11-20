@@ -390,6 +390,24 @@ def reset(keys):
     return removed
 
 
+def instance_id(kind, create=False):
+    """Het ID van het exemplaar van deze koppeling (nu hooguit één per soort), of None. Met create komt er een
+    als het er nog niet is: dan is er werk van die soort (een opdracht of bestanden van vóór stap 4)."""
+    found = [item["id"] for item in integrations() if item["type"] == kind]
+    if found or not create:
+        return found[0] if found else None
+    made = []
+
+    def change(config):
+        if config.get("version") != VERSION:
+            _migrate(config)
+        _instance(config, kind, create=True)
+        made[:] = [iid for iid, item in sorted(config["integrations"].items())
+                   if isinstance(item, dict) and item.get("type") == kind][:1]
+    base.update_config(change)
+    return made[0]
+
+
 def remove_integration(instance_id):
     """Haalt een koppeling met al haar instellingen uit config.json."""
     if _config():

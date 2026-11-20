@@ -9,8 +9,10 @@ from pathlib import Path
 import transcript as tmodel
 
 from base import (  # noqa: F401
-    ENGINE_NAME, L, LISTENER, SAMPLE_RATE, _local, fail, load_config, memory_report, print, save_transcript, tell,
+    ENGINE_NAME, L, LISTENER, SAMPLE_RATE, _local, fail, load_config, memory_report, print, tell,
 )
+import items
+from items import save_transcript  # noqa: F401
 from iconik_api import make_client  # noqa: F401
 from audio import load_audio_tracks, save_waves  # noqa: F401
 from speakers import (  # noqa: F401
@@ -51,6 +53,11 @@ def main():
         fail("Geen sprekermodel: de lokale kopie ontbreekt en er is geen HF_TOKEN. Gebruik --no-speakers om zonder te draaien.")
 
     process_asset(iconik, args, hf_token)
+
+
+def item_of(args):
+    """Het item van deze opdracht: wat de app meegeeft, of (de commandoregel) het asset in de enige Iconik."""
+    return getattr(args, "item", None) or items.iconik(args.asset_id)
 
 
 def prepare_asset(iconik, args, on_info=None, interactive=True):
@@ -222,7 +229,7 @@ def process_asset(iconik, args, hf_token, on_info=None, prepared=None):
         pieces, language, L("Spreker", "Speaker"),
         engine=dict(engine_info, revision=engine.revision(args.model)),
         tracks=tmodel.tracks_from_infos(prepared.get("tracks")),
-        source={"connector": "iconik", "asset_id": args.asset_id, "version_id": version_id,
+        source={"connector": "iconik", "item": item_of(args), "asset_id": args.asset_id, "version_id": version_id,
                 "title": asset.get("title") or "", "media": prepared.get("media_path") or ""})
     properties = dict(tmodel.to_iconik(doc, "", version_id)[0], engine_info=engine_info)
 
@@ -256,8 +263,8 @@ def process_asset(iconik, args, hf_token, on_info=None, prepared=None):
         info, doc, engine_info, getattr(args, "still_ours", None))
     print(f"\nKlaar. Transcript {transcription_id} staat op het asset.")
     doc.source["transcription_id"] = transcription_id
-    save_transcript(doc)
-    save_waves(args.asset_id, prepared.get("peaks"))
+    save_transcript(doc, item_of(args))
+    save_waves(item_of(args), prepared.get("peaks"))
     return {"title": asset.get("title"), "segments": written,
             "speakers": len(numbers), "pushed": True, "language": language}
 

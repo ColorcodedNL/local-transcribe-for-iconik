@@ -9,6 +9,7 @@ import time
 import numpy as np
 
 from base import L, SAMPLE_RATE, WAVES_DIR, _local, fail, print, safe_name, tell  # noqa: F401
+import items
 
 
 # Spoorkeuze bij bestanden met losse audiosporen (zie analyse_tracks).
@@ -403,11 +404,12 @@ def load_audio_tracks(path, track_number=None):
     return analyse_tracks(read_all_tracks(path, tracks), mix_same_source=stereo)
 
 
-def save_waves(asset_id, peaks):
-    """Bewaart de golfvormen van de sporen voor de tijdlijn van Refine. Mag nooit een opdracht laten mislukken."""
+def save_waves(item, peaks):
+    """Bewaart de golfvormen van de sporen (per item) voor de tijdlijn van Refine. Mag nooit een opdracht laten
+    mislukken."""
     if not peaks:
         return
     try:
-        write_waves(WAVES_DIR / safe_name(asset_id, ".waves"), peaks)
+        write_waves(items.path(WAVES_DIR, item, ".waves"), peaks)
     except Exception as error:
         print(f"Golfvormen bewaren lukte niet: {error}")

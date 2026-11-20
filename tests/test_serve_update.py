@@ -16,6 +16,9 @@ for name in ("keyring", "numpy", "mlx", "mlx_whisper", "torch", "webview"):
         try: __import__(name)
         except Exception: sys.modules[name] = types.ModuleType(name)
 import transcribe, serve, updater
+import tempfile as _tempfile  # noqa: E402
+from pathlib import Path as _Path  # noqa: E402
+transcribe.CONFIG_PATH = _Path(_tempfile.mkdtemp()) / "config.json"   # nooit de echte voorkeuren aanraken
 transcribe.L = lambda nl, en: nl   # test in het Nederlands, los van de taal van de machine
 fails = 0
 def check(name, cond, detail=""):

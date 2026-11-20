@@ -4,7 +4,9 @@ en de link van Refine transcript die de editor opent.
 Draaien: uv run --no-project --with pynacl --with requests --with numpy --with huggingface_hub python -B tests/test_actions.py
 """
 import sys
+import tempfile
 import types
+from pathlib import Path
 
 sys.path.insert(0, "app")
 _kr = types.ModuleType("keyring")
@@ -19,6 +21,8 @@ for name in ("mlx", "mlx_whisper", "torch", "webview"):
         except Exception:
             sys.modules[name] = types.ModuleType(name)
 import serve  # noqa: E402
+
+serve.transcribe.CONFIG_PATH = Path(tempfile.mkdtemp()) / "config.json"   # nooit de echte voorkeuren aanraken
 
 fails = 0
 
@@ -53,8 +57,13 @@ empty = FakeIconik([])
 check("lege omgeving: vier knoppen", len(serve.missing_actions(empty)) == 4)
 
 aid = "aaaaaaaa-1111-2222-3333-444444444444"
-check("link: editor voor het asset", serve.refine_link(f"iconiktranscribe://refine?asset_ids={aid}") == f"/refine?asset={aid}")
-check("link: bij meer assets het eerste", serve.refine_link(f"iconiktranscribe://refine?asset_ids={aid},{aid[::-1]}") == f"/refine?asset={aid}")
+check("link: zonder Iconik in de voorkeuren niets (de knop kan er dan niet zijn)",
+      serve.refine_link(f"iconiktranscribe://refine?asset_ids={aid}") is None)
+src = serve.items.iconik_source(create=True)
+check("link: editor voor het item van dat asset in de enige Iconik",
+      serve.refine_link(f"iconiktranscribe://refine?asset_ids={aid}") == f"/refine?item={src}:{aid}")
+check("link: bij meer assets het eerste",
+      serve.refine_link(f"iconiktranscribe://refine?asset_ids={aid},{aid[::-1]}") == f"/refine?item={src}:{aid}")
 check("link: zonder asset niets", serve.refine_link("iconiktranscribe://refine") is None)
 check("link: rare waarde niets", serve.refine_link("iconiktranscribe://refine?asset_ids=../../etc") is None)
 check("link: transcribe-link is geen Refine", serve.refine_link(f"iconiktranscribe://transcribe?asset_ids={aid}") is None)

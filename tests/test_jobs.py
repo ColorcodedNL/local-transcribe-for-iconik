@@ -201,10 +201,34 @@ serve.jobs_path().write_text(json.dumps({"saved": "2026-11-16T12:00:00", "cleare
 reset()
 serve.load_jobs()
 again = serve.jobs.payload()
-check("oud bestand: elke regel komt ongewijzigd terug bij bewaren", again["jobs"] == old_rows, again["jobs"])
+source = serve.items.iconik_source()
+expected = [dict(row, item=f"{source}:{row['asset_id']}") for row in old_rows]
+check("oud bestand: asset_id wordt het item in de enige Iconik", source and [j.item for j in serve.jobs] == [f"{source}:oud1", f"{source}:oud2"],
+      [j.item for j in serve.jobs])
+check("oud bestand: verder komt elke regel ongewijzigd terug", again["jobs"] == expected, again["jobs"])
+check("oud bestand: het asset blijft te vinden voor Iconik", [j.asset_id for j in serve.jobs] == ["oud1", "oud2"])
 check("oud bestand: de teller van opgeruimde regels blijft", again["cleared"] == 6 and serve.jobs.cleared == 6)
-check("bewaren schrijft dezelfde velden als voorheen", set(again) == {"saved", "cleared", "jobs"}
-      and all(set(row) == set(old_rows[0]) for row in again["jobs"]))
+check("bewaren schrijft versie 2 met item, en asset_id voor een oudere versie van de app", again["version"] == 2
+      and all(set(row) == set(expected[0]) for row in again["jobs"]))
+serve.save_jobs()
+reset()
+serve.load_jobs()
+check("versie 2 komt precies zo terug", serve.jobs.payload()["jobs"] == expected)
+# Zo leest 0.6.2 een regel (serve.load_jobs van toen): n en asset_id moeten er zijn, anders valt de regel weg.
+check("een oudere versie vindt in elke regel n en asset_id", all(isinstance(r["n"], int) and r["asset_id"]
+      for r in json.loads(serve.jobs_path().read_text())["jobs"]))
+red = {"n": 9, "asset_id": "", "title": "Collectie X", "status": "fout", "message": "HTTP 500", "added": "2026-11-16T12:00:00"}
+serve.jobs_path().write_text(json.dumps({"cleared": 0, "jobs": [red]}), encoding="utf-8")
+reset()
+serve.load_jobs()
+check("oud bestand: een rode regel zonder asset blijft, zonder item", len(serve.jobs) == 1 and serve.jobs[0].item == ""
+      and serve.jobs[0].title == "Collectie X")
+serve.jobs_path().write_text(json.dumps({"version": 2, "cleared": 0, "jobs": [
+    dict(expected[0], item="geen-item"), dict(expected[0], n=12, item="local:clip-1")]}), encoding="utf-8")
+reset()
+serve.load_jobs()
+check("versie 2: een regel met een onzin-item valt weg, een lokaal item blijft", [j.item for j in serve.jobs] == ["local:clip-1"]
+      and serve.jobs[0].asset_id == "")
 
 # --- een opdracht kent alleen zijn eigen velden (een tikfout wordt een fout, geen stil nieuw veld)
 try:

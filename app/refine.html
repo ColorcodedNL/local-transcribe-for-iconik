@@ -405,7 +405,11 @@ const SLATE = "#5f6b7a";    // een ondertitel waar niets mee is
 const DARK_INK = new Set(["#f0a54a", ORANGE]);
 const $ = id => document.getElementById(id);
 const esc = t => String(t ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
-const ASSET = new URLSearchParams(location.search).get("asset") || "";
+// Het item (items.py): ?item=iconik-<exemplaar>:<asset> of later local:<id>. Een kaal ?asset= (een oudere link)
+// is het asset in de enige Iconik; de ontvanger zoekt dat uit.
+const QUERY = new URLSearchParams(location.search);
+const ITEM = QUERY.get("item") || "";
+const REF = ITEM ? "item=" + encodeURIComponent(ITEM) : "asset=" + encodeURIComponent(QUERY.get("asset") || "");
 let T = TEXT.en, lang = "en", D = null, blocks = [], speakerOf = {}, fps = 25, dur = 0;
 // Twee lagen met dezelfde editor: het transcript en de ondertitels. De laag die bewerkt wordt staat in
 // blocks/history/future/edits; de andere wacht in layer[...] en staat gedimd op de tijdlijn.
@@ -510,7 +514,7 @@ async function kick() {
   if (target !== null) kick();
 }
 async function loadChunk(my) {
-  const r = await fetch(`/refine/chunk?asset=${encodeURIComponent(ASSET)}&t=${next.toFixed(3)}&d=${D.chunk}&solo=${solo}`);
+  const r = await fetch(`/refine/chunk?${REF}&t=${next.toFixed(3)}&d=${D.chunk}&solo=${solo}`);
   const buf = await r.arrayBuffer();
   if (my !== gen) return false;
   if (!(r.headers.get("Content-Type") || "").startsWith("video/mp4")) {
@@ -800,7 +804,7 @@ $("labels").addEventListener("click", e => {
 async function loadWaves() {
   for (;;) {
     let r;
-    try { r = await fetch(`/refine/waves?asset=${encodeURIComponent(ASSET)}`); } catch { $("wavesState").textContent = T.wavesFail; return; }
+    try { r = await fetch(`/refine/waves?${REF}`); } catch { $("wavesState").textContent = T.wavesFail; return; }
     if ((r.headers.get("Content-Type") || "").startsWith("application/json")) {
       const j = await r.json();
       if (j.error) { $("wavesState").textContent = D.offline ? T.wavesOffline : T.wavesFail; console.log(j.error); return; }
@@ -937,7 +941,7 @@ async function saveDraft() {
 }
 // Een verzoek aan de app dat JSON terugstuurt. Geen JSON: meestal een app die nog met oudere code draait.
 async function call(path, body) {
-  const r = await fetch(`${path}?asset=${encodeURIComponent(ASSET)}`, {method: "POST", headers: HEADERS, body: JSON.stringify(body || {})});
+  const r = await fetch(`${path}?${REF}`, {method: "POST", headers: HEADERS, body: JSON.stringify(body || {})});
   if (!(r.headers.get("Content-Type") || "").startsWith("application/json")) throw new Error(`HTTP ${r.status}. ${T.restart}`);
   const j = await r.json(); if (j.error) throw new Error(j.error); return j;
 }
@@ -1198,11 +1202,11 @@ $("undo").onclick = undo; $("redo").onclick = redo;
 $("discard").onclick = async () => {
   if (!discardArmed) { discardArmed = setTimeout(() => { discardArmed = 0; $("discard").textContent = T.discard; }, 3000); $("discard").textContent = T.discardSure; return; }
   clearTimeout(saveTimer); saveTimer = null;
-  await fetch(`/refine/discard?asset=${encodeURIComponent(ASSET)}`, {method: "POST", headers: HEADERS, body: "{}"});
+  await fetch(`/refine/discard?${REF}`, {method: "POST", headers: HEADERS, body: "{}"});
   location.reload();
 };
 async function post(path) {
-  const r = await fetch(`${path}?asset=${encodeURIComponent(ASSET)}`, {method: "POST", headers: HEADERS, body: "{}"});
+  const r = await fetch(`${path}?${REF}`, {method: "POST", headers: HEADERS, body: "{}"});
   if (!(r.headers.get("Content-Type") || "").startsWith("application/json")) throw new Error(`HTTP ${r.status}. ${T.restart}`);
   const j = await r.json(); if (j.error) throw new Error(j.error); return j;
 }
@@ -1526,7 +1530,7 @@ window.addEventListener("mouseup", () => {
 
 // --- start ---
 async function start() {
-  try { D = await (await fetch(`/refine/view?asset=${encodeURIComponent(ASSET)}`)).json(); }
+  try { D = await (await fetch(`/refine/view?${REF}`)).json(); }
   catch (e) { showError(String(e)); return; }
   lang = D.lang === "nl" ? "nl" : "en"; T = TEXT[lang]; document.documentElement.lang = lang;
   $("back").textContent = T.back; $("keys").textContent = T.keys;
@@ -1534,7 +1538,7 @@ async function start() {
   $("prev").setAttribute("aria-label", T.prev); $("next").setAttribute("aria-label", T.next);
   $("splitBtn").innerHTML = `${T.split}<kbd>S</kbd>`; $("mergeBtn").innerHTML = `${T.merge}<kbd>M</kbd>`; $("newBtn").innerHTML = `${T.newBlock}<kbd>N</kbd>`;
   $("hearLabel").textContent = T.hear; $("zoomLabel").textContent = T.zoom; $("note").textContent = T.note;
-  if (D.error) { $("title").textContent = ASSET; showError(D.error); return; }
+  if (D.error) { $("title").textContent = ITEM || QUERY.get("asset") || ""; showError(D.error); return; }
   document.title = D.title + " · Refine"; $("title").textContent = D.title;
   fps = D.fps || 25; dur = D.duration || 0;
   const tr = D.transcript;

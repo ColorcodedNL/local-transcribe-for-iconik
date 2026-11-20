@@ -34,6 +34,7 @@ import refine
 import resources
 import settings as setting   # de lijst met alle instellingen; `settings` hieronder is die van een opdracht
 import system
+import items
 import jobs as job_list
 import transcribe
 import updater
@@ -164,7 +165,7 @@ def make_options(job):
     # Een opdracht uit de rij die een andere Mac heeft overgenomen, wordt niet meer naar Iconik geschreven.
     still_ours = (lambda: job.asset_id not in remote.lost) if job.remote else None
     return argparse.Namespace(
-        asset_id=job.asset_id, model=settings["model"], language=settings["language"] or setting.get("transcription.language"),
+        item=job.item, asset_id=job.asset_id, model=settings["model"], language=settings["language"] or setting.get("transcription.language"),
         mount=settings["mount"], push=True, replace=True, speakers=None, still_ours=still_ours,
         no_speakers=not transcribe.speaker_model_available(settings["hf_token"]), no_voice_check=False, out="/tmp/whisper-test")
 
@@ -357,7 +358,8 @@ def refine_link(url):
     ids = [i for value in query.get("asset_ids", []) for i in value.split(",") if i]
     if not ids or not re.fullmatch(r"[0-9a-fA-F-]{8,64}", ids[0]):
         return None
-    return f"/refine?asset={ids[0]}"
+    item = items.from_request(asset=ids[0])
+    return f"/refine?item={item}" if item else None
 
 
 def missing_actions(connection):
@@ -468,13 +470,13 @@ def app_state():
     for row in jobs.views():
         end = row["finished"] or now
         out.append({
-            "n": row["n"], "asset_id": row["asset_id"], "title": row["title"],
+            "n": row["n"], "item": row["item"], "asset_id": row["asset_id"], "title": row["title"],
             "status": row["status"], "message": row["message"],
             "added": row["added"].strftime("%H:%M"), "stage": row["stage"],
             "fraction": row["fraction"], "tracks": row["tracks"],
             "duration": row["duration"],
             "result": row["result"], "language": row["language"],
-            "refine": refine.marks(row["asset_id"]) if row["status"] == "klaar" else None,
+            "refine": refine.marks(row["item"]) if row["status"] == "klaar" and row["item"] else None,
             "elapsed": (end - row["started"]).total_seconds() if row["started"] else None,
             "auto": row["auto"],
         })
@@ -498,15 +500,15 @@ def clear_finished():
 
 def remove_jobs(number, everything=False):
     """Eén regel uit de lijst halen (✕, ⌫ of rechtsklik). Met everything ook de andere afgeronde regels van
-    hetzelfde asset en alles wat de app daarvan op deze Mac bewaart (refine.forget_asset). Een opdracht die wacht
+    hetzelfde item en alles wat de app daarvan op deze Mac bewaart (refine.forget_item). Een opdracht die wacht
     of loopt blijft staan. Geeft {"ok", "removed": aantal regels, "files": wat er van de Mac weg is}."""
-    gone, asset, error = jobs.remove(number, everything)
+    gone, item, error = jobs.remove(number, everything)
     if error:
         return {"ok": False, "error": error}
     save_jobs()
-    files = refine.forget_asset(asset) if everything and asset else []
+    files = refine.forget_item(item) if everything and item else []
     if files:
-        print(f"[{datetime.now():%H:%M:%S}] van deze Mac verwijderd: {len(files)} bestand(en) van één asset")
+        print(f"[{datetime.now():%H:%M:%S}] van deze Mac verwijderd: {len(files)} bestand(en) van één item")
     return {"ok": True, "removed": len(gone), "files": files}
 
 
@@ -521,7 +523,10 @@ def add_job(asset_id, remote=0, auto=False):
     """`remote`: de opdracht komt uit de rij in Iconik (werker-modus), het resultaat gaat daar terug.
     Het is het nummer van de poging (1, 2 of 3); 0 betekent een gewone opdracht.
     `auto`: automatisch opgepakt door auto transcribe, niet aangevraagd (alleen voor de weergave)."""
-    job = jobs.add(asset_id, remote=remote, auto=auto)
+    item = items.iconik(asset_id)
+    if item is None:
+        return False
+    job = jobs.add(item, remote=remote, auto=auto)
     if job is None:
         return False
     touch_jobs()
@@ -1079,7 +1084,8 @@ def _window_state(h, r):
 def _window_show(h, r):
     # De app vraagt het venster een pagina te tonen en naar voren te komen. Ook nog als GET (oudere versies).
     page = r.first("page")
-    refine_page = re.fullmatch(r"/refine\?asset=[0-9a-fA-F-]{8,64}", page or "")
+    refine_page = re.fullmatch(r"/refine\?item=(iconik-[0-9a-f]{6}|local)(:|%3A)[A-Za-z0-9_-]{1,64}", page or "") \
+        or re.fullmatch(r"/refine\?asset=[0-9a-fA-F-]{8,64}", page or "")   # een oudere versie van de app
     window_state["page"] = page if page == "/login" or refine_page else "/"
     window_state["n"] += 1
     if show_hook:
@@ -1294,102 +1300,102 @@ def _refine_originals_clear(h, r):
 
 
 def refine_route(path, methods=("GET",), limit=0):
-    """Een route van Refine voor één asset (?asset=...). Een ongeldig asset geeft {"error": "asset"};
-    `limit`: de grootste inhoud die de route aanneemt (413 daarboven)."""
+    """Een route van Refine voor één item (?item=..., of een kaal ?asset=... van een oudere pagina: de enige
+    Iconik). Geen geldig item geeft {"error": "asset"}; `limit`: de grootste inhoud die de route aanneemt."""
     def add(handler):
         def run(h, r):
-            asset_id = r.first("asset")
-            if not valid_asset_id(asset_id):
+            item = items.from_request(r.first("item"), r.first("asset"))
+            if item is None:
                 return h.reply_json({"error": "asset"})
             if r.size > limit:
                 return h.send_error(413)
-            return handler(h, r, asset_id)
+            return handler(h, r, item)
         route(path, methods=methods, protected="POST" in methods, errors="json")(run)
         return handler
     return add
 
 
 @refine_route("/refine/view")
-def _refine_view(h, r, asset_id):
-    return h.reply_json(refine.view(asset_id))
+def _refine_view(h, r, item):
+    return h.reply_json(refine.view(item))
 
 
 @refine_route("/refine/chunk")
-def _refine_chunk(h, r, asset_id):
-    body = refine.chunk(asset_id, r.first("t") or 0, r.first("d") or refine.CHUNK_SECONDS, int(r.first("solo") or 0))
+def _refine_chunk(h, r, item):
+    body = refine.chunk(item, r.first("t") or 0, r.first("d") or refine.CHUNK_SECONDS, int(r.first("solo") or 0))
     return h.reply_bytes(body, "video/mp4")
 
 
 @refine_route("/refine/waves")
-def _refine_waves(h, r, asset_id):
-    body, fraction = refine.waves(asset_id)
+def _refine_waves(h, r, item):
+    body, fraction = refine.waves(item)
     if body is None:
         return h.reply_json({"fraction": fraction})
     return h.reply_bytes(body, "application/octet-stream")
 
 
 @refine_route("/refine/originals/remove", methods=("POST",), limit=65536)
-def _refine_original_remove(h, r, asset_id):   # één origineel, uit de lijst in Instellingen
-    refine.remove_original(asset_id)
+def _refine_original_remove(h, r, item):   # één origineel, uit de lijst in Instellingen
+    refine.remove_original(item)
     return _ok(h)
 
 
 @refine_route("/refine/draft", methods=("POST",), limit=refine.DRAFT_LIMIT)
-def _refine_draft(h, r, asset_id):
+def _refine_draft(h, r, item):
     if not r.size:
         return h.send_error(413)
-    return h.reply_json({"saved_at": refine.save_draft(asset_id, r.body())})
+    return h.reply_json({"saved_at": refine.save_draft(item, r.body())})
 
 
 @refine_route("/refine/discard", methods=("POST",), limit=65536)
-def _refine_discard(h, r, asset_id):
-    refine.discard_draft(asset_id)
+def _refine_discard(h, r, item):
+    refine.discard_draft(item)
     return _ok(h)
 
 
 @refine_route("/refine/save", methods=("POST",), limit=65536)
-def _refine_save(h, r, asset_id):
-    return h.reply_json(refine.save_to_iconik(asset_id))
+def _refine_save(h, r, item):
+    return h.reply_json(refine.save_to_iconik(item))
 
 
 @refine_route("/refine/subtitles/preview", methods=("POST",), limit=4096)
-def _subtitles_preview(h, r, asset_id):
-    return h.reply_json(refine.preview_subtitles(asset_id, r.body()))
+def _subtitles_preview(h, r, item):
+    return h.reply_json(refine.preview_subtitles(item, r.body()))
 
 
 @refine_route("/refine/subtitles/make", methods=("POST",), limit=4096)
-def _subtitles_make(h, r, asset_id):   # ook het bewaarvenster, als iemand een andere plek kiest
-    return h.reply_json(refine.make_subtitles(asset_id, r.body(), save_hook))
+def _subtitles_make(h, r, item):   # ook het bewaarvenster, als iemand een andere plek kiest
+    return h.reply_json(refine.make_subtitles(item, r.body(), save_hook))
 
 
 @refine_route("/refine/subtitles/import", methods=("POST",), limit=4096)
-def _subtitles_import(h, r, asset_id):   # een bestaand .srt of .vtt inladen
-    return h.reply_json(refine.import_subtitles(asset_id, r.body(), open_hook))
+def _subtitles_import(h, r, item):   # een bestaand .srt of .vtt inladen
+    return h.reply_json(refine.import_subtitles(item, r.body(), open_hook))
 
 
 @refine_route("/refine/subtitles/draft", methods=("POST",), limit=refine.DRAFT_LIMIT)
-def _subtitles_draft(h, r, asset_id):
-    return h.reply_json({"saved_at": refine.save_subtitles(asset_id, r.body())})
+def _subtitles_draft(h, r, item):
+    return h.reply_json({"saved_at": refine.save_subtitles(item, r.body())})
 
 
 @refine_route("/refine/subtitles/write", methods=("POST",), limit=4096)
-def _subtitles_write(h, r, asset_id):
-    return h.reply_json(refine.write_subtitles(asset_id))
+def _subtitles_write(h, r, item):
+    return h.reply_json(refine.write_subtitles(item))
 
 
 @refine_route("/refine/subtitles/write-as", methods=("POST",), limit=4096)
-def _subtitles_write_as(h, r, asset_id):
-    return h.reply_json(refine.write_subtitles(asset_id, save_hook, elsewhere=True))
+def _subtitles_write_as(h, r, item):
+    return h.reply_json(refine.write_subtitles(item, save_hook, elsewhere=True))
 
 
 @refine_route("/refine/subtitles/fit", methods=("POST",), limit=4096)
-def _subtitles_fit(h, r, asset_id):
-    return h.reply_json(refine.fit_subtitles(asset_id, r.body()))
+def _subtitles_fit(h, r, item):
+    return h.reply_json(refine.fit_subtitles(item, r.body()))
 
 
 @refine_route("/refine/subtitles/discard", methods=("POST",), limit=4096)
-def _subtitles_discard(h, r, asset_id):
-    refine.discard_subtitles(asset_id)
+def _subtitles_discard(h, r, item):
+    refine.discard_subtitles(item)
     return _ok(h)
 
 
@@ -1832,6 +1838,14 @@ def worker():
                 release_models_now()
 
 
+def migrate_items():
+    """Eenmalig (stap 4): de losse bestanden per asset in de map van de enige Iconik. Mag de start nooit tegenhouden."""
+    try:
+        items.migrate({"transcripts": transcribe.TRANSCRIPTS_DIR, "waves": transcribe.WAVES_DIR, "refine": refine.DRAFTS_DIR})
+    except Exception as error:
+        print(f"Bestanden per item verplaatsen lukte niet: {type(error).__name__}: {error}")
+
+
 def start(model="mlx-community/whisper-large-v3-mlx", language=None, mount=None, port=PORT, idle_exit=False):
     """Start de ontvanger en de werkrij als draden. Gooit OSError als de poort al bezet is.
 
@@ -1844,6 +1858,7 @@ def start(model="mlx-community/whisper-large-v3-mlx", language=None, mount=None,
 
     transcribe.LISTENER = listen
     remote.set_machine_alias(setting.get("iconik.machine_name"))
+    migrate_items()
     load_jobs()
     atexit.register(save_jobs)
     threading.Thread(target=_saver, daemon=True, name="bewaren").start()

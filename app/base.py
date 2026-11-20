@@ -10,7 +10,6 @@ import subprocess
 import sys
 import threading
 import time
-import transcript as tmodel
 import system
 
 
@@ -206,21 +205,6 @@ def set_config(key, value):
 
 TRANSCRIPTS_DIR = SUPPORT_DIR / "transcripts"
 WAVES_DIR = SUPPORT_DIR / "waves"
-
-
-def save_transcript(doc):
-    """Bewaart een kopie van het transcript in het eigen model op deze Mac, met de sporenanalyse die Iconik
-    niet kent. Voor de editor (Refine) en later voor het bijstellen op basis van correcties. Mag nooit een
-    opdracht laten mislukken: het transcript staat dan al in Iconik."""
-    try:
-        name = re.sub(r"[^A-Za-z0-9_.-]", "_", f"{doc.source.get('asset_id') or 'zonder-id'}.json")
-        TRANSCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
-        target = TRANSCRIPTS_DIR / name
-        temp = target.with_name(target.name + ".tmp")
-        temp.write_text(json.dumps(tmodel.to_dict(doc), ensure_ascii=False))
-        os.replace(temp, target)
-    except Exception as error:
-        print(f"Kopie van het transcript bewaren lukte niet: {error}")
 
 
 def safe_name(asset_id, suffix):

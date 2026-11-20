@@ -348,9 +348,11 @@ with sync_playwright() as p:
             a2 = next(j for j in serve.jobs if j.asset_id == "A2")
             twin = serve.jobs.append(serve.job_list.Job(**dict(a1.view(), n=serve.jobs.next_number())))  # A1 nog een keer
             waiting = serve.jobs.append(serve.job_list.Job(**dict(a2.view(), n=serve.jobs.next_number(), asset_id="A3",
+                                                                  item=a2.item.replace(":A2", ":A3"),
                                                                   title="Titel A3", status="wachtend")))
-        kept = [serve.refine.core.TRANSCRIPTS_DIR / "A1.json", serve.refine.core.WAVES_DIR / "A1.waves",
-                serve.refine.DRAFTS_DIR / "A1.draft.json", serve.refine.core.TRANSCRIPTS_DIR / "A2.json"]
+        path = serve.items.path
+        kept = [path(serve.refine.core.TRANSCRIPTS_DIR, a1.item, ".json"), path(serve.refine.core.WAVES_DIR, a1.item, ".waves"),
+                path(serve.refine.DRAFTS_DIR, a1.item, ".draft.json"), path(serve.refine.core.TRANSCRIPTS_DIR, a2.item, ".json")]
         for f in kept:
             f.parent.mkdir(parents=True, exist_ok=True)
             f.write_text("{}")
@@ -481,9 +483,10 @@ with sync_playwright() as p:
         check("Geavanceerd: buffer 0 mag (geen buffer)", app_settings.stored("transcription.mlx_cache_gb") == 0)
 
         # De originelen van Refine: één weghalen uit de lijst, daarna de rest leegmaken.
-        serve.refine.DRAFTS_DIR.mkdir(parents=True, exist_ok=True)
-        secret = serve.refine.DRAFTS_DIR / "A9.original.json"
-        remaining = serve.refine.DRAFTS_DIR / "B7.original.json"
+        source = serve.items.iconik_source(create=True)
+        secret = serve.items.path(serve.refine.DRAFTS_DIR, f"{source}:A9", ".original.json")
+        remaining = serve.items.path(serve.refine.DRAFTS_DIR, f"{source}:B7", ".original.json")
+        secret.parent.mkdir(parents=True, exist_ok=True)
         secret.write_text(json.dumps({"transcript": {"source": {"connector": "iconik", "title": "Vertrouwelijk interview"}}}))
         remaining.write_text(json.dumps({"transcript": {"source": {"connector": "iconik", "title": "Ander interview"}}}))
         page.reload()
