@@ -588,7 +588,34 @@ def boom():
 
 
 worker.run(boom, enabled_on, lambda: False, lambda *a, **k: None, stop, log.append, interval=0)
-check("fout in een rondje stopt de lus niet", count[0] >= 2 and "netwerk weg" in worker.state["error"] and any("netwerk weg" in l for l in log))
+check("fout in een rondje stopt de lus niet, het hele verhaal staat in het log", count[0] >= 2
+      and any("RuntimeError: netwerk weg" in line for line in log), log[-1:])
+check("  het venster krijgt een gewone zin, niet de ruwe fout", "netwerk weg" not in worker.state["error"]
+      and "Details staan in het log" in worker.state["error"], worker.state["error"])
+
+# --- fouten in gewone woorden (de details alleen in het log)
+import requests  # noqa: E402
+CA = "/Users/iemand/build/Local Transcribe.app/Contents/Resources/python/lib/python3.12/site-packages/certifi/cacert.pem"
+cases = [
+    (OSError(f"Could not find a suitable TLS CA certificate bundle, invalid path: {CA}"), "Geen veilige verbinding met Iconik"),
+    (requests.exceptions.SSLError("certificate verify failed"), "Geen veilige verbinding met Iconik"),
+    (requests.exceptions.ConnectionError("Max retries exceeded with url: /API/..."), "Geen verbinding met Iconik"),
+    (requests.exceptions.ReadTimeout("HTTPSConnectionPool: Read timed out."), "Geen verbinding met Iconik"),
+    (worker_problem := type("Problem", (Exception,), {})("GET metadata/v1/views/ gaf HTTP 401: {\"error\": \"x\"}"), "Log opnieuw in"),
+    (worker_problem.__class__("PUT metadata/v1/assets/a/ gaf HTTP 403: verboden"), "mag dit niet (HTTP 403)"),
+    (worker_problem.__class__("GET assets/v1/x gaf HTTP 503: <html><body>Service Unavailable</body></html>"), "Iconik gaf een fout (HTTP 503)"),
+    (worker_problem.__class__("GET assets/v1/x gaf HTTP 404: niet gevonden"), "Iconik weigerde een verzoek (HTTP 404)"),
+    (ValueError("Expecting value: line 1 column 1"), "Details staan in het log"),
+]
+worker.set_language("nl")
+for error, expected in cases:
+    text = worker.plain_error(error)
+    check(f"gewone woorden: {type(error).__name__} {str(error)[:40]!r}", expected in text and "/Users/" not in text
+          and "<html" not in text and "Max retries" not in text, text)
+worker.set_language("en")
+check("gewone woorden ook in het Engels", worker.plain_error(cases[2][0]).startswith("No connection to Iconik")
+      and "Log in again" in worker.plain_error(cases[4][0]))
+worker.set_language("nl")
 
 # --- hulpfuncties
 check("age_seconds onleesbaar is None", worker.age_seconds("niet") is None and worker.age_seconds(None) is None)

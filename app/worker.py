@@ -565,6 +565,35 @@ def _take(queue, asset_id, attempt, add_job, auto=False):
     return asset_id
 
 
+def plain_error(error):
+    """Een fout van de werker in een korte zin voor het venster, in de taal van de app. De volledige fout gaat naar
+    het log; een pad, een stuk HTML van een server of een Python-melding hoort niet in het venster."""
+    names = {cls.__name__ for cls in type(error).__mro__}
+    text = str(error)
+    status = re.search(r"\bHTTP (\d{3})\b", text)
+    code = int(status.group(1)) if status else 0
+    if "SSLError" in names or (isinstance(error, OSError) and "certificate" in text.lower()):
+        return tr("Geen veilige verbinding met Iconik. Herstart de app; helpt dat niet, kijk in het log.",
+                  "No secure connection to Iconik. Restart the app; if that does not help, see the log.")
+    if names & {"ConnectionError", "Timeout", "ConnectTimeout", "ReadTimeout"}:
+        return tr("Geen verbinding met Iconik. Is er internet? De app probeert het zo opnieuw.",
+                  "No connection to Iconik. Is there internet? The app tries again shortly.")
+    if code == 401:
+        return tr("Iconik weigert de toegang. Log opnieuw in via Instellingen › Integraties.",
+                  "Iconik refuses access. Log in again in Settings › Integrations.")
+    if code == 403:
+        return tr("Je account in Iconik mag dit niet (HTTP 403). Vraag je Iconik-beheerder om de rechten.",
+                  "Your Iconik account is not allowed to do this (HTTP 403). Ask your Iconik admin for the rights.")
+    if code >= 500:
+        return tr(f"Iconik gaf een fout (HTTP {code}). De app probeert het zo opnieuw.",
+                  f"Iconik returned an error (HTTP {code}). The app tries again shortly.")
+    if code:
+        return tr(f"Iconik weigerde een verzoek (HTTP {code}). Details staan in het log.",
+                  f"Iconik refused a request (HTTP {code}). Details are in the log.")
+    return tr("Er ging iets mis bij het kijken in de rij. Details staan in het log.",
+              "Something went wrong while checking the queue. Details are in the log.")
+
+
 def run(get_client, enabled, busy, add_job, stop, log=print, interval=POLL_SECONDS, languages=None, healthy=None, auto=None):
     """De lus van de werker. `enabled()` wordt elk rondje opnieuw gevraagd, zodat de schakelaar
     zonder herstart werkt. Fouten worden gelogd en het volgende rondje probeert het opnieuw."""
@@ -586,7 +615,7 @@ def run(get_client, enabled, busy, add_job, stop, log=print, interval=POLL_SECON
             try:
                 connection = get_client()
                 if connection is None:
-                    state["error"] = "Niet ingelogd bij Iconik."
+                    state["error"] = tr("Niet ingelogd bij Iconik.", "Not logged in to Iconik.")
                 else:
                     queue = Queue(connection, view_id)
                     if view_id is None:
@@ -598,8 +627,8 @@ def run(get_client, enabled, busy, add_job, stop, log=print, interval=POLL_SECON
                         state["last_asset"] = taken
                         log(f"Werker: asset {taken} aangenomen uit de rij.")
             except Exception as error:
-                state["error"] = str(error)[:300]
-                log(f"Werker: {state['error']}")
+                state["error"] = plain_error(error)
+                log(f"Werker: {type(error).__name__}: {str(error)[:300]}")   # het hele verhaal alleen in het log
         if wake.wait(interval):
             wake.clear()
 
