@@ -35,12 +35,12 @@ def check(name, cond, detail=""):
 
 def attempt(available_gb, level=1):
     resources.memory = lambda: (None if available_gb is None else available_gb * 1e9, level)
-    job = {"asset_id": "volgende"}
+    job = serve.job_list.Job(asset_id="volgende")
     with serve.work.mutex:
         serve.work.queue.clear()
         serve.work.queue.append(job)
     serve.start_prefetch()
-    box = job.get("prefetch")
+    box = job.prefetch
     if box:
         box["thread"].join(5)
     return box is not None

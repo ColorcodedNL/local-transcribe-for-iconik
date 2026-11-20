@@ -10,6 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "app"))
 import worker  # noqa: E402
+from jobs import Job  # noqa: E402
 
 results = []
 
@@ -200,7 +201,7 @@ for status, message, expect, text in [
     ("fout", "x" * 500, worker.FAILED, "xxx"),
 ]:
     fake.values["a"] = {worker.FIELD: worker.BUSY}
-    worker.report(queue, {"asset_id": "a", "status": status, "message": message}, who="testmac")
+    worker.report(queue, Job(**{"asset_id": "a", "status": status, "message": message}), who="testmac")
     got = fake.values["a"]
     check(f"report {status}: status {expect}", got[worker.FIELD] == expect and text in got[worker.INFO])
     check(f"report {status}: begint met naam en lokale tijd",
@@ -249,8 +250,8 @@ check("give_back na poging 3: definitief fout met uitleg", queue.give_back("a", 
 fake, queue = ready()
 worker._pause[0] = 0.0
 fake.values["a"] = {worker.FIELD: worker.BUSY, worker.INFO: "Bezig op testmac sinds 13:00 (abc)"}
-requeued = worker.report(queue, {"asset_id": "a", "status": "fout", "local": True, "remote": 1,
-                      "message": "De map /Volumes/Opslag/Iconik is niet bereikbaar. Is de opslag (ISG) gemount?"}, who="testmac")
+requeued = worker.report(queue, Job(**{"asset_id": "a", "status": "fout", "local": True, "remote": 1,
+                      "message": "De map /Volumes/Opslag/Iconik is niet bereikbaar. Is de opslag (ISG) gemount?"}), who="testmac")
 check("report: fout van de Mac zet het asset terug in de rij", fake.values["a"][worker.FIELD] == worker.REQUESTED)
 check("  report zegt dat het asset teruggezet is", requeued == "requeued")
 check("  en pauzeert de werker", worker.paused() is True and re.match(r"^\d\d:\d\d$", worker.state["paused_until"]) is not None, worker.state)
@@ -261,10 +262,10 @@ check("  tijdens de pauze pakt poll_once niets op", worker.poll_once(queue, "tes
 worker._pause[0] = 0.0
 check("  na de pauze weer wel", worker.paused() is False and worker.state["paused_until"] is None)
 fake.values["c"] = {worker.FIELD: worker.BUSY, worker.INFO: "Bezig op testmac sinds 13:00 (abc)"}
-worker.report(queue, {"asset_id": "c", "status": "fout", "local": False, "remote": 1, "message": "Kapot bestand"}, who="testmac")
+worker.report(queue, Job(**{"asset_id": "c", "status": "fout", "local": False, "remote": 1, "message": "Kapot bestand"}), who="testmac")
 check("report: fout van het asset blijft fout en pauzeert niet", fake.values["c"][worker.FIELD] == worker.FAILED and worker.paused() is False)
 fake.values["d"] = {worker.FIELD: worker.BUSY, worker.INFO: "Bezig op testmac sinds 13:00 (abc)"}
-gave_up = worker.report(queue, {"asset_id": "d", "status": "fout", "local": True, "remote": 3, "message": "Geen internet"}, who="testmac")
+gave_up = worker.report(queue, Job(**{"asset_id": "d", "status": "fout", "local": True, "remote": 3, "message": "Geen internet"}), who="testmac")
 check("report: derde mislukte poging wordt fout, niet teruggezet", fake.values["d"][worker.FIELD] == worker.FAILED and gave_up is None)
 worker._pause[0] = 0.0
 
@@ -331,7 +332,7 @@ check("asset is van een ander geworden: stoppen met schrijven", worker.beat(queu
 fake.values["a"] = {worker.FIELD: worker.REQUESTED}
 worker.poll_once(queue, "testmac", lambda: False, lambda *a, **k: None, sleep=nap)
 worker.current["beat"] -= worker.HEARTBEAT + 1
-worker.report(queue, {"asset_id": "a", "status": "klaar", "message": "3 regels"}, who="testmac")
+worker.report(queue, Job(**{"asset_id": "a", "status": "klaar", "message": "3 regels"}), who="testmac")
 check("report ruimt het asset op", not worker.current)
 check("heartbeat na het resultaat overschrijft het niet", worker.beat(queue) is False
       and fake.values["a"][worker.FIELD] == worker.DONE and "3 regels" in fake.values["a"][worker.INFO])
@@ -368,12 +369,12 @@ def claim_a():
 claim_a()
 fake.values["a"] = {worker.FIELD: worker.BUSY, worker.INFO: "Bezig op othermac sinds 10:00 (ffffff)"}
 puts = len(fake.puts)
-job = {"asset_id": "a", "status": "klaar", "message": "3 regels"}
+job = Job(asset_id="a", status="klaar", message="3 regels")
 lost_result = worker.report(queue, job, who="testmac")
 check("overgenomen asset: report meldt het verlies", lost_result == "lost")
 check("overgenomen asset: report schrijft niets", len(fake.puts) == puts
       and fake.values["a"][worker.FIELD] == worker.BUSY and "othermac" in fake.values["a"][worker.INFO])
-check("  de job krijgt een notitie en de heartbeat staat uit", ("overgenomen" in job["message"] or "taken over" in job["message"])
+check("  de job krijgt een notitie en de heartbeat staat uit", ("overgenomen" in job.message or "taken over" in job.message)
       and not worker.current)
 
 claim_a()
@@ -381,14 +382,14 @@ fake.values["a"] = {worker.FIELD: worker.BUSY, worker.INFO: "Bezig op othermac s
 worker.current["beat"] -= worker.HEARTBEAT + 1
 check("heartbeat merkt het verlies op", worker.beat(queue) is False and "a" in worker.lost)
 puts = len(fake.puts)
-worker.report(queue, {"asset_id": "a", "status": "fout", "local": True, "remote": 1, "message": "Geen internet"}, who="testmac")
+worker.report(queue, Job(**{"asset_id": "a", "status": "fout", "local": True, "remote": 1, "message": "Geen internet"}), who="testmac")
 check("  daarna schrijft report ook niets, maar de Mac pauzeert wel", len(fake.puts) == puts and worker.paused()
       and "a" not in worker.lost)
 worker.resume()
 
 claim_a()
 puts = len(fake.puts)
-worker.report(queue, {"asset_id": "a", "status": "klaar", "message": "5 regels"}, who="testmac")
+worker.report(queue, Job(**{"asset_id": "a", "status": "klaar", "message": "5 regels"}), who="testmac")
 check("nog van ons: report schrijft het resultaat", len(fake.puts) == puts + 1 and fake.values["a"][worker.FIELD] == worker.DONE
       and "5 regels" in fake.values["a"][worker.INFO])
 
@@ -541,7 +542,7 @@ try:
     queue.release_stale("enmac")
     check("overname in het Engels", "deadmac stopped responding" in fake.values["c"][worker.INFO])
     fake.values["d"] = {worker.FIELD: worker.BUSY, worker.INFO: "x"}
-    worker.report(queue, {"asset_id": "d", "status": "overgeslagen", "message": "No speech"}, who="enmac")
+    worker.report(queue, Job(**{"asset_id": "d", "status": "overgeslagen", "message": "No speech"}), who="enmac")
     check("overgeslagen in het Engels", "Skipped: No speech" in fake.values["d"][worker.INFO])
 finally:
     worker.set_language("nl")

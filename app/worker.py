@@ -460,10 +460,10 @@ class Queue:
 
 
 def report(queue, job, who=None, log=print):
-    """Zet het resultaat van een afgeronde opdracht uit de rij terug in Iconik. Geeft "requeued" als het
-    asset terug in de rij is gezet voor een andere Mac, "lost" als het niet meer van ons was, anders None."""
+    """Zet het resultaat van een afgeronde opdracht (een jobs.Job) uit de rij terug in Iconik. Geeft "requeued" als
+    het asset terug in de rij is gezet voor een andere Mac, "lost" als het niet meer van ons was, anders None."""
     who = who or machine_name()
-    asset_id = job["asset_id"]
+    asset_id = job.asset_id
     code = None
     with _beat_lock:          # het asset is klaar: de heartbeat mag er niet meer aan komen
         if current.get("asset") == asset_id:
@@ -481,22 +481,22 @@ def report(queue, job, who=None, log=print):
         # Het asset is niet meer van ons (door een andere Mac overgenomen of door een mens gewijzigd).
         # Status en details zijn van de nieuwe eigenaar, dus daar schrijven we niet overheen.
         log(f"Werker: {asset_id} is niet meer van deze Mac, resultaat niet in de rij gezet")
-        job["message"] = (job.get("message") or "") + tr(" (asset is door een andere Mac overgenomen, status niet aangepast)",
-                                                          " (asset was taken over by another Mac, status not changed)")
-        if job["status"] == "fout" and job.get("local"):
-            pause(reason=job.get("message", ""))
+        job.set(message=(job.message or "") + tr(" (asset is door een andere Mac overgenomen, status niet aangepast)",
+                                                 " (asset was taken over by another Mac, status not changed)"))
+        if job.status == "fout" and job.local:
+            pause(reason=job.message or "")
         return "lost"
-    if job["status"] == "fout" and job.get("local"):
-        if queue.give_back(job["asset_id"], who, job.get("message", ""), int(job.get("remote") or 1)):
-            pause(reason=job.get("message", ""))
+    if job.status == "fout" and job.local:
+        if queue.give_back(job.asset_id, who, (job.message or ""), int(job.remote or 1)):
+            pause(reason=job.message or "")
             return "requeued"
         return None
-    if job["status"] == "klaar":
-        queue.finish(job["asset_id"], who, True, job.get("message", ""))
-    elif job["status"] == "overgeslagen":
-        queue.finish(job["asset_id"], who, True, tr("Overgeslagen: ", "Skipped: ") + job.get("message", ""))
+    if job.status == "klaar":
+        queue.finish(job.asset_id, who, True, (job.message or ""))
+    elif job.status == "overgeslagen":
+        queue.finish(job.asset_id, who, True, tr("Overgeslagen: ", "Skipped: ") + (job.message or ""))
     else:
-        queue.finish(job["asset_id"], who, False, job.get("message", ""))
+        queue.finish(job.asset_id, who, False, (job.message or ""))
 
 
 def beat(queue, now=None, healthy=None):

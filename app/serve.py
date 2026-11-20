@@ -34,6 +34,7 @@ import refine
 import resources
 import settings as setting   # de lijst met alle instellingen; `settings` hieronder is die van een opdracht
 import system
+import jobs as job_list
 import transcribe
 import updater
 import worker as remote
@@ -95,25 +96,17 @@ def listener_key():
 
 def enqueue(asset_ids):
     added = sum(add_job(asset_id) for asset_id in dict.fromkeys(asset_ids))
-    with jobs_lock:
-        waiting = [job for job in jobs if job["status"] == "wachtend"]
+    waiting = [job for job in jobs if job.status == "wachtend"]
     threading.Thread(target=fill_titles, args=(waiting,), daemon=True).start()
     print(f"Ontvangen: {len(asset_ids)} asset(s), {added} toegevoegd aan de rij.")
     return added
 
 
-jobs = []                 # nieuwste achteraan
-jobs_lock = threading.Lock()
+jobs = job_list.JobList()  # de opdrachten, nieuwste achteraan (jobs.py)
+jobs_lock = job_list.lock
 work = queue.Queue()
 settings = {}
-cleared = [0]             # aantal opgeruimde opdrachten, zodat nummers uniek blijven
-
-# De lijst blijft bewaard tot de gebruiker hem zelf opruimt. Wat bij een herstart nog liep of wachtte,
-# komt terug als "afgebroken": de opdracht wordt niet hervat. Opdrachten uit de rij in Iconik komen
-# vanzelf terug, want die staan daar nog.
-MAX_KEPT_JOBS = 500
-_KEPT_FIELDS = ("n", "asset_id", "title", "status", "message", "duration", "result", "language", "tracks", "auto")
-_save_lock = threading.Lock()
+MAX_KEPT_JOBS = job_list.MAX_KEPT
 _dirty = threading.Event()
 
 
@@ -122,27 +115,7 @@ def jobs_path():
 
 
 def save_jobs():
-    """Schrijft de lijst weg. Mislukt dat, dan is de lijst alleen niet bewaard: nooit een reden om te stoppen."""
-    try:
-        with jobs_lock:
-            rows = []
-            for job in jobs[-MAX_KEPT_JOBS:]:
-                row = {key: job.get(key) for key in _KEPT_FIELDS}
-                for key in ("added", "started", "finished"):
-                    row[key] = job[key].isoformat() if job.get(key) else None
-                rows.append(row)
-            # Wat buiten de bewaarde 500 valt telt mee als opgeruimd, anders krijgt een nieuwe opdracht
-            # na een herstart een nummer dat al bestaat.
-            dropped = max(0, len(jobs) - MAX_KEPT_JOBS)
-            payload = {"saved": datetime.now().isoformat(), "cleared": cleared[0] + dropped, "jobs": rows}
-        with _save_lock:
-            path = jobs_path()
-            path.parent.mkdir(parents=True, exist_ok=True)
-            temp = path.with_name(path.name + ".tmp")
-            temp.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-            os.replace(temp, path)
-    except Exception as error:
-        print(f"De lijst met opdrachten bewaren mislukte: {error}")
+    jobs.save(jobs_path())
 
 
 def touch_jobs():
@@ -159,44 +132,11 @@ def _saver():
         save_jobs()
 
 
-def _time(text):
-    try:
-        return datetime.fromisoformat(text) if text else None
-    except (TypeError, ValueError):
-        return None
-
-
 def load_jobs():
     """Haalt de bewaarde lijst terug, bij de start. Wat nog liep of wachtte is afgebroken."""
-    try:
-        data = json.loads(jobs_path().read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return
-    if not isinstance(data, dict) or not isinstance(data.get("jobs", []), list):
-        return
-    saved = _time(data.get("saved")) or datetime.now()
-    loaded = []
-    for row in data.get("jobs", []):
-        try:
-            job = {"n": int(row["n"]), "asset_id": str(row["asset_id"]), "title": row.get("title") or "",
-                   "status": row.get("status") or "fout", "message": row.get("message") or "",
-                   "added": _time(row.get("added")) or saved, "remote": 0,
-                   "started": _time(row.get("started")), "finished": _time(row.get("finished")),
-                   "stage": "", "fraction": None, "tracks": row.get("tracks") or [],
-                   "duration": row.get("duration"), "result": row.get("result"), "language": row.get("language"),
-                   "auto": bool(row.get("auto"))}
-        except (KeyError, TypeError, ValueError, AttributeError):
-            continue
-        if job["status"] in ("wachtend", "bezig"):
-            job.update(status="afgebroken", finished=saved,
-                       message=transcribe.L("Afgebroken: de app is herstart.", "Interrupted: the app was restarted."))
-        loaded.append(job)
-    with jobs_lock:
-        jobs[:0] = loaded
-        try:
-            cleared[0] = max(cleared[0], int(data.get("cleared") or 0))
-        except (TypeError, ValueError):
-            pass
+    jobs.load(jobs_path())
+
+
 current = [None]          # de opdracht die nu verwerkt wordt
 # Zonder opdracht en zonder open venster stopt de ontvanger zichzelf, zodat het geheugen vrijkomt.
 # De volgende klik in Iconik start hem opnieuw. Het venster haalt elke paar seconden /state op.
@@ -222,9 +162,9 @@ def page_text(file):
 
 def make_options(job):
     # Een opdracht uit de rij die een andere Mac heeft overgenomen, wordt niet meer naar Iconik geschreven.
-    still_ours = (lambda: job["asset_id"] not in remote.lost) if job.get("remote") else None
+    still_ours = (lambda: job.asset_id not in remote.lost) if job.remote else None
     return argparse.Namespace(
-        asset_id=job["asset_id"], model=settings["model"], language=settings["language"] or setting.get("transcription.language"),
+        asset_id=job.asset_id, model=settings["model"], language=settings["language"] or setting.get("transcription.language"),
         mount=settings["mount"], push=True, replace=True, speakers=None, still_ours=still_ours,
         no_speakers=not transcribe.speaker_model_available(settings["hf_token"]), no_voice_check=False, out="/tmp/whisper-test")
 
@@ -254,11 +194,11 @@ def start_prefetch():
     """
     with work.mutex:
         upcoming = work.queue[0] if work.queue else None
-    if upcoming is None or "prefetch" in upcoming:
+    if upcoming is None or upcoming.prefetch is not None:
         return
     room, reason = prefetch_room()
     if not room:
-        print(f"Vooruit lezen overgeslagen ({reason}): {upcoming['asset_id']} leest straks zelf.")
+        print(f"Vooruit lezen overgeslagen ({reason}): {upcoming.asset_id} leest straks zelf.")
         return
     box = {"events": [], "lines": [], "result": None}
 
@@ -268,7 +208,7 @@ def start_prefetch():
             connection = client()
             if connection is not None:
                 def on_info(title, seconds, job=upcoming):
-                    job["title"], job["duration"] = title or "", seconds
+                    job.set(title=title or "", duration=seconds)
                 box["result"] = transcribe.prepare_asset(connection, make_options(upcoming), on_info, interactive=False)
         except transcribe.NeedsFolder:
             box["lines"].append("Vooruit lezen overgeslagen: mount point nog onbekend.")
@@ -278,9 +218,9 @@ def start_prefetch():
             transcribe._local.events = transcribe._local.lines = None
 
     box["thread"] = threading.Thread(target=run, daemon=True)
-    upcoming["prefetch"] = box
+    upcoming.set(prefetch=box)
     box["thread"].start()
-    print(f"Vooruit lezen gestart: {upcoming['asset_id']}")
+    print(f"Vooruit lezen gestart: {upcoming.asset_id}")
 
 
 def listen(kind, **data):
@@ -290,15 +230,15 @@ def listen(kind, **data):
     if job is None:
         return
     if kind == "stage":
-        job["stage"], job["fraction"] = data["name"], None
+        job.set(stage=data["name"], fraction=None)
         if data["name"] == "transcriberen":
             start_prefetch()  # het eigen bestand is gelezen, het netwerk is vrij
     elif kind == "progress":
-        job["fraction"] = data["fraction"]
+        job.set(fraction=data["fraction"])
     elif kind == "language":
-        job["language"] = data["code"]
+        job.set(language=data["code"])
     elif kind == "tracks":
-        job["tracks"] = data["tracks"]
+        job.set(tracks=data["tracks"])
 
 
 ACTION_TITLE = "Local Transcribe"
@@ -524,21 +464,19 @@ def iconik_account():
 def app_state():
     """Alles wat het venster toont, als gegevens."""
     now = datetime.now()
-    with jobs_lock:
-        rows = list(reversed(jobs))
     out = []
-    for job in rows:
-        end = job["finished"] or now
+    for row in jobs.views():
+        end = row["finished"] or now
         out.append({
-            "n": job["n"], "asset_id": job["asset_id"], "title": job["title"],
-            "status": job["status"], "message": job["message"],
-            "added": job["added"].strftime("%H:%M"), "stage": job["stage"],
-            "fraction": job["fraction"], "tracks": job["tracks"],
-            "duration": job.get("duration"),
-            "result": job.get("result"), "language": job.get("language"),
-            "refine": refine.marks(job["asset_id"]) if job["status"] == "klaar" else None,
-            "elapsed": (end - job["started"]).total_seconds() if job["started"] else None,
-            "auto": bool(job.get("auto")),
+            "n": row["n"], "asset_id": row["asset_id"], "title": row["title"],
+            "status": row["status"], "message": row["message"],
+            "added": row["added"].strftime("%H:%M"), "stage": row["stage"],
+            "fraction": row["fraction"], "tracks": row["tracks"],
+            "duration": row["duration"],
+            "result": row["result"], "language": row["language"],
+            "refine": refine.marks(row["asset_id"]) if row["status"] == "klaar" else None,
+            "elapsed": (end - row["started"]).total_seconds() if row["started"] else None,
+            "auto": row["auto"],
         })
     account, _ = iconik_account()
     # Alleen wat het opdrachtenvenster gebruikt; het venster Instellingen haalt zijn gegevens bij /settings-data.
@@ -554,10 +492,7 @@ def app_state():
 
 
 def clear_finished():
-    with jobs_lock:
-        keep = [job for job in jobs if job["status"] in ("wachtend", "bezig")]
-        cleared[0] += len(jobs) - len(keep)
-        jobs[:] = keep
+    jobs.clear_finished()
     save_jobs()
 
 
@@ -565,20 +500,9 @@ def remove_jobs(number, everything=False):
     """Eén regel uit de lijst halen (✕, ⌫ of rechtsklik). Met everything ook de andere afgeronde regels van
     hetzelfde asset en alles wat de app daarvan op deze Mac bewaart (refine.forget_asset). Een opdracht die wacht
     of loopt blijft staan. Geeft {"ok", "removed": aantal regels, "files": wat er van de Mac weg is}."""
-    with jobs_lock:
-        job = next((j for j in jobs if j["n"] == number), None)
-        if job is None:
-            return {"ok": False, "error": transcribe.L("Deze opdracht staat niet (meer) in de lijst.", "This job is not in the list (any more).")}
-        if job["status"] in ("wachtend", "bezig"):
-            return {"ok": False, "error": transcribe.L("Een opdracht die wacht of loopt, haal je zo niet weg.",
-                                                       "A job that is waiting or running cannot be removed this way.")}
-        asset = job.get("asset_id") or ""
-        if everything and asset and any(j.get("asset_id") == asset and j["status"] in ("wachtend", "bezig") for j in jobs):
-            return {"ok": False, "error": transcribe.L("Er wacht of loopt nog een opdracht voor dit asset.",
-                                                       "A job for this asset is still waiting or running.")}
-        gone = [j for j in jobs if j is job or (everything and asset and j.get("asset_id") == asset)]
-        jobs[:] = [j for j in jobs if not any(j is g for g in gone)]
-        cleared[0] += len(gone)
+    gone, asset, error = jobs.remove(number, everything)
+    if error:
+        return {"ok": False, "error": error}
     save_jobs()
     files = refine.forget_asset(asset) if everything and asset else []
     if files:
@@ -586,19 +510,10 @@ def remove_jobs(number, everything=False):
     return {"ok": True, "removed": len(gone), "files": files}
 
 
-def next_number():
-    """Volgnummer voor een nieuwe regel in de lijst. Aanroepen met jobs_lock."""
-    return max(len(jobs) + cleared[0], max((j["n"] for j in jobs), default=0)) + 1
-
-
 def add_failed(title, message):
     """Een rode regel in de lijst zonder opdracht erachter, bijvoorbeeld voor een collectie die niet
     uit te pakken was. Zo ziet de gebruiker het ook als de klik in Iconik allang is afgehandeld."""
-    now = datetime.now()
-    with jobs_lock:
-        jobs.append({"n": next_number(), "asset_id": "", "title": title, "status": "fout",
-                     "message": message, "added": now, "remote": 0, "started": None, "finished": now,
-                     "stage": "", "fraction": None, "tracks": []})
+    jobs.add_failed(title, message)
     touch_jobs()
 
 
@@ -606,16 +521,9 @@ def add_job(asset_id, remote=0, auto=False):
     """`remote`: de opdracht komt uit de rij in Iconik (werker-modus), het resultaat gaat daar terug.
     Het is het nummer van de poging (1, 2 of 3); 0 betekent een gewone opdracht.
     `auto`: automatisch opgepakt door auto transcribe, niet aangevraagd (alleen voor de weergave)."""
-    with jobs_lock:
-        for job in jobs:
-            if job["asset_id"] == asset_id and job["status"] in ("wachtend", "bezig"):
-                return False
-        number = next_number()
-        job = {"n": number, "asset_id": asset_id, "title": "",
-               "status": "wachtend", "message": "", "added": datetime.now(), "remote": remote,
-               "started": None, "finished": None, "stage": "", "fraction": None,
-               "tracks": [], "auto": bool(auto)}
-        jobs.append(job)
+    job = jobs.add(asset_id, remote=remote, auto=auto)
+    if job is None:
+        return False
     touch_jobs()
     work.put(job)
     if remote:   # opdrachten uit de rij in Iconik hebben nog geen titel: ophalen, anders staat er een asset-ID
@@ -626,12 +534,13 @@ def add_job(asset_id, remote=0, auto=False):
 def fill_titles(new_jobs):
     """Haalt op de achtergrond de titels op, zodat de rij leesbaar is."""
     for job in new_jobs:
-        if job["title"]:
+        if job.title:
             continue
         try:
-            title = client().get(f"assets/v1/assets/{job['asset_id']}/").get("title")
-            if title and not job["title"]:
-                job["title"] = title
+            title = client().get(f"assets/v1/assets/{job.asset_id}/").get("title")
+            with jobs_lock:
+                if title and not job.title:
+                    job.title = title
         except Exception:
             pass  # de titel is alleen voor de weergave
 
@@ -702,11 +611,11 @@ def clock(seconds):
 
 def running(job):
     """Tekst voor een opdracht die bezig is: hoe lang al, en hoe lang de audio is."""
-    if job["status"] != "bezig" or not job["started"]:
+    if job.status != "bezig" or not job.started:
         return ""
-    text = f"{clock((datetime.now() - job['started']).total_seconds())} bezig"
-    if job.get("duration"):
-        text += f", audio duurt {clock(job['duration'])}"
+    text = f"{clock((datetime.now() - job.started).total_seconds())} bezig"
+    if job.duration:
+        text += f", audio duurt {clock(job.duration)}"
     return text
 
 
@@ -1280,9 +1189,10 @@ def report_remote(job):
             outcome = remote.report(queue_in_iconik, job)
             if outcome == "requeued":
                 # Het ligt niet aan het asset: het staat weer in de rij en een andere Mac pakt het op.
-                job["status"] = "teruggezet"
-                job["message"] = ((job.get("message") or "").rstrip() + " "
-                                  + transcribe.L("Terug in de rij voor een andere Mac.", "Back in the queue for another Mac.")).strip()
+                with jobs_lock:
+                    job.status = "teruggezet"
+                    job.message = ((job.message or "").rstrip() + " "
+                                   + transcribe.L("Terug in de rij voor een andere Mac.", "Back in the queue for another Mac.")).strip()
                 save_jobs()
             return
         except Exception as error:
@@ -1577,13 +1487,13 @@ def set_login_item(on):
 def stall_limit(job):
     """Hoe lang een opdracht niets mag melden. De sprekerherkenning meldt tussendoor niets en duurt
     bij lange audio langer, dus de grens groeit mee met de lengte."""
-    return max(STALL_SECONDS, 0.5 * (job.get("duration") or 0))
+    return max(STALL_SECONDS, 0.5 * (job.duration or 0))
 
 
 def progress_ok():
     """Vordert de lopende opdracht nog? Het eenmalige downloaden van het model beoordelen we niet."""
     job = current[0]
-    if job is None or job.get("stage") == "model":
+    if job is None or job.stage == "model":
         return True
     return time.monotonic() - last_progress[0] <= stall_limit(job)
 
@@ -1600,10 +1510,10 @@ def give_up_stalled(job):
     nl, en = ("minuut", "minute") if minutes == 1 else ("minuten", "minutes")
     message = transcribe.L(f"De opdracht meldde {minutes} {nl} niets meer en is gestopt.",
                            f"The job reported nothing for {minutes} {en} and was stopped.")
-    print(f"HANGT: {job['asset_id']} meldde {minutes} {nl} niets, de app herstart.", flush=True)
-    job.update(abandoned=True, status="fout", local=True, message=message, finished=datetime.now())
+    print(f"HANGT: {job.asset_id} meldde {minutes} {nl} niets, de app herstart.", flush=True)
+    job.set(abandoned=True, status="fout", local=True, message=message, finished=datetime.now())
     save_jobs()
-    if job.get("remote"):
+    if job.remote:
         # Vaak is de verbinding juist de reden: niet langer dan 30 seconden wachten op het terugmelden.
         reporter = threading.Thread(target=report_remote, args=(job,), daemon=True)
         reporter.start()
@@ -1636,18 +1546,18 @@ def worker():
                 print(f"Geen opdrachten en geen venster sinds {IDLE_EXIT} s, de ontvanger stopt.", flush=True)
                 os._exit(0)
             continue
-        job["status"] = "bezig"
-        job["started"] = datetime.now()
+        job.set(status="bezig", started=datetime.now())
         touch_jobs()
         last_progress[0] = time.monotonic()
         current[0] = job
 
         def on_info(title, seconds, job=job):
-            job["title"], job["duration"] = title or "", seconds
-        say(f"\n===== {job['asset_id']} =====")
+            job.set(title=title or "", duration=seconds)
+        say(f"\n===== {job.asset_id} =====")
         options = make_options(job)
         prepared = None
-        box = job.pop("prefetch", None)
+        with jobs_lock:
+            box, job.prefetch = job.prefetch, None
         if box is not None:
             box["thread"].join()  # nog bezig met lezen: afwachten, niet dubbel lezen
             for line in box["lines"]:
@@ -1663,32 +1573,27 @@ def worker():
                 raise Problem(transcribe.L("Niet ingelogd bij Iconik.", "Not logged in to Iconik."))
             result = transcribe.process_asset(
                 connection, options, settings["hf_token"], on_info, prepared)
-            job["title"] = result["title"] or ""
-            job["status"] = "klaar"
-            job["message"] = f"{result['segments']} regels, {result['speakers']} spreker(s)"
-            job["result"] = {"segments": result["segments"], "speakers": result["speakers"]}
+            job.set(title=result["title"] or "", status="klaar",
+                    message=f"{result['segments']} regels, {result['speakers']} spreker(s)",
+                    result={"segments": result["segments"], "speakers": result["speakers"]})
         except transcribe.NeedsFolder as folder:
-            job["status"] = "fout"
-            job["local"] = True
-            job["message"] = transcribe.L(f"Het mount point van ISG {folder} is op deze Mac nog niet ingesteld.",
-                                          f"The mount point of ISG {folder} is not set on this Mac yet.")
-            print(f"FOUT: {job['message']}")
+            job.set(status="fout", local=True,
+                    message=transcribe.L(f"Het mount point van ISG {folder} is op deze Mac nog niet ingesteld.",
+                                         f"The mount point of ISG {folder} is not set on this Mac yet."))
+            print(f"FOUT: {job.message}")
         except Problem as problem:
             skipped = getattr(problem, "skip", False)
-            job["local"] = getattr(problem, "local", False)
-            job["status"] = "overgeslagen" if skipped else "fout"
-            job["message"] = str(problem)
-            print(f"{job['status'].upper()}: {problem}")
+            job.set(local=getattr(problem, "local", False), status="overgeslagen" if skipped else "fout", message=str(problem))
+            print(f"{job.status.upper()}: {problem}")
         except Exception as error:  # de rij moet blijven lopen
-            job["status"] = "fout"
-            job["message"] = f"{type(error).__name__}: {error}"
-            print(f"FOUT: {job['message']}")
+            job.set(status="fout", message=f"{type(error).__name__}: {error}")
+            print(f"FOUT: {job.message}")
         # Niet in een finally: daar is continue vanaf Python 3.14 een waarschuwing (PEP 765).
-        if job.get("abandoned"):
+        if job.abandoned:
             continue   # de watchdog gaf deze opdracht al op en meldde hem terug
-        job["finished"] = datetime.now()
+        job.set(finished=datetime.now())
         save_jobs()
-        if job.get("remote"):
+        if job.remote:
             report_remote(job)
         current[0] = None
         activity["done"] = time.time()

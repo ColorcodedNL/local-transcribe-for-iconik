@@ -66,8 +66,8 @@ check("model niet in de cache: na het downloaden ook een pad",
 
 # --- voortgang en watchdog
 def fresh_job(**extra):
-    job = {"asset_id": "a", "stage": "transcriberen", "status": "bezig", "remote": 2, "duration": 0}
-    job.update(extra)
+    job = serve.job_list.Job(asset_id="a", stage="transcriberen", status="bezig", remote=2, duration=0)
+    job.set(**extra)
     return job
 
 
@@ -82,10 +82,10 @@ check("langer dan de grens niets gemeld: vastgelopen", serve.progress_ok() is Fa
 serve.listen("progress", fraction=0.5)
 check("een voortgangsmelding zet de klok terug", serve.progress_ok() is True)
 serve.last_progress[0] = time.monotonic() - serve.STALL_SECONDS - 5
-before = dict(serve.current[0])
+before = serve.current[0].view()
 serve.listen("alive")
 check("een teken van leven tijdens het lezen zet de klok terug en verandert de opdracht niet",
-      serve.progress_ok() is True and serve.current[0] == before)
+      serve.progress_ok() is True and serve.current[0].view() == before)
 
 serve.current[0] = fresh_job(duration=4 * serve.STALL_SECONDS)
 serve.last_progress[0] = time.monotonic() - serve.STALL_SECONDS - 5
@@ -99,18 +99,18 @@ check("model downloaden wordt niet beoordeeld", serve.progress_ok() is True)
 
 # --- opgeven
 reported, restarted, exits = [], [], []
-serve.report_remote = lambda job: reported.append(dict(job))
+serve.report_remote = lambda job: reported.append(job.view())
 serve.leave = lambda code: exits.append(code)
 serve.STALL_GRACE = 0
 
 job = fresh_job()
 serve.current[0] = job
-serve.work.put({"asset_id": "wachtend"})
+serve.work.put(serve.job_list.Job(asset_id="wachtend"))
 serve.restart_hook = lambda: restarted.append(1)
 serve.last_progress[0] = time.monotonic() - 2 * serve.STALL_SECONDS
 serve.give_up_stalled(job)
 check("opgegeven opdracht: afgebroken, lokaal probleem, gemarkeerd",
-      job["status"] == "fout" and job["local"] is True and job["abandoned"] is True and "30" in job["message"])
+      job.status == "fout" and job.local is True and job.abandoned is True and "30" in job.message)
 check("de opdracht uit de rij wordt teruggemeld met zijn pogingnummer", len(reported) == 1 and reported[0]["remote"] == 2)
 check("busy() is weer onwaar, anders vraagt afsluiten om bevestiging",
       serve.current[0] is None and serve.work.empty() and serve.busy() is False)

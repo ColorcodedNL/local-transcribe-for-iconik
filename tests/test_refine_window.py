@@ -280,8 +280,8 @@ with sync_playwright() as p:
         # De opdrachtenlijst toont dat er ondertitels zijn; het label springt naar die tab in Refine.
         from datetime import datetime
         with serve.jobs_lock:
-            serve.jobs.append({"n": 1, "asset_id": "A1", "title": "Interview na de wedstrijd", "status": "klaar", "message": "", "added": datetime.now(),
-                               "remote": 0, "started": datetime.now(), "finished": datetime.now(), "stage": "", "fraction": None, "tracks": [], "auto": False})
+            serve.jobs.append(serve.job_list.Job(n=1, asset_id="A1", title="Interview na de wedstrijd", status="klaar",
+                                                 started=datetime.now(), finished=datetime.now()))
         page.goto(f"{BASE}/")
         label = page.locator("[data-subtitles]")
         label.wait_for(timeout=5000)

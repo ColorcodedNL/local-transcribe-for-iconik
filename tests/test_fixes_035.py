@@ -156,26 +156,26 @@ check("onverwachte fout geeft een pagina, geen verbroken verbinding", status == 
 RealThread = threading.Thread
 threading.Thread = lambda *a, **k: SimpleNamespace(start=lambda: None)   # geen titels ophalen
 serve.jobs.clear()
-serve.cleared[0] = 0
+serve.jobs.cleared = 0
 for i in range(600):
     serve.add_job(f"a{i}")
 for job in serve.jobs:
-    job["status"] = "klaar"
+    job.set(status="klaar")
 serve.save_jobs()
 serve.jobs.clear()
-serve.cleared[0] = 0
+serve.jobs.cleared = 0
 while not serve.work.empty():
     serve.work.get()
 serve.load_jobs()
 serve.add_job("nieuw")
-numbers = [j["n"] for j in serve.jobs]
-check("na herstart geen dubbele nummers", len(numbers) == len(set(numbers)) and serve.jobs[-1]["n"] == 601, serve.jobs[-1]["n"])
+numbers = [j.n for j in serve.jobs]
+check("na herstart geen dubbele nummers", len(numbers) == len(set(numbers)) and serve.jobs[-1].n == 601, serve.jobs[-1].n)
 serve.clear_finished()
 serve.jobs.clear()
 while not serve.work.empty():
     serve.work.get()
 serve.add_job("na opruimen")
-check("na opruimen loopt de nummering door", serve.jobs[-1]["n"] > 600, serve.jobs[-1]["n"])
+check("na opruimen loopt de nummering door", serve.jobs[-1].n > 600, serve.jobs[-1].n)
 threading.Thread = RealThread
 
 # --- 3. Voorkeuren: tegelijk schrijven verliest niets

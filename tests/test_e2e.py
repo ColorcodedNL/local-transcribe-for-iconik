@@ -233,10 +233,10 @@ with sync_playwright() as p:
         page.get_by_text("Titel A1").wait_for(timeout=10000)
         page.get_by_text("Titel A2").wait_for(timeout=10000)
         check("klik uit Iconik zonder inlog: inloggen, dan beide assets in de rij",
-              logged_in() and {j["asset_id"] for j in serve.jobs} == {"A1", "A2"}, [j["asset_id"] for j in serve.jobs])
+              logged_in() and {j.asset_id for j in serve.jobs} == {"A1", "A2"}, [j.asset_id for j in serve.jobs])
         status = page.request.get(f"{BASE}/transcribe/fout?asset_ids=A3", max_redirects=0).status
         errors[:] = [e for e in errors if "/transcribe/fout" not in e]   # deze 403 is de bedoeling
-        check("verkeerde sleutel geweigerd", status == 403 and "A3" not in {j["asset_id"] for j in serve.jobs}, status)
+        check("verkeerde sleutel geweigerd", status == 403 and "A3" not in {j.asset_id for j in serve.jobs}, status)
 
         # 6. Op afstand en automatisch in Instellingen, en wat het opdrachtenvenster daarvan laat zien
         main = browser.new_page()   # het opdrachtenvenster naast Instellingen; meldt zich aan zoals het echte venster
@@ -293,10 +293,10 @@ with sync_playwright() as p:
               app_settings.stored("iconik.auto_transcribe") is False and app_settings.stored("iconik.auto_audio") is True)
         check("Ook audio verdwijnt als automatisch uit staat", page.locator("#f-iconik-auto_audio").count() == 0)
         serve.remote.state["auto"] = None
-        serve.jobs[0]["auto"] = True
+        serve.jobs[0].set(auto=True)
         main.locator(".tag", has_text="Auto").first.wait_for(timeout=5000)
         check("automatisch opgepakte job heeft het label Auto", main.locator(".tag").count() == 1)
-        serve.jobs[0]["auto"] = False
+        serve.jobs[0].set(auto=False)
         page.locator("#f-iconik-worker_enabled").uncheck()
         page.wait_for_timeout(500)
         check("opdrachten op afstand uit", app_settings.stored("iconik.worker_enabled") is False)
@@ -317,31 +317,30 @@ with sync_playwright() as p:
         # 8. Losse opdrachten verwijderen: selecteren en ✕, ⌫ (niet bij een wachtende), rechtsklik en "ook van deze Mac"
         with serve.jobs_lock:
             for job in serve.jobs:
-                job["status"] = "klaar"
-            a1 = next(j for j in serve.jobs if j["asset_id"] == "A1")
-            a2 = next(j for j in serve.jobs if j["asset_id"] == "A2")
-            twin = dict(a1, n=serve.next_number())            # A1 nog een keer, zoals een asset dat twee keer liep
-            serve.jobs.append(twin)
-            waiting = dict(a2, n=serve.next_number(), asset_id="A3", title="Titel A3", status="wachtend")
-            serve.jobs.append(waiting)
+                job.set(status="klaar")
+            a1 = next(j for j in serve.jobs if j.asset_id == "A1")
+            a2 = next(j for j in serve.jobs if j.asset_id == "A2")
+            twin = serve.jobs.append(serve.job_list.Job(**dict(a1.view(), n=serve.jobs.next_number())))  # A1 nog een keer
+            waiting = serve.jobs.append(serve.job_list.Job(**dict(a2.view(), n=serve.jobs.next_number(), asset_id="A3",
+                                                                  title="Titel A3", status="wachtend")))
         kept = [serve.refine.core.TRANSCRIPTS_DIR / "A1.json", serve.refine.core.WAVES_DIR / "A1.waves",
                 serve.refine.DRAFTS_DIR / "A1.draft.json", serve.refine.core.TRANSCRIPTS_DIR / "A2.json"]
         for f in kept:
             f.parent.mkdir(parents=True, exist_ok=True)
             f.write_text("{}")
         page.goto(BASE + "/")
-        page.locator(f"#job-{waiting['n']}").click(position={"x": 4, "y": 4})
+        page.locator(f"#job-{waiting.n}").click(position={"x": 4, "y": 4})
         page.wait_for_timeout(300)
-        check("wachtende opdracht: geselecteerd, maar zonder ✕", page.locator(f"#job-{waiting['n']}.sel").count() == 1
-              and page.locator(f"#job-{waiting['n']} button.x").count() == 0)
+        check("wachtende opdracht: geselecteerd, maar zonder ✕", page.locator(f"#job-{waiting.n}.sel").count() == 1
+              and page.locator(f"#job-{waiting.n} button.x").count() == 0)
         page.keyboard.press("Backspace")
         page.wait_for_timeout(500)
-        check("⌫ haalt een wachtende opdracht niet weg", any(j["n"] == waiting["n"] for j in serve.jobs))
-        page.locator(f"#job-{a2['n']}").click(position={"x": 4, "y": 4})
-        page.locator(f"#job-{a2['n']} button.x").click()
-        page.locator(f"#job-{a2['n']}").wait_for(state="detached", timeout=5000)
-        check("✕ haalt één regel uit de lijst, de bestanden blijven", not any(j["n"] == a2["n"] for j in serve.jobs) and kept[3].exists())
-        page.locator(f"#job-{twin['n']}").click(button="right", position={"x": 4, "y": 4})
+        check("⌫ haalt een wachtende opdracht niet weg", any(j.n == waiting.n for j in serve.jobs))
+        page.locator(f"#job-{a2.n}").click(position={"x": 4, "y": 4})
+        page.locator(f"#job-{a2.n} button.x").click()
+        page.locator(f"#job-{a2.n}").wait_for(state="detached", timeout=5000)
+        check("✕ haalt één regel uit de lijst, de bestanden blijven", not any(j.n == a2.n for j in serve.jobs) and kept[3].exists())
+        page.locator(f"#job-{twin.n}").click(button="right", position={"x": 4, "y": 4})
         menu = page.locator("#menu")
         check("rechtsklik: menu met de vier keuzes", menu.get_by_role("menuitem").count() == 4)
         check("rechtsklik: uitleg bij 'ook van deze Mac'", "mediabestand blijft altijd staan"
@@ -353,13 +352,13 @@ with sync_playwright() as p:
         dialog.get_by_role("button", name="Log wissen").click()
         dialog.get_by_text("Log gewist.").wait_for(timeout=5000)
         dialog.get_by_role("button", name="Verwijder").click()
-        page.locator(f"#job-{twin['n']}").wait_for(state="detached", timeout=5000)
+        page.locator(f"#job-{twin.n}").wait_for(state="detached", timeout=5000)
         check("ook van deze Mac: beide regels van A1 weg, de wachtende blijft",
-              [j["asset_id"] for j in serve.jobs] == ["A3"], [j["asset_id"] for j in serve.jobs])
+              [j.asset_id for j in serve.jobs] == ["A3"], [j.asset_id for j in serve.jobs])
         check("ook van deze Mac: de bestanden van A1 weg, die van A2 niet", not any(f.exists() for f in kept[:3]) and kept[3].exists())
         serve.clear_log_hook = None
         for job in serve.jobs:
-            job["status"] = "klaar"
+            job.set(status="klaar")
 
         # Lijst opruimen vanuit het venster
         page.locator("#clear").click()
