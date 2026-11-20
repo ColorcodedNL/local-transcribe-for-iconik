@@ -328,6 +328,22 @@ with sync_playwright() as p:
         check("opdrachten op afstand uit", app_settings.stored("iconik.worker_enabled") is False)
         main.locator("#strip").get_by_text("Uit", exact=True).wait_for(timeout=5000)
         check("de statusstrook zegt dat op afstand uit staat", True)
+
+        # De opslag in de strook, met automatisch uit: wat de app echt ziet, niet alleen dat er een map is ingesteld.
+        folder = Path(tempfile.mkdtemp()) / "ProefISG"
+        serve.storage_names["isg1"] = "Proefopslag"
+        app_settings.update("iconik.mounts", lambda mounts: mounts.update(isg1=str(folder)))
+        serve.seen.update(offline=None, looked=[])
+        main.locator("#strip").get_by_text("Kijkt of de opslag bereikbaar is…").wait_for(timeout=5000)
+        check("strook: eerst kijken, niet meteen 'gekoppeld'", main.locator("#strip").get_by_text("gekoppeld").count() == 0)
+        serve.look_storage()
+        main.locator("#strip").get_by_text("Proefopslag niet bereikbaar").wait_for(timeout=5000)
+        check("strook: een map die er niet is heet niet bereikbaar, ook met automatisch uit", True)
+        folder.mkdir()
+        serve.look_storage()
+        main.locator("#strip").get_by_text("Proefopslag gekoppeld").wait_for(timeout=5000)
+        check("strook: en gekoppeld zodra hij er is", True)
+        app_settings.update("iconik.mounts", lambda mounts: mounts.pop("isg1", None))
         main.close()
         check("client-ID bleef bij al die wijzigingen staan", app_settings.stored("iconik.client_id") == other)
 

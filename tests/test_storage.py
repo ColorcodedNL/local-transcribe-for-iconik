@@ -134,6 +134,33 @@ online["/Volumes/B"] = True
 serve.check_storage(state)
 check("opslag terug: balk weg na deze ronde", not (serve.remote.state.get("auto") or {}).get("offline"),
       serve.remote.state.get("auto"))
+# --- de statusstrook, ook met auto uit: wat de app nu echt ziet (stil kijken, geen meldingen, werker ongemoeid) ---
+online = {"/Volumes/A": True, "/Volumes/B": False}
+transcribe.mount_reachable = lambda p: online[p]
+transcribe.save_config({"mounts": {"a": "/Volumes/A", "b": "/Volumes/B"}})
+serve.storage_names.update(a="Archief A", b="Archief B")
+serve.storage.update(offline=[], checked=0.0, warned=[])
+serve.seen.update(offline=None, looked=[])
+warnings.clear(), gone_seen.clear()
+check("strook: nog niet gekeken, dan ook niet 'gekoppeld'", serve.storage_view() == {"checked": False, "offline": []})
+serve.look_storage()
+check("strook: een opslag die weg is heet niet bereikbaar, met zijn naam", serve.storage_view() == {"checked": True, "offline": ["Archief B"]},
+      serve.storage_view())
+check("strook: stil kijken geeft geen melding en geen gele balk", not warnings and not gone_seen)
+check("strook: stil kijken laat de werker ongemoeid", serve.storage["offline"] == [] and serve.storage["checked"] == 0.0)
+online["/Volumes/B"] = True
+serve.look_storage()
+check("strook: weer bereikbaar", serve.storage_view() == {"checked": True, "offline": []})
+transcribe.save_config({"mounts": {"a": "/Volumes/A", "b": "/Volumes/B", "c": "/Volumes/C"}})
+online["/Volumes/C"] = False
+check("strook: een nieuw mount point is nog niet bekeken, dus ook niet 'gekoppeld'", serve.storage_view()["checked"] is False)
+serve.look_storage()
+check("strook: daarna wel", serve.storage_view() == {"checked": True, "offline": ["/Volumes/C"]}, serve.storage_view())
+serve.check_storage({"round": 5, "suspect": []})
+check("strook: met auto aan ziet de strook wat check_storage zag", serve.seen["offline"] == ["c"])
+serve.change_mount("c", remove=True)
+check("strook: een mount point weghalen laat opnieuw kijken", serve.storage_view()["checked"] is False)
+check("/state geeft de strook mee", "storage" in serve.app_state())
 transcribe.mount_reachable = real_reach
 
 print("\nAlles goed." if not fails else f"\n{fails} fout(en).")

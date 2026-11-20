@@ -137,7 +137,7 @@ const TEXT = {
     emptyTitle: "Nog geen opdrachten", connect: "Verbinden met Iconik…",
     emptyConnect: "Opdrachten komen uit Iconik. Verbind deze Mac eerst, kies daarna in Iconik een asset of collectie en kies Local Transcribe.",
     stripRemote: "Op afstand", stripAuto: "Automatisch", stripStorage: "Opslag (ISG)", remoteOn: "Aan, wacht op aanvragen", remoteOff: "Uit",
-    storageOk: "gekoppeld", toIntegrations: "Opent Instellingen › Integraties",
+    storageOk: "gekoppeld", storageGone: names => `${names} niet bereikbaar`, storageChecking: "Kijkt of de opslag bereikbaar is…", toIntegrations: "Opent Instellingen › Integraties",
     openRefine: "Openen in Refine", openIconik: "Openen in Iconik", removeRow: "Verwijder uit lijst", removeAll: "Verwijder ook van deze Mac…",
     removeAllTip: "Wist wat de app op deze Mac over dit item bewaart: de kopie van het transcript, golfvormen, concept en origineel van Refine. Het mediabestand blijft altijd staan.",
     removeTitle: t => `„${t}” ook van deze Mac verwijderen?`,
@@ -189,7 +189,7 @@ const TEXT = {
     emptyTitle: "No jobs yet", connect: "Connect to Iconik…",
     emptyConnect: "Jobs come from Iconik. Connect this Mac first, then pick an asset or collection in Iconik and choose Local Transcribe.",
     stripRemote: "Remote", stripAuto: "Automatic", stripStorage: "Storage (ISG)", remoteOn: "On, waiting for requests", remoteOff: "Off",
-    storageOk: "linked", toIntegrations: "Opens Settings › Integrations",
+    storageOk: "linked", storageGone: names => `${names} not reachable`, storageChecking: "Checking whether the storage is reachable…", toIntegrations: "Opens Settings › Integrations",
     openRefine: "Open in Refine", openIconik: "Open in Iconik", removeRow: "Remove from list", removeAll: "Also remove from this Mac…",
     removeAllTip: "Removes what the app keeps about this item on this Mac: the copy of the transcript, waveforms, draft and original of Refine. The media file always stays.",
     removeTitle: t => `Also remove “${t}” from this Mac?`,
@@ -440,7 +440,11 @@ function status(s) {
     if (w.enabled && w.auto_on && w.auto) cells.push([T.stripAuto, w.auto.ready ? "on" : "wait", w.auto.ready ? T.autoReady : `${T.autoWait}: ${autoReason(w.auto)}.`]);
     if ((s.mounts || []).length) {
       const names = s.mounts.map(m => m.name || "ISG " + m.id).join(", ");
-      cells.push([T.stripStorage, off.length ? "off" : "on", off.length ? T.storageOff(off.join(", ")) : `${names} ${T.storageOk}`]);
+      // Wat de app nu echt ziet, ook met automatisch transcriberen uit (dan zonder de zin over oppakken).
+      const st = s.storage || {}, gone = st.offline || [];
+      cells.push([T.stripStorage, ...(!st.checked ? ["wait", T.storageChecking]
+        : off.length ? ["off", T.storageOff(off.join(", "))]
+        : gone.length ? ["off", T.storageGone(gone.join(", "))] : ["on", `${names} ${T.storageOk}`])]);
     }
   }
   const html = cells.map(([label, dot, text]) => `<div><dt>${esc(label)}</dt><dd><i class="dot ${dot}"></i>${esc(text)}</dd></div>`).join("");

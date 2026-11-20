@@ -432,6 +432,8 @@ def change_mount(storage_id, remove=False):
     mounts = setting.get("iconik.mounts")
     if storage_id not in mounts:
         return
+    seen.update(offline=None, looked=[])     # opnieuw kijken voor de statusstrook
+    storage_wake.set()
     if remove:
         transcribe.set_mount(storage_id, None)
         return
@@ -441,6 +443,7 @@ def change_mount(storage_id, remove=False):
         f"ISG \u201c{name}\u201d: choose the mount point of this ISG on this Mac."), mounts[storage_id])
     if folder:
         transcribe.set_mount(storage_id, folder)   # na het venster opnieuw gelezen, zie set_mount
+        storage_wake.set()
 
 
 def iconik_account():
@@ -484,7 +487,7 @@ def app_state():
     # Alleen wat het opdrachtenvenster gebruikt; het venster Instellingen haalt zijn gegevens bij /settings-data.
     return {
         "jobs": out, "account": account, "actions": actions.get("state", "onbekend"), "lang": transcribe.app_language(),
-        "update": update_view(), "mounts": mount_list(setting.get("iconik.mounts")),
+        "update": update_view(), "mounts": mount_list(setting.get("iconik.mounts")), "storage": storage_view(),
         "worker": dict(remote.state, enabled=worker_enabled(), machine=remote.machine_name(),
                        machine_alias=remote.machine_alias[0], computer=remote.computer_name(),
                        login=login_item_on(), login_available=bundle_path() is not None,
@@ -1552,6 +1555,9 @@ STORAGE_CHECK = 30     # met auto aan: zo vaak kijken of de opslag (ISG) nog gek
 STORAGE_TIMEOUT = 5    # een netwerkkoppeling die zo lang niet antwoordt telt als weg
 STORAGE_RECHECK = 15   # net weg (of opstarten): zo snel nog eens kijken voordat er een waarschuwing komt
 storage = {"offline": [], "checked": 0.0, "warned": []}   # storage-ID's; "warned": waarvoor de waarschuwing al kwam
+# Wat de statusstrook in het venster toont, ook met auto uit: de storage-ID's die bij de laatste blik niet bereikbaar
+# waren, of None zolang er nog niet gekeken is. Alleen voor de weergave: geen meldingen, geen invloed op de werker.
+seen = {"offline": None, "looked": []}
 storage_wake = threading.Event()
 storage_hook = None    # het venster zet hier een functie(soort, namen): "startup", "lost" of "back"
 storage_pending = []   # waarschuwingen van voor het venster er was
@@ -1607,6 +1613,7 @@ def check_storage(state):
     offline = [storage_id for storage_id, path in mounts.items() if not path_reachable(path)]
     storage["offline"] = offline
     storage["checked"] = time.time()
+    seen.update(offline=offline, looked=list(mounts))
     warned = [storage_id for storage_id in storage["warned"] if storage_id in mounts]
     new = [storage_id for storage_id in offline if storage_id in state["suspect"] and storage_id not in warned]
     back = [storage_id for storage_id in warned if storage_id not in offline]
@@ -1635,8 +1642,27 @@ def check_storage(state):
     return STORAGE_RECHECK if pending else STORAGE_CHECK
 
 
+def look_storage():
+    """Stil kijken, voor de statusstrook: welke opslag (ISG) nu niet bereikbaar is. Met dezelfde tijdslimiet als
+    check_storage, maar zonder meldingen en zonder dat de werker er iets mee doet."""
+    mounts = setting.get("iconik.mounts")
+    seen.update(offline=[storage_id for storage_id, path in mounts.items() if not path_reachable(path)], looked=list(mounts))
+
+
+def storage_view():
+    """Voor het venster: {"checked": elk mount point is al bekeken, "offline": namen van wat niet bereikbaar is}."""
+    mounts = setting.get("iconik.mounts")
+    offline = seen["offline"]
+    if offline is None or any(storage_id not in seen["looked"] for storage_id in mounts):
+        if offline is not None:
+            storage_wake.set()     # een nieuw mount point: meteen kijken
+        return {"checked": False, "offline": []}
+    return {"checked": True, "offline": storage_labels([storage_id for storage_id in offline if storage_id in mounts])}
+
+
 def watch_storage():
-    """Draait altijd, kijkt alleen met auto transcribe aan."""
+    """Draait altijd. Met auto transcribe aan: kijken, waarschuwen en de werker bijsturen (check_storage). Met auto
+    uit alleen stil kijken voor de statusstrook (look_storage)."""
     state = {"round": 0, "suspect": []}
     while True:
         wait = STORAGE_CHECK
@@ -1648,6 +1674,7 @@ def watch_storage():
                     storage_hook("back", [])   # auto staat uit: waarschuwing weghalen
                 storage.update(offline=[], checked=0.0, warned=[])
                 state.update(round=0, suspect=[], shown=[])
+                look_storage()
         except Exception as error:
             print(f"Opslag bewaken: {error}")
         storage_wake.wait(wait)
