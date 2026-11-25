@@ -35,6 +35,9 @@ LOGIN_LOCK = threading.Lock()
 # leest ze voordat de connector zelf gestart is.
 S = settings.Setting
 SETTINGS = [
+    S("iconik.name", "text", "", ("Naam in deze app", "Name in this app"),
+      ("Leeg: Iconik, of Iconik (2) en verder als er meer zijn. Alleen op deze Mac.",
+       "Empty: Iconik, or Iconik (2) and so on when there are more. Only on this Mac."), max_length=40),
     S("iconik.host", "text", "https://app.iconik.io", ("Iconik-adres", "Iconik address"),
       ("Alleen anders bij een eigen Iconik-omgeving.", "Only different for an own Iconik environment."),
       flat="host", pattern=r"https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/?", max_length=200),

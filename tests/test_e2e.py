@@ -15,6 +15,7 @@ import os
 import sys
 import tempfile
 import threading
+import time
 import traceback
 import types
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -86,6 +87,7 @@ for page_file in ("ui.html", "settings.html", "refine.html"):
 # --- Nep-Iconik: OAuth met PKCE, token, gebruiker, knoppen, titels
 ICON_PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==")
 CLIENT_IDS = {"11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"}
+DOMAIN = "dddddddd-1111-2222-3333-444444444444"   # system_domain_id van de nep-omgeving, zoals Iconik hem bij de gebruiker geeft
 iconik = {"codes": {}, "tokens": set(), "pkce_ok": 0, "authorize": 0, "bad": []}
 
 
@@ -146,7 +148,8 @@ class FakeIconik(BaseHTTPRequestHandler):
             return self.send(401, {"error": "unauthorized"})
         path = url.path.removeprefix("/API/")
         if path == "users/v1/users/current/":
-            return self.send(200, {"first_name": "Test", "last_name": "Gebruiker", "email": "test@example.com"})
+            return self.send(200, {"first_name": "Test", "last_name": "Gebruiker", "email": "test@example.com",
+                                   "system_domain_id": DOMAIN})
         if path.startswith("assets/v1/custom_actions/"):
             return self.send(200, {"objects": [{"context": c, "url": url} for _, url, contexts in serve.ACTIONS for c in contexts]})
         if path.startswith("assets/v1/assets/"):
@@ -580,6 +583,48 @@ with sync_playwright() as p:
         page.locator("#login").click()
         page.locator("#logout").wait_for(timeout=10000)
         check("Integraties: + en een client-ID, daarna ingelogd", logged_in() and app_settings.stored("iconik.client_id") == other)
+
+        # 12. Twee Iconiks (stap 5e): elk een regel in de lijst met een eigen naam; een tweede koppeling naar dezelfde
+        # omgeving zegt dat en heeft geen schakelaars voor de rij; een opdracht toont bij welke Iconik hij hoort.
+        first = app_settings.instances("iconik")[0]
+        second = app_settings.add_integration("iconik")
+        app_settings.raw_put("iconik.host", FAKE, second)
+        app_settings.put("iconik.client_id", sorted(CLIENT_IDS)[0], second)
+        iconik["tokens"].add("tweede-token")
+        transcribe.save_login({"access_token": "tweede-token", "refresh_token": "r2", "expires_at": time.time() + 3600}, second)
+        page.goto(BASE + "/settings-window?tab=integrations")
+        page.locator(".item >> nth=1").wait_for(timeout=5000)
+        names = [t.split("\n")[0] for t in page.locator(".item .nm").all_inner_texts()]
+        check("twee Iconiks: twee regels, Iconik en Iconik (2)", names == ["Iconik", "Iconik (2)"], names)
+        check("twee Iconiks: de eerste is gekozen", page.locator(f'.item[data-instance="{first}"]').get_attribute("aria-current") == "true")
+        page.locator(f'.item[data-instance="{second}"]').click()
+        page.wait_for_function("document.querySelector('.iname').textContent === 'Iconik (2)'", timeout=5000)
+        check("twee Iconiks: de tweede gekozen, het naamveld toont de automatische naam",
+              page.locator("#f-iconik-name").get_attribute("placeholder") == "Iconik (2)")
+        page.locator("#f-iconik-name").fill("Archief")
+        page.locator("#f-iconik-name").press("Enter")
+        page.wait_for_function("document.querySelector('.iname').textContent === 'Archief'", timeout=5000)
+        check("twee Iconiks: eigen naam bewaard bij de tweede, niet bij de eerste",
+              app_settings.stored("iconik.name", second) == "Archief" and app_settings.stored("iconik.name", first) is None)
+        page.locator("#sameEnv").wait_for(timeout=10000)   # het domein wordt op de achtergrond opgehaald
+        check("twee Iconiks: dezelfde omgeving als de eerste, met de naam van de eerste erin",
+              "Iconik" in page.locator("#sameEnv").inner_text() and page.locator("#f-iconik-worker_enabled").count() == 0
+              and page.locator("#f-iconik-iconik_language").count() == 0 and page.locator("#installActions").count() == 0)
+        page.locator(f'.item[data-instance="{first}"]').click()
+        page.locator("#f-iconik-worker_enabled").wait_for(timeout=5000)
+        check("twee Iconiks: de eerste heeft de schakelaars voor de rij, zonder melding", page.locator("#sameEnv").count() == 0
+              and page.locator(".iname").inner_text() == "Iconik")
+        with serve.jobs_lock:
+            serve.jobs.append(serve.job_list.Job(n=serve.jobs.next_number(), item=f"{second}:abcdef12", asset_id="abcdef12",
+                                                 title="Uit het archief", status="klaar"))
+            serve.jobs.append(serve.job_list.Job(n=serve.jobs.next_number(), item=f"{first}:abcdef13", asset_id="abcdef13",
+                                                 title="Uit de eerste", status="klaar"))
+        page.goto(BASE + "/")
+        page.locator(".tag.source").first.wait_for(timeout=5000)
+        tags = {page.locator(".job", has_text=t).locator(".tag.source").inner_text() for t in ("Uit het archief", "Uit de eerste")}
+        check("twee Iconiks: elke opdracht toont bij welke Iconik hij hoort", tags == {"Archief", "Iconik"}, tags)
+        check("twee Iconiks: rechtsboven: ingelogd bij beide", page.locator("#who").inner_text() == "Ingelogd bij 2 Iconiks",
+              page.locator("#who").inner_text())
 
         browser.close()
     except Exception as error:

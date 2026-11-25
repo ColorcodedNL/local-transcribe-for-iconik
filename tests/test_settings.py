@@ -52,11 +52,13 @@ S = settings.SCHEMA
 check("schema: elke sleutel is groep.naam", all(k.count(".") == 1 for k in S))
 check("schema: groepen zijn bekend", {s.group for s in S.values()} <= {"general", "transcription", "refine", "iconik"},
       {s.group for s in S.values()})
-check("schema: elke oude naam één keer", len({s.flat for s in S.values()}) == len(S) and all(s.flat for s in S.values()))
+flats = [s.flat for s in S.values() if s.flat]
+check("schema: elke oude naam één keer, de 18 van 0.6 hebben er een", len(set(flats)) == len(flats) == 18, flats)
+check("schema: zonder oude naam alleen wat er sinds stap 5 bij kwam", [k for k, s in S.items() if not s.flat] == ["iconik.name"])
 check("schema: label en uitleg in twee talen", all(len(s.label) == 2 and all(s.label) and len(s.help) == 2 for s in S.values()))
 check("schema: elke standaardwaarde is zelf geldig",
       all(settings._usable(s, s.default) for s in S.values()), [k for k, s in S.items() if not settings._usable(s, s.default)])
-check("schema: 18 instellingen", len(S) == 18, len(S))
+check("schema: 19 instellingen", len(S) == 19, len(S))
 
 # --- standaardwaarden gelijk aan wat de code nu zelf gebruikt ---
 check("standaard: ruimtegrenzen gelijk aan resources.DEFAULTS",
@@ -150,7 +152,7 @@ check("geen losse lezers van config.json meer in app/", not loose, loose)
 check("aanmelden: de engine brengt zijn modelbuffer mee", S.get("transcription.mlx_cache_gb") is whisper_mlx.CACHE_SETTING)
 check("aanmelden: settings.py zelf kent geen MLX", "mlx" not in Path("app/settings.py").read_text().lower())
 check("aanmelden: dezelfde nog eens is goed", settings.register(whisper_mlx.CACHE_SETTING) is whisper_mlx.CACHE_SETTING
-      and len(S) == 18)
+      and len(S) == 19)
 try:
     settings.register(settings.Setting("transcription.mlx_cache_gb", "number", 5.0, ("x", "x")))
     check("aanmelden: een andere met dezelfde sleutel wordt geweigerd", False)

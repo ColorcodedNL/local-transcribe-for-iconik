@@ -95,6 +95,37 @@ def first_iconik():
     return found[0] if found else None
 
 
+def iconik_name(instance, own=True):
+    """Hoe een Iconik in de app heet: de eigen naam uit Instellingen, anders Iconik, Iconik (2), ... op volgorde van
+    koppelen (besloten 25 november; Iconik geeft zelf geen naam voor een omgeving, gemeten met tools/name_probe.py)."""
+    name = (setting.get("iconik.name", instance) or "").strip() if own and instance in iconiks() else ""
+    if name:
+        return name
+    found = iconiks()
+    number = found.index(instance) + 1 if instance in found else 1
+    return "Iconik" if number == 1 else f"Iconik ({number})"
+
+
+def iconik_rows():
+    """De Iconiks voor de lijst in Instellingen: id, soort, naam, hoe verbonden, icoon."""
+    rows = []
+    for item in setting.integrations():
+        if item["type"] != "iconik":
+            continue
+        account, _ = iconik_account(item["id"])
+        rows.append(dict(item, name=iconik_name(item["id"]), account=account, icon=integration_icon(item["id"])))
+    return rows
+
+
+def iconik_strip(instance):
+    """Wat de statusstrook van het opdrachtenvenster per Iconik toont."""
+    state = remote.state_of(instance)
+    return {"id": instance, "name": iconik_name(instance), "account": iconik_account(instance)[0],
+            "same_as": items.same_environment(instance),
+            "worker": {"enabled": worker_enabled(instance), "paused_until": state.get("paused_until"),
+                       "pause_reason": state.get("pause_reason") or "", "error": state.get("error") or "",
+                       "auto_on": bool(setting.get("iconik.auto_transcribe", instance)), "auto": state.get("auto")}}
+
 # Wat de app per Iconik bijhoudt voor het venster: wie er is ingelogd en of de knoppen in Iconik staan. De eerste
 # Iconik houdt de namen van vóór stap 5 (who, actions); een volgende krijgt een eigen set.
 _other_iconiks = {}
@@ -528,6 +559,7 @@ def app_state():
     """Alles wat het venster toont, als gegevens."""
     now = datetime.now()
     out = []
+    several = len(iconiks()) > 1
     for row in jobs.views():
         end = row["finished"] or now
         out.append({
@@ -540,6 +572,7 @@ def app_state():
             "refine": refine.marks(row["item"]) if row["status"] == "klaar" and row["item"] else None,
             "elapsed": (end - row["started"]).total_seconds() if row["started"] else None,
             "auto": row["auto"],
+            "source": iconik_name(items.source(row["item"])) if several and items.is_iconik(row["item"]) else "",
         })
     first = first_iconik()
     account, _ = iconik_account(first)
@@ -547,6 +580,7 @@ def app_state():
     # De statusstrook toont (nog) de eerste Iconik; per Iconik komt met het venster van stap 5e-2.
     return {
         "jobs": out, "account": account, "actions": bits(first)["actions"].get("state", "onbekend"), "lang": transcribe.app_language(),
+        "iconiks": [iconik_strip(instance) for instance in iconiks()],
         "update": update_view(), "mounts": mount_list(setting.get("iconik.mounts", first), first), "storage": storage_view(),
         "worker": dict(remote.state_of(first), enabled=worker_enabled(first), machine=remote.machine_name(first),
                        machine_alias=remote.alias_of(first), computer=remote.computer_name(),
@@ -856,7 +890,9 @@ def _iconik_extra(instance=None):
     worker = dict(remote.state_of(instance), enabled=worker_enabled(instance), machine=remote.machine_name(instance),
                   machine_alias=remote.alias_of(instance), computer=remote.computer_name(), awake=awake["on"])
     same = items.same_environment(instance) if instance else None
-    return {"instances": setting.integrations(), "instance": instance, "same_as": same,
+    return {"instances": iconik_rows(), "instance": instance, "name": iconik_name(instance) if instance else "Iconik",
+            "auto_name": iconik_name(instance, own=False) if instance else "Iconik",
+            "same_as": same, "same_as_name": iconik_name(same) if same else "",
             "account": account, "user": bits(instance)["who"].get("name", ""),
             "has_client_id": bool(client_id), "actions": bits(instance)["actions"].get("state", "onbekend"),
             "mounts": mount_list(setting.get("iconik.mounts", instance), instance) if instance else [],
@@ -1328,7 +1364,7 @@ def _asset_open(h, r):
 
 @route("/actions/install", protected=True)
 def _actions_install(h, r):
-    install_actions()
+    install_actions(r.first("instance") if r.first("instance") in iconiks() else None)
     return _ok(h)
 
 
@@ -1384,7 +1420,7 @@ def _login(h, r):
     pending_back.clear()
     pending_login[state] = (verifier, instance)
     if r.first("back") == "settings":   # ingelogd vanuit Instellingen: daarna daar terug, niet naar /
-        pending_back[state] = "/settings-window?tab=integrations"
+        pending_back[state] = "/settings-window?tab=integrations" + (f"&instance={instance}" if instance else "")
     return h.redirect(address)
 
 

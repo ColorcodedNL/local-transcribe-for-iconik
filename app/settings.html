@@ -84,6 +84,7 @@ button.fold span { color: var(--muted); width: 10px; display: inline-block; }
 .detail { flex: 1; min-width: 0; }
 .ihead { display: flex; align-items: center; gap: 12px; margin: 2px 0 16px; } .iname { font-size: 16px; font-weight: 650; }
 .ihead .state { display: flex; align-items: center; gap: 6px; }
+.note { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 10px 14px; margin: 0 0 16px; color: var(--muted); }
 button.link { all: unset; color: var(--accent-text); cursor: pointer; }
 .tag { font-size: 11px; font-weight: 600; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; }
 </style>
@@ -158,6 +159,7 @@ const TEXT = {
     fieldsDone: "Bijgewerkt in Iconik.",
     noIntegrations: "Nog geen integraties.", addHint: "Kies + om Iconik toe te voegen.", add: "Integratie toevoegen", remove: "Integratie verwijderen",
     oneIconik: "Er kan nu één Iconik-koppeling zijn.",
+    sameEnv: n => `Dezelfde Iconik-omgeving als ${n}. Opdrachten op afstand, automatisch transcriberen, de knoppen en de labels in Iconik lopen via ${n}; hier staan ze daarom niet.`,
     removeTitle: "Iconik verwijderen?", removeHelp: "Je wordt uitgelogd en de instellingen van deze koppeling (adres, opslag, op afstand, automatisch) worden vergeten. Transcripten in Iconik blijven staan.",
     cancel: "Annuleer", removeConfirm: "Verwijder",
   },
@@ -206,6 +208,7 @@ const TEXT = {
     fieldsDone: "Updated in Iconik.",
     noIntegrations: "No integrations yet.", addHint: "Choose + to add Iconik.", add: "Add integration", remove: "Remove integration",
     oneIconik: "There can be one Iconik integration for now.",
+    sameEnv: n => `The same Iconik environment as ${n}. Remote jobs, auto transcribe, the buttons and the labels in Iconik go through ${n}, so they are not here.`,
     removeTitle: "Remove Iconik?", removeHelp: "You are logged out and the settings of this integration (address, storage, remote, auto) are forgotten. Transcripts in Iconik stay.",
     cancel: "Cancel", removeConfirm: "Remove",
   },
@@ -217,7 +220,10 @@ const KEY = "settings.tab";   // de laatste tab; het venster bewaart zijn opslag
 const AUTO = ["transcription.auto_min_free_gb", "transcription.auto_max_cpu", "transcription.auto_max_gpu"];
 const HDR = {"X-Local-Transcribe": "1"};
 let current = "general", data = {}, errors = {}, ui = {adjust: false, advanced: false, clearArmed: false, adding: false, fieldsMsg: "",
-    loginFailed: new URLSearchParams(location.search).get("login") === "failed"};
+    loginFailed: new URLSearchParams(location.search).get("login") === "failed",
+    instance: new URLSearchParams(location.search).get("instance") || ""};   // de gekozen Iconik bij Integraties
+// Alles op de tab Integraties hoort bij de gekozen Iconik: ?instance= bij elk verzoek.
+const inst = (sep = "&") => ui.instance ? `${sep}instance=${encodeURIComponent(ui.instance)}` : "";
 const GROUP = {general: "general", transcription: "transcription", integrations: "iconik"};   // tab -> groep in het schema
 const PLUG = '<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M9 7V3M15 7V3M7 7h10v4a5 5 0 0 1-10 0V7zM12 16v5"/></svg>';
 
@@ -319,24 +325,31 @@ const logo = (icon, big) => icon
 function drawIntegrations() {
   const x = data.extra, v = data.values, w = x.worker;
   const has = x.instances.some(i => i.type === "iconik") || x.account !== "geen";
-  const dot = {gebruiker: "on", token: "on", uitgelogd: "off", geen: ""}[x.account];
+  const DOT = {gebruiker: "on", token: "on", uitgelogd: "off", geen: ""}, dot = DOT[x.account];
+  const item = i => `<button class="item" data-instance="${esc(i.id)}" aria-current="${i.id === x.instance}">${logo(i.icon)}`
+    + `<span class="nm">${esc(i.name)}<small>${esc(T.short[i.account])}</small></span><i class="dot ${DOT[i.account]}"></i></button>`;
+  const rows = x.instances.filter(i => i.type === "iconik");
   const list = `<div class="ilist"><div class="items">` +
-    (has || ui.adding ? `<button class="item" aria-current="true">${logo(x.icon)}<span class="nm">Iconik<small>${esc(T.short[x.account])}</small></span><i class="dot ${dot}"></i></button>`
-                      : `<p class="state" style="padding:8px">${esc(T.noIntegrations)}</p>`) +
+    (rows.length ? rows.map(item).join("")
+     : has || ui.adding ? `<button class="item" aria-current="true">${logo(x.icon)}<span class="nm">Iconik<small>${esc(T.short[x.account])}</small></span><i class="dot ${dot}"></i></button>`
+     : `<p class="state" style="padding:8px">${esc(T.noIntegrations)}</p>`) +
     `</div><div class="pm"><button class="btn" id="addIntegration" aria-label="${esc(T.add)}" ${has ? `disabled title="${esc(T.oneIconik)}"` : ""}>+</button>` +
     `<button class="btn" id="removeIntegration" aria-label="${esc(T.remove)}" ${x.instances.some(i => i.type === "iconik") ? "" : "disabled"}>−</button></div></div>`;
   if (!has && !ui.adding) return `<div class="split">${list}<div class="detail"><p class="empty">${esc(T.addHint)}</p></div></div>`;
 
   const status = {gebruiker: T.accAs(x.user), token: T.accToken, uitgelogd: T.accOut, geen: T.accNone}[x.account];
-  let html = `<div class="ihead">${logo(x.icon, true)}<div><div class="iname">Iconik</div><div class="state"><i class="dot ${dot}"></i>${esc(status)}</div></div></div>`;
-  const account = [settingRow(spec("iconik.host")), settingRow(spec("iconik.client_id"))];
+  let html = `<div class="ihead">${logo(x.icon, true)}<div><div class="iname">${esc(x.name)}</div><div class="state"><i class="dot ${dot}"></i>${esc(status)}</div></div></div>`;
+  if (x.same_as) html += `<div class="note" id="sameEnv">${esc(T.sameEnv(x.same_as_name))}</div>`;
+  const nameSpec = spec("iconik.name");
+  const account = [row(esc(nameSpec.label), esc(nameSpec.help), control(nameSpec, v["iconik.name"]).replace("<input ", `<input placeholder="${esc(x.auto_name)}" `), "iconik.name"),
+                   settingRow(spec("iconik.host")), settingRow(spec("iconik.client_id"))];
   if (x.account === "gebruiker") account.push(row(esc(T.accAs(x.user)), "", `<button class="btn" id="logout">${esc(T.logout)}</button>`));
   else if (x.account !== "token")
     account.push(row(esc(x.has_client_id ? T.accOut : T.accNeedId), ui.loginFailed ? `<span class="err">${esc(T.loginFailed)}</span>` : "",
                      `<button class="go" id="login" ${x.has_client_id ? "" : "disabled"}>${esc(T.iconikLogin)}</button>`));
   html += group(T.account, account);
   const online = x.account === "gebruiker" || x.account === "token";
-  if (online) {
+  if (online && !x.same_as) {   // de knoppen en de labels gelden voor de hele omgeving: via de eerste koppeling
     const text = {aanwezig: T.btnPresent, ontbreekt: T.btnMissing, geweigerd: T.btnDenied}[x.actions] || T.btnChecking;
     html += group(T.buttons, [row(esc(text), "", x.actions === "ontbreekt" ? `<button class="btn" id="installActions">${esc(T.btnInstall)}</button>` : "")]);
   }
@@ -352,8 +365,8 @@ function drawIntegrations() {
       `<input type="text" id="f-iconik-machine_name" data-key="iconik.machine_name" value="${esc(v["iconik.machine_name"])}" placeholder="${esc(w.computer || "")}" maxlength="40" aria-label="${esc(spec("iconik.machine_name").label)}">`, "iconik.machine_name"));
     remote.push(`<div class="row"><div class="lbl help" style="margin:0">${esc(workerLine(w))}</div>${w.paused_until ? `<button class="btn" id="resumeNow">${esc(T.resumeNow)}</button>` : ""}</div>`);
   }
-  html += group(T.remote, remote);
-  if (w.enabled) {
+  if (!x.same_as) html += group(T.remote, remote);
+  if (w.enabled && !x.same_as) {
     const auto = [withHelp("iconik.auto_transcribe", T.autoHelp, ` <button class="link" id="toLimits">${esc(T.seeLimits)}</button>`, T.autoOn)];
     if (v["iconik.auto_transcribe"]) {
       auto.push(withHelp("iconik.auto_audio", T.autoAudioHelp));
@@ -362,13 +375,13 @@ function drawIntegrations() {
     }
     html += group(T.auto, auto);
   }
-  if (online) html += group(T.labels, [row(esc(spec("iconik.iconik_language").label), esc(T.fieldsHelp) + (ui.fieldsMsg ? `<div class="state">${esc(ui.fieldsMsg)}</div>` : ""),
+  if (online && !x.same_as) html += group(T.labels, [row(esc(spec("iconik.iconik_language").label), esc(T.fieldsHelp) + (ui.fieldsMsg ? `<div class="state">${esc(ui.fieldsMsg)}</div>` : ""),
                                            control(spec("iconik.iconik_language"), v["iconik.iconik_language"]), "iconik.iconik_language")]);
   return `<div class="split">${list}<div class="detail">${html}</div></div>`;
 }
 
 function confirmRemove() {
-  const item = data.extra.instances.find(i => i.type === "iconik");
+  const item = data.extra.instances.find(i => i.id === ui.instance) || data.extra.instances.find(i => i.type === "iconik");
   if (!item) return;
   const sheet = $("sheet");
   sheet.innerHTML = `<div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(T.removeTitle)}"><h2>${esc(T.removeTitle)}</h2>
@@ -380,7 +393,7 @@ function confirmRemove() {
   $("removeCancel").onclick = closeSheet;
   $("removeConfirm").onclick = async () => {
     const r = await fetch("/integrations/remove?id=" + encodeURIComponent(item.id), {method: "POST", headers: HDR}).then(r => r.json()).catch(() => ({ok: false}));
-    if (r.ok) { ui.adding = false; closeSheet(); } else $("removeErr").textContent = r.error || T.failed;
+    if (r.ok) { ui.adding = false; ui.instance = ""; closeSheet(); } else $("removeErr").textContent = r.error || T.failed;
   };
 }
 
@@ -396,16 +409,17 @@ function draw() {
 
 async function load(tab) {
   if (!DRAW[tab]) return;
-  const r = await fetch("/settings-data?group=" + GROUP[tab]);
+  const r = await fetch("/settings-data?group=" + GROUP[tab] + (tab === "integrations" ? inst() : ""));
   if (!r.ok) return;
   if (tab !== current) return;
   data = await r.json();
+  if (tab === "integrations") ui.instance = data.extra.instance || "";   // zonder keuze: de eerste Iconik
   draw();
 }
 
 // --- bewaren: meteen, tekstvelden bij Enter of het verlaten van het veld ---
 async function save(key, value) {
-  const result = await post("/settings", {[key]: value}).catch(() => ({ok: false, errors: {[key]: T.failed}}));
+  const result = await post("/settings" + (key.startsWith("iconik.") ? inst("?") : ""), {[key]: value}).catch(() => ({ok: false, errors: {[key]: T.failed}}));
   if (result.ok) {
     delete errors[key];
     if (key === "general.app_language") { location.reload(); return; }   // de pagina komt terug in de nieuwe taal
@@ -439,16 +453,20 @@ document.addEventListener("click", async e => {
   else if (id === "backRecommended") { ui.adjust = false; await post("/settings/reset", {keys: AUTO}); AUTO.forEach(k => delete errors[k]); load(current); }
   else if (id === "advanced") { ui.advanced = !ui.advanced; draw(); }
   else if (id === "showList") openSheet();
-  else if (id === "login") location.href = "/login?back=settings";
-  else if (id === "logout") { await fetch("/logout", {method: "POST", headers: HDR}); load(current); }
-  else if (id === "installActions") { e.target.closest("button").disabled = true; await fetch("/actions/install", {method: "POST", headers: HDR}); load(current); }
-  else if (id === "resumeNow") { await fetch("/worker?value=resume", {method: "POST", headers: HDR}); load(current); }
+  else if (id === "login") location.href = "/login?back=settings" + inst();
+  else if (id === "logout") { await fetch("/logout" + inst("?"), {method: "POST", headers: HDR}); load(current); }
+  else if (id === "installActions") { e.target.closest("button").disabled = true; await fetch("/actions/install" + inst("?"), {method: "POST", headers: HDR}); load(current); }
+  else if (id === "resumeNow") { await fetch("/worker?value=resume" + inst(), {method: "POST", headers: HDR}); load(current); }
+  else if (e.target.closest("[data-instance]")) {
+    const pick = e.target.closest("[data-instance]").dataset.instance;
+    if (pick !== ui.instance) { ui.instance = pick; ui.fieldsMsg = ""; errors = {}; ui.loginFailed = false; load(current); }
+  }
   else if (id === "addIntegration") { ui.adding = true; draw(); }
   else if (id === "removeIntegration") confirmRemove();
   else if (id === "toLimits") show("transcription");
   else if (e.target.closest("[data-mount]")) {
     const b = e.target.closest("[data-mount]");
-    await fetch(`/mount/${b.dataset.mount}?id=${encodeURIComponent(b.dataset.id)}`, {method: "POST", headers: HDR});
+    await fetch(`/mount/${b.dataset.mount}?id=${encodeURIComponent(b.dataset.id)}${inst()}`, {method: "POST", headers: HDR});
     load(current);
   }
   else if (id === "clearOriginals") {

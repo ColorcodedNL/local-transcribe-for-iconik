@@ -138,6 +138,7 @@ const TEXT = {
     emptyConnect: "Opdrachten komen uit Iconik. Verbind deze Mac eerst, kies daarna in Iconik een asset of collectie en kies Local Transcribe.",
     stripRemote: "Op afstand", stripAuto: "Automatisch", stripStorage: "Opslag (ISG)", remoteOn: "Aan, wacht op aanvragen", remoteOff: "Uit",
     storageOk: "gekoppeld", storageGone: names => `${names} niet bereikbaar`, storageChecking: "Kijkt of de opslag bereikbaar is…", toIntegrations: "Opent Instellingen › Integraties",
+    allOn: n => `Ingelogd bij ${n} Iconiks`, notAllOn: names => `Niet ingelogd: ${names}`,
     openRefine: "Openen in Refine", openIconik: "Openen in Iconik", removeRow: "Verwijder uit lijst", removeAll: "Verwijder ook van deze Mac…",
     removeAllTip: "Wist wat de app op deze Mac over dit item bewaart: de kopie van het transcript, golfvormen, concept en origineel van Refine. Het mediabestand blijft altijd staan.",
     removeTitle: t => `„${t}” ook van deze Mac verwijderen?`,
@@ -190,6 +191,7 @@ const TEXT = {
     emptyConnect: "Jobs come from Iconik. Connect this Mac first, then pick an asset or collection in Iconik and choose Local Transcribe.",
     stripRemote: "Remote", stripAuto: "Automatic", stripStorage: "Storage (ISG)", remoteOn: "On, waiting for requests", remoteOff: "Off",
     storageOk: "linked", storageGone: names => `${names} not reachable`, storageChecking: "Checking whether the storage is reachable…", toIntegrations: "Opens Settings › Integrations",
+    allOn: n => `Logged in to ${n} Iconiks`, notAllOn: names => `Not logged in: ${names}`,
     openRefine: "Open in Refine", openIconik: "Open in Iconik", removeRow: "Remove from list", removeAll: "Also remove from this Mac…",
     removeAllTip: "Removes what the app keeps about this item on this Mac: the copy of the transcript, waveforms, draft and original of Refine. The media file always stays.",
     removeTitle: t => `Also remove “${t}” from this Mac?`,
@@ -272,6 +274,8 @@ async function removeJob(n, everything) {
   if (r.ok) selected = null;
   tick();
 }
+// Een asset openen in de Iconik waar de opdracht vandaan komt (het item zegt welke).
+const openAsset = (asset, item) => "/asset/open?id=" + encodeURIComponent(asset) + (item ? "&item=" + encodeURIComponent(item) : "");
 function closeMenu() { $("menu").hidden = true; $("menu").innerHTML = ""; }
 function openMenu(job, x, y) {
   const can = removable(job), ref = job.item, asset = job.asset_id;
@@ -286,7 +290,7 @@ function openMenu(job, x, y) {
     const b = e.target.closest("button[data-act]"); if (!b || b.disabled) return;
     closeMenu();
     if (b.dataset.act === "refine") location.href = "/refine?item=" + encodeURIComponent(ref);
-    else if (b.dataset.act === "iconik") act("/asset/open?id=" + encodeURIComponent(asset));
+    else if (b.dataset.act === "iconik") act(openAsset(asset, ref));
     else if (b.dataset.act === "remove") removeJob(job.n, false);
     else confirmAll(job);
   };
@@ -325,7 +329,7 @@ $("list").onclick = e => {
   const x = e.target.closest("[data-remove]"); if (x) { removeJob(Number(x.dataset.remove), false); return; }
   const s = e.target.closest("[data-subtitles]"); if (s) { location.href = "/refine?item=" + encodeURIComponent(s.dataset.subtitles) + "&tab=subtitles"; return; }
   const r = e.target.closest("[data-refine]"); if (r) { location.href = "/refine?item=" + encodeURIComponent(r.dataset.refine); return; }
-  const a = e.target.closest("[data-asset]"); if (a && !window.getSelection().toString()) { act("/asset/open?id=" + encodeURIComponent(a.dataset.asset)); return; }
+  const a = e.target.closest("[data-asset]"); if (a && !window.getSelection().toString()) { act(openAsset(a.dataset.asset, a.dataset.item)); return; }
   const b = e.target.closest("[data-toggle]"); if (b) { open[b.dataset.toggle] = b.dataset.open !== "1"; tick(); return; }
   const j = e.target.closest(".job"); if (j) select(Number(j.id.slice(4)) === selected ? null : Number(j.id.slice(4)));
 };
@@ -375,7 +379,7 @@ function row(job, isOpen) {
   const rf = job.refine || {};
   const marks = (rf.refined ? `<span class="tag">${T.refinedTag}</span>` : "") + (rf.draft ? `<span class="tag draft">${T.draftTag}</span>` : "")
     + (rf.subtitles ? `<button class="tag jump" data-subtitles="${esc(job.item)}" title="${T.subtitlesOpen}">${T.subtitlesTag}</button>` : "");
-  let html = `<div class="top"><div class="title"${job.asset_id ? ` data-asset="${esc(job.asset_id)}" title="${T.openIconik}"` : ""}>${esc(job.title || job.asset_id)}</div>${job.auto ? `<span class="tag">${T.autoTag}</span>` : ""}${marks}${refine}${toggle}<div class="state ${job.status}">${esc(state)}<span class="el"></span></div>${job.n === selected && removable(job) ? `<button class="x" data-remove="${job.n}" aria-label="${T.removeRow}" title="${T.removeRow}">✕</button>` : ""}</div>`;
+  let html = `<div class="top"><div class="title"${job.asset_id ? ` data-asset="${esc(job.asset_id)}" data-item="${esc(job.item || "")}" title="${T.openIconik}"` : ""}>${esc(job.title || job.asset_id)}</div>${job.source ? `<span class="tag source">${esc(job.source)}</span>` : ""}${job.auto ? `<span class="tag">${T.autoTag}</span>` : ""}${marks}${refine}${toggle}<div class="state ${job.status}">${esc(state)}<span class="el"></span></div>${job.n === selected && removable(job) ? `<button class="x" data-remove="${job.n}" aria-label="${T.removeRow}" title="${T.removeRow}">✕</button>` : ""}</div>`;
   if (msg) html += `<div class="msg ${job.status === "fout" ? "fout" : ""}">${esc(msg)}</div>`;
   if (job.status === "bezig") html += stages(job);
   if (isOpen && tracks.length) html += '<div class="tracks">' + tracks.map(t =>
@@ -407,11 +411,14 @@ function autoReason(a) {
 }
 // Wat er naast de lijst speelt: de verbinding rechtsboven, de balken bovenaan en de statusstrook.
 function status(s) {
-  const online = s.account === "gebruiker" || s.account === "token";
+  const isOn = a => a === "gebruiker" || a === "token";
+  const several = (s.iconiks || []).length > 1;
+  const online = isOn(s.account);
   $("status").hidden = s.account === "geen";
   $("status").title = T.toIntegrations;
-  $("dot").className = "dot " + (online ? "on" : "off");
-  $("who").textContent = T.who[s.account];
+  const allOn = several ? s.iconiks.every(i => isOn(i.account)) : online;
+  $("dot").className = "dot " + (allOn ? "on" : "off");
+  $("who").textContent = !several ? T.who[s.account] : allOn ? T.allOn(s.iconiks.length) : T.notAllOn(s.iconiks.filter(i => !isOn(i.account)).map(i => i.name).join(", "));
   $("button").hidden = !["ontbreekt", "geweigerd"].includes(s.actions);
   $("buttonText").textContent = s.actions === "geweigerd" ? T.btnDenied : T.btnMissing;
   $("install").textContent = T.btnInstall; $("install").hidden = s.actions === "geweigerd";
@@ -433,11 +440,19 @@ function status(s) {
   }
   // De statusstrook: alleen wat aan staat. Instellen gebeurt in Instellingen.
   const cells = [];
-  if (online) {
-    const remote = !w.enabled ? ["", T.remoteOff] : w.paused_until ? ["wait", `${T.workerPaused} ${w.paused_until}`]
-                 : w.error ? ["off", `${T.workerProblem}: ${w.error}`] : ["on", T.remoteOn];
-    cells.push([T.stripRemote, ...remote]);
-    if (w.enabled && w.auto_on && w.auto) cells.push([T.stripAuto, w.auto.ready ? "on" : "wait", w.auto.ready ? T.autoReady : `${T.autoWait}: ${autoReason(w.auto)}.`]);
+  // Op afstand en automatisch: per Iconik (bij meer dan een met de naam erbij; een tweede koppeling naar dezelfde
+  // omgeving doet niet mee aan de rij en staat er niet in).
+  const queueCells = (wk, name) => {
+    const suffix = name ? ` · ${name}` : "";
+    const remote = !wk.enabled ? ["", T.remoteOff] : wk.paused_until ? ["wait", `${T.workerPaused} ${wk.paused_until}`]
+                 : wk.error ? ["off", `${T.workerProblem}: ${wk.error}`] : ["on", T.remoteOn];
+    cells.push([T.stripRemote + suffix, ...remote]);
+    if (wk.enabled && wk.auto_on && wk.auto) cells.push([T.stripAuto + suffix, wk.auto.ready ? "on" : "wait", wk.auto.ready ? T.autoReady : `${T.autoWait}: ${autoReason(wk.auto)}.`]);
+  };
+  if (several) {
+    for (const i of s.iconiks) if (isOn(i.account) && !i.same_as) queueCells(i.worker, i.name);
+  } else if (online) queueCells(w, "");
+  if (online || (several && s.iconiks.some(i => isOn(i.account)))) {
     if ((s.mounts || []).length) {
       const names = s.mounts.map(m => m.name || "ISG " + m.id).join(", ");
       // Wat de app nu echt ziet, ook met automatisch transcriberen uit (dan zonder de zin over oppakken).
