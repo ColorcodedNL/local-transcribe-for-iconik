@@ -29,6 +29,7 @@ for name in ("mlx", "mlx_whisper", "torch", "webview"):
 
 import numpy as np  # noqa: E402
 import transcribe, serve  # noqa: E402,E401
+import iconik as connector, iconik_queue as connector_queue  # noqa: E402,E401
 import settings  # noqa: E402
 
 transcribe.L = lambda nl, en: nl
@@ -233,15 +234,22 @@ def run_push(iconik, still_ours=None, probability=0.99, language="nl", detected=
     transcribe.pkg_version = lambda name: "0"
     sys.modules.pop("torch", None)   # de lege vervanger heeft geen torch.backends
     transcribe.memory_report = lambda stage: None
+    # Een opdracht uit de rij (from_queue): de connector schrijft niets als het asset niet meer van deze Mac is.
     args = SimpleNamespace(asset_id="A", model="m", language=language, push=True, replace=True, no_speakers=True,
-                           speakers=None, no_voice_check=True, still_ours=still_ours)
+                           speakers=None, no_voice_check=True, from_queue=still_ours is not None)
     prepared = {"asset": {"title": "t"}, "version_id": "V", "own": [iconik.transcripts[0]],
                 "samples": np.zeros(16000, np.float32), "microphones": None, "model_path": "m"}
+    connector.client = lambda instance: iconik
+    connector_queue.lost.clear()
+    if still_ours is not None and not still_ours():
+        connector_queue.lost.add("A")
     try:
-        transcribe.process_asset(iconik, args, None, prepared=prepared)
+        transcribe.process_asset(args, None, prepared=prepared)
         return deleted, None
     except transcribe.Problem as problem:
         return deleted, problem
+    finally:
+        connector_queue.lost.clear()
 
 
 iconik = FakeIconik()

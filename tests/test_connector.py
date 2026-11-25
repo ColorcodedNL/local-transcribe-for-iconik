@@ -197,5 +197,54 @@ check("write: vervangt ook het transcript van een volgende engine, nooit dat uit
       sorted(t["id"] for t in client.transcriptions) == sorted([tid, "X"]))
 check("read: vindt het eigen transcript ongeacht de engine-naam", connector.read(info) is not None)
 
+# --- via de vaste vorm (connectors.call): alleen gewone gegevens, per exemplaar (stap 5c) ---
+import json  # noqa: E402
+import tempfile  # noqa: E402
+from pathlib import Path  # noqa: E402
+import connectors, settings, iconik_queue  # noqa: E402,E401
+transcribe.CONFIG_PATH = Path(tempfile.mkdtemp()) / "config.json"   # nooit de echte voorkeuren aanraken
+SOURCE = settings.add_integration("iconik")
+connectors.install(iconik)
+clients = {SOURCE: FakeIconik([dict(OTHER, id="X")])}
+iconik.client = lambda instance: clients.get(instance)
+transcribe.find_media_file = lambda client, asset_id, mount=None, ask=False, interactive=True: Path(f"/opslag/{asset_id}.mxf")
+check("vorm: de Iconik-connector heeft de vaste vorm", connectors.load("iconik") is iconik
+      and connectors.can(SOURCE, "queue") and connectors.can(SOURCE, "read_back"))
+check("vorm: status zegt of er verbinding is", connectors.call(SOURCE, "status")["connected"] is True)
+info = connectors.call(SOURCE, "open", key="A", push=False)
+check("vorm: open geeft gewone gegevens met het exemplaar", info["instance"] == SOURCE and info["title"] == "Interview"
+      and [t["id"] for t in info["foreign"]] == ["X"] and connectors.roundtrip(info) == info)
+check("vorm: find_media geeft paden als tekst", connectors.call(SOURCE, "find_media", info=info) == ["/opslag/A.mxf"])
+try:
+    connectors.call(SOURCE, "open", key="A", push=True)
+    check("vorm: open weigert nog steeds een andere bron (Problem, overslaan)", False)
+except transcribe.Problem as problem:
+    check("vorm: open weigert nog steeds een andere bron (Problem, overslaan)", problem.skip is True)
+clients[SOURCE] = FakeIconik()
+info = connectors.call(SOURCE, "open", key="A", push=True)
+doc = json.loads(json.dumps(model.to_dict(doc_with(3))))   # zoals het over een pijp zou komen
+written = connectors.call(SOURCE, "write", info=info, doc=doc, engine_info={"name": transcribe.ENGINE_NAME, "model": "m"})
+check("vorm: write met een transcript als dict", written == {"id": "T1", "segments": 3}, written)
+back = connectors.call(SOURCE, "read", info=info)
+check("vorm: read geeft een dict terug die weer een transcript wordt", isinstance(back, dict)
+      and len(model.from_dict(back).segments) == 3 and connectors.call(SOURCE, "read", info=info, which="refined") is None)
+iconik_queue.lost.add("A")
+try:
+    connectors.call(SOURCE, "write", info=info, doc=doc, engine_info={"name": transcribe.ENGINE_NAME}, from_queue=True)
+    check("vorm: opdracht uit de rij die een andere Mac overnam: niets geschreven", False)
+except transcribe.Problem:
+    check("vorm: opdracht uit de rij die een andere Mac overnam: niets geschreven",
+          [t["id"] for t in clients[SOURCE].transcriptions] == ["T1"])
+iconik_queue.lost.clear()
+written = connectors.call(SOURCE, "write", info=info, doc=doc, engine_info={"name": transcribe.REFINED_ENGINE}, replace="all")
+check("vorm: replace=all vervangt ook de correctie", [t["id"] for t in clients[SOURCE].transcriptions] == [written["id"]])
+clients[SOURCE] = None
+check("vorm: niet ingelogd", connectors.call(SOURCE, "status")["connected"] is False)
+try:
+    connectors.call(SOURCE, "open", key="A")
+    check("vorm: niet ingelogd: open geeft een nette fout", False)
+except transcribe.Problem as problem:
+    check("vorm: niet ingelogd: open geeft een nette fout", "ingelogd" in str(problem) or "logged in" in str(problem), str(problem))
+
 print("ALLES OK" if not fails else f"{fails} FOUT")
 sys.exit(1 if fails else 0)

@@ -22,7 +22,9 @@ import numpy as np
 import items
 import settings
 import subtitles
-import transcribe as core
+import audio
+import base as appbase   # (base is hier ook de naam van een bestand zonder extensie)
+import connectors
 import transcript as tmodel
 
 CHUNK_SECONDS = 6
@@ -57,7 +59,7 @@ def _probe(path):
 
 
 def _local_copy(item):
-    path = items.path(core.TRANSCRIPTS_DIR, item, ".json")
+    path = items.path(appbase.TRANSCRIPTS_DIR, item, ".json")
     try:
         return tmodel.from_dict(json.loads(path.read_text()))
     except (OSError, ValueError, KeyError, TypeError):
@@ -72,7 +74,7 @@ def _reachable(path):
 
 
 def _media_info_path(item):
-    return items.path(core.WAVES_DIR, item, ".media.json")
+    return items.path(appbase.WAVES_DIR, item, ".media.json")
 
 
 def _save_media_info(item, info):
@@ -92,10 +94,10 @@ def _offline_shape(item, doc):
         info = json.loads(_media_info_path(item).read_text())
     except (OSError, ValueError):
         info = {}
-    peaks = core.read_waves(_waves_path(item)) or {}
+    peaks = audio.read_waves(_waves_path(item)) or {}
     ends = [seg.end / 1000 for seg in doc.segments]
     duration = max([float(info.get("duration") or 0), max(ends, default=0)]
-                   + [len(p) / core.WAVE_RATE for p in peaks.values()])
+                   + [len(p) / audio.WAVE_RATE for p in peaks.values()])
     count = max([int(info.get("tracks") or 0), max(peaks, default=0)] + [t.number for t in doc.tracks])
     return duration, float(info.get("fps") or 25), count
 
@@ -105,39 +107,40 @@ def open_session(item, reload=False):
     with _lock:
         if not reload and item in _sessions:
             return _sessions[item]
-    doc, client, origin = _local_copy(item), None, "mac"
+    doc, origin = _local_copy(item), "mac"
     if doc is None and not items.is_iconik(item):
-        raise RefineError(core.L("Er is geen transcript van dit bestand op deze Mac.",
+        raise RefineError(appbase.L("Er is geen transcript van dit bestand op deze Mac.",
                                  "There is no transcript of this file on this Mac."))
     if doc is None:
-        client = core.make_client()
-        if client is None:
-            raise RefineError(core.L("Geen kopie op deze Mac en niet verbonden met Iconik.",
+        source = items.source(item)
+        if not connectors.call(source, "status").get("connected"):
+            raise RefineError(appbase.L("Geen kopie op deze Mac en niet verbonden met Iconik.",
                                      "No copy on this Mac and not connected to Iconik."))
-        import iconik
-        connector = iconik.IconikConnector(client)
-        info = connector.open(items.asset_id(item), push=False)
-        doc = connector.read(info, connector.refined_names)
-        if doc is not None:
+        info = connectors.call(source, "open", key=items.asset_id(item), push=False)
+        found = connectors.call(source, "read", info=info, which="refined")
+        if found is not None:
+            doc = tmodel.from_dict(found)
             doc.source["refined"] = True
         else:
-            doc = connector.read(info)
+            found = connectors.call(source, "read", info=info)
+            doc = tmodel.from_dict(found) if found is not None else None
         if doc is None:
-            raise RefineError(core.L("Dit asset heeft geen transcript van Local Transcribe.",
+            raise RefineError(appbase.L("Dit asset heeft geen transcript van Local Transcribe.",
                                      "This asset has no transcript from Local Transcribe."))
         origin = "iconik"
     media = doc.source.get("media") or ""
     if not _reachable(media) and items.is_iconik(item):
         # Een andere Mac, een verplaatste koppeling of een opdracht van voor 2 november: via Iconik zoeken.
         try:
-            client = client or core.make_client()
-            media = str(core.find_media_file(client, items.asset_id(item), interactive=False)) if client else ""
+            source = items.source(item)
+            info = connectors.call(source, "open", key=items.asset_id(item), push=False)
+            media = (connectors.call(source, "find_media", info=info) or [""])[0]
         except Exception:
             media = ""
     known = {t.number: t for t in doc.tracks}
     if _reachable(media):
         duration, fps, has_video = _probe(media)
-        tracks = core.list_tracks(media)
+        tracks = audio.list_tracks(media)
         _save_media_info(item, {"duration": duration, "fps": fps, "video": has_video, "tracks": len(tracks),
                                     "name": Path(media).name})
         offline = False
@@ -165,7 +168,7 @@ def view(item):
         "media_name": Path(s["media"]).name, "offline": s["offline"], "duration": s["duration"], "fps": s["fps"], "video": s["video"],
         "transcript": tmodel.to_dict(doc),
         "tracks": [{"n": n, "label": s["labels"][n], "used": n in s["used"]} for n in range(1, len(s["tracks"]) + 1)],
-        "chunk": CHUNK_SECONDS, "lang": core.app_language(), "draft": load_draft(item),
+        "chunk": CHUNK_SECONDS, "lang": appbase.app_language(), "draft": load_draft(item),
         "refined": bool(doc.source.get("refined")), "original_kept": _original_path(item).is_file(),
         "export": dict(subtitle_settings(), existing=existing_subtitles(item)), "subtitles": load_subtitles(item),
     }
@@ -266,11 +269,11 @@ def _choose_base(item, formats, place, choose):
     reachable = media is not None and not session["offline"]
     if place == "media":
         if not reachable:
-            raise RefineError(core.L("Het origineel is niet bereikbaar. Kies een andere plek, of koppel de opslag (ISG).",
+            raise RefineError(appbase.L("Het origineel is niet bereikbaar. Kies een andere plek, of koppel de opslag (ISG).",
                                      "The original is not reachable. Choose another place, or connect the storage (ISG)."))
         return media, ()
     if choose is None:
-        raise RefineError(core.L("Een plek kiezen kan alleen vanuit het venster van de app.",
+        raise RefineError(appbase.L("Een plek kiezen kan alleen vanuit het venster van de app.",
                                  "Choosing a place only works from the app's window."))
     first = subtitles.CHOICES[formats][0]
     stem = media.stem if media is not None and media.stem else _export_name(session["doc"].source.get("title") or items.key(item))
@@ -285,7 +288,7 @@ def _choose_base(item, formats, place, choose):
 
 def _write_files(item, lay, target, rules, confirmed=()):
     lay.speakers = _current_doc(item).speakers     # de namen van nu, ook als ze na het maken zijn gewijzigd
-    return subtitles.write_files(lay, target["base"], target["formats"], rules, core.SIDECARS_FILE, confirmed)
+    return subtitles.write_files(lay, target["base"], target["formats"], rules, appbase.SIDECARS_FILE, confirmed)
 
 
 def _state(item, files=None):
@@ -302,7 +305,7 @@ def make_subtitles(item, raw, choose):
     doc = _current_doc(item)
     lay = subtitles.layer(doc, rules)
     if not lay.segments:
-        raise RefineError(core.L("Dit transcript heeft geen tekst.", "This transcript has no text."))
+        raise RefineError(appbase.L("Dit transcript heeft geen tekst.", "This transcript has no text."))
     base, confirmed = _choose_base(item, formats, place, choose)
     if base is None:
         return {"cancelled": True}
@@ -324,11 +327,11 @@ def import_subtitles(item, raw, choose):
     name = str(data.get("name") or "")
     if name:
         if name not in existing_subtitles(item):
-            raise RefineError(core.L("Dat bestand staat niet naast de media.", "That file is not next to the media."))
+            raise RefineError(appbase.L("Dat bestand staat niet naast de media.", "That file is not next to the media."))
         path = media.with_name(name)
     else:
         if choose is None:
-            raise RefineError(core.L("Een bestand kiezen kan alleen vanuit het venster van de app.",
+            raise RefineError(appbase.L("Een bestand kiezen kan alleen vanuit het venster van de app.",
                                      "Choosing a file only works from the app's window."))
         chosen = choose(str(media.parent) if reachable else None)
         if not chosen:
@@ -336,20 +339,20 @@ def import_subtitles(item, raw, choose):
         path = Path(chosen)
     fmt = path.suffix.lower().lstrip(".")
     if fmt not in subtitles.FORMATS:
-        raise RefineError(core.L("Alleen .srt en .vtt kunnen worden ingeladen.", "Only .srt and .vtt can be loaded."))
+        raise RefineError(appbase.L("Alleen .srt en .vtt kunnen worden ingeladen.", "Only .srt and .vtt can be loaded."))
     try:
         if path.stat().st_size > subtitles.MAX_IMPORT:
-            raise RefineError(core.L("Dat bestand is te groot voor ondertitels.", "That file is too large for subtitles."))
+            raise RefineError(appbase.L("Dat bestand is te groot voor ondertitels.", "That file is too large for subtitles."))
         found = subtitles.parse(path.read_bytes())
     except OSError as error:
-        raise RefineError(core.L(f"Inladen lukte niet: {error.strerror or error}", f"Loading failed: {error.strerror or error}"))
+        raise RefineError(appbase.L(f"Inladen lukte niet: {error.strerror or error}", f"Loading failed: {error.strerror or error}"))
     if not found:
-        raise RefineError(core.L("In dat bestand staan geen ondertitels.", "There are no subtitles in that file."))
+        raise RefineError(appbase.L("In dat bestand staan geen ondertitels.", "There are no subtitles in that file."))
     doc = _current_doc(item)
     lay = subtitles.import_layer(found, doc)
     beside = reachable and path.parent == media.parent and path.stem == media.stem
     target = {"formats": fmt, "place": "media" if beside else "other", "base": str(media if beside else path)}
-    subtitles.adopt(path, core.SIDECARS_FILE)
+    subtitles.adopt(path, appbase.SIDECARS_FILE)
     _remember(rules=rules)
     # Alles telt als met de hand gemaakt: inpassen blijft ervan af.
     _store(item, lay, [True] * len(lay.segments), rules, _stamp(doc), target, 0)
@@ -362,7 +365,7 @@ def save_subtitles(item, raw):
     data = json.loads(raw)
     kept = load_subtitles(item)
     if kept is None:
-        raise RefineError(core.L("Er zijn geen ondertitels om te bewaren.", "There are no subtitles to save."))
+        raise RefineError(appbase.L("Er zijn geen ondertitels om te bewaren.", "There are no subtitles to save."))
     lay = tmodel.from_dict(data["transcript"])        # controleert de opbouw; gooit bij onzin
     touched = list(data.get("touched") or [])[:len(lay.segments)]
     touched += [True] * (len(lay.segments) - len(touched))
@@ -375,7 +378,7 @@ def write_subtitles(item, choose=None, elsewhere=False):
     """Schrijft de laag opnieuw naar zijn bestand (Bewaren), of naar een plek die iemand nu kiest."""
     kept = load_subtitles(item)
     if kept is None:
-        raise RefineError(core.L("Er zijn geen ondertitels om te bewaren.", "There are no subtitles to save."))
+        raise RefineError(appbase.L("Er zijn geen ondertitels om te bewaren.", "There are no subtitles to save."))
     lay, target, confirmed = tmodel.from_dict(kept["transcript"]), kept["target"], ()
     if elsewhere:
         base, confirmed = _choose_base(item, target["formats"], "other", choose)
@@ -393,7 +396,7 @@ def fit_subtitles(item, raw):
     """Past de laag opnieuw in met deze regels (samenvoegen, uitloop). Wat met de hand is aangepast blijft staan."""
     kept = load_subtitles(item)
     if kept is None:
-        raise RefineError(core.L("Er zijn geen ondertitels om in te passen.", "There are no subtitles to fit."))
+        raise RefineError(appbase.L("Er zijn geen ondertitels om in te passen.", "There are no subtitles to fit."))
     rules = subtitles.clean_rules(json.loads(raw or b"{}").get("rules"))
     before = tmodel.from_dict(kept["transcript"])
     lay, touched = subtitles.fit_layer(before, kept["touched"], rules)
@@ -453,19 +456,19 @@ def chunk(item, start, seconds=CHUNK_SECONDS, solo=0):
 # --- golfvormen ---
 
 def _offline_reason():
-    return core.L("Het origineel is op deze Mac niet bereikbaar. Is de opslag (ISG) gekoppeld?",
+    return appbase.L("Het origineel is op deze Mac niet bereikbaar. Is de opslag (ISG) gekoppeld?",
                   "The original is not reachable on this Mac. Is the storage (ISG) connected?")
 
 
 def _waves_path(item):
-    return items.path(core.WAVES_DIR, item, ".waves")
+    return items.path(appbase.WAVES_DIR, item, ".waves")
 
 
 def waves(item):
     """(bytes van het golfvormbestand, None) als ze er zijn, anders (None, voortgang 0 tot 1).
     Zijn ze er niet, dan begint een draad ze uit te rekenen."""
     path = _waves_path(item)
-    if core.read_waves(path) is not None:
+    if audio.read_waves(path) is not None:
         return path.read_bytes(), None
     if open_session(item)["offline"]:
         raise RefineError(_offline_reason())
@@ -494,8 +497,8 @@ def _compute_waves(item, job):
             inputs = "".join(f"[0:a:{i}]" for i in streams)
             command += ["-filter_complex", f"{inputs}amerge=inputs={len(streams)}[all]", "-map", "[all]"]
         command += ["-ar", str(WAVE_READ_RATE), "-f", "s16le", "-"]
-        size = WAVE_READ_RATE // core.WAVE_RATE                 # samples per punt
-        block = size * core.WAVE_RATE * 10 * count * 2           # 10 seconden per keer, in bytes
+        size = WAVE_READ_RATE // audio.WAVE_RATE                 # samples per punt
+        block = size * audio.WAVE_RATE * 10 * count * 2           # 10 seconden per keer, in bytes
         total = max(s["duration"] * WAVE_READ_RATE, 1)
         parts = {n: [] for n in range(1, count + 1)}
         rest, done = b"", 0
@@ -512,7 +515,7 @@ def _compute_waves(item, job):
                 if usable:
                     samples = np.frombuffer(data[:usable], np.int16).reshape(-1, count)
                     for i in range(count):
-                        parts[i + 1].append(core.wave_peaks(samples[:, i].copy(), WAVE_READ_RATE))
+                        parts[i + 1].append(audio.wave_peaks(samples[:, i].copy(), WAVE_READ_RATE))
                     done += len(samples)
                     job["fraction"] = min(done / total, 0.99)
         finally:
@@ -520,8 +523,8 @@ def _compute_waves(item, job):
             process.wait()
         peaks = {n: b"".join(chunks) for n, chunks in parts.items()}
         if not any(peaks.values()):
-            raise RefineError(core.L("Geen audio gelezen voor de golfvormen.", "No audio read for the waveforms."))
-        core.write_waves(_waves_path(item), peaks)
+            raise RefineError(appbase.L("Geen audio gelezen voor de golfvormen.", "No audio read for the waveforms."))
+        audio.write_waves(_waves_path(item), peaks)
         with _lock:
             _wave_jobs.pop(item, None)
     except Exception as error:
@@ -530,7 +533,7 @@ def _compute_waves(item, job):
 
 # --- concept: bewerkingen bewaren op deze Mac tot ze naar Iconik gaan (deel 3) ---
 
-DRAFTS_DIR = core.SUPPORT_DIR / "refine"
+DRAFTS_DIR = appbase.SUPPORT_DIR / "refine"
 DRAFT_LIMIT = 50 * 1024 * 1024
 
 
@@ -592,14 +595,14 @@ def _complete(doc, other):
         doc.tracks = list(other.tracks)
 
 
-def _connector(item):
+def _source(item):
+    """Het exemplaar waar het item vandaan komt, als het een transcript kan terugschrijven."""
     if not items.is_iconik(item):
-        raise RefineError(core.L("Dit item komt niet uit Iconik.", "This item does not come from Iconik."))
-    client = core.make_client()
-    if client is None:
-        raise RefineError(core.L("Niet verbonden met Iconik.", "Not connected to Iconik."))
-    import iconik
-    return iconik.IconikConnector(client)
+        raise RefineError(appbase.L("Dit item komt niet uit Iconik.", "This item does not come from Iconik."))
+    source = items.source(item)
+    if not connectors.can(source, "write_back") or not connectors.call(source, "status").get("connected"):
+        raise RefineError(appbase.L("Niet verbonden met Iconik.", "Not connected to Iconik."))
+    return source
 
 
 def _write_json(path, data):
@@ -609,33 +612,35 @@ def _write_json(path, data):
     temp.replace(path)
 
 
-def save_to_iconik(item):
-    """Zet het concept als correctie in Iconik. Het Whisper-transcript gaat daar weg en blijft op deze Mac."""
+def save_to_iconik(item, version=""):
+    """Zet het concept als correctie in Iconik. Het Whisper-transcript gaat daar weg en blijft op deze Mac.
+    `version`: de versie van de app, voor engine_info."""
     draft = load_draft(item)
     if draft is None:
-        raise RefineError(core.L("Er is geen concept om op te slaan.", "There is no draft to save."))
+        raise RefineError(appbase.L("Er is geen concept om op te slaan.", "There is no draft to save."))
     doc = tmodel.from_dict(draft["transcript"])
     if not any(seg.words or seg.text.strip() for seg in doc.segments):
-        raise RefineError(core.L("Het transcript is leeg.", "The transcript is empty."))
-    connector = _connector(item)
-    info = connector.open(items.asset_id(item), push=True, replace=True, allow_refined=True)   # weigert een andere bron
+        raise RefineError(appbase.L("Het transcript is leeg.", "The transcript is empty."))
+    source = _source(item)
+    info = connectors.call(source, "open", key=items.asset_id(item), push=True, replace=True, allow_refined=True)   # weigert een andere bron
     original = _original_path(item)
     if not original.is_file():
         # Het origineel één keer bewaren: bij een tweede correctie staat het Whisper-transcript er niet meer.
         # Liefst de kopie van deze Mac (met sporen, modelrevisie en bestand); anders uit Iconik, aangevuld.
         whisper = _local_copy(item)
         if whisper is None or whisper.source.get("refined"):
-            whisper = connector.read(info)
+            found = connectors.call(source, "read", info=info)
+            whisper = tmodel.from_dict(found) if found is not None else None
             if whisper is not None:
                 _complete(whisper, doc)
         if whisper is not None:
             _write_json(original, {"saved_at": time.strftime("%Y-%m-%dT%H:%M:%S"), "transcript": tmodel.to_dict(whisper)})
-    engine_info = {"type": "EXTERNAL", "name": core.REFINED_ENGINE, "model": doc.engine.get("model") or "",
-                   "version": core.APP_VERSION}
-    transcription_id, written = connector.write(info, doc, engine_info,
-                                                replaces=connector.all_own_names)
+    engine_info = {"type": "EXTERNAL", "name": appbase.REFINED_ENGINE, "model": doc.engine.get("model") or "",
+                   "version": version}
+    result = connectors.call(source, "write", info=info, doc=tmodel.to_dict(doc), engine_info=engine_info, replace="all")
+    transcription_id, written = result["id"], result["segments"]
     doc.source.update(transcription_id=transcription_id, refined=True)
-    core.save_transcript(doc, item)    # de kopie op deze Mac is nu de correctie
+    items.save_transcript(doc, item)    # de kopie op deze Mac is nu de correctie
     discard_draft(item)
     with _lock:
         _sessions.pop(item, None)
@@ -649,17 +654,17 @@ def restore_original(item):
         data = json.loads(_original_path(item).read_text())
         doc = tmodel.from_dict(data["transcript"])
     except (OSError, ValueError, KeyError, TypeError):
-        raise RefineError(core.L("Het origineel is niet meer op deze Mac.", "The original is no longer on this Mac."))
-    connector = _connector(item)
-    info = connector.open(items.asset_id(item), push=True, replace=True, allow_refined=True)
-    engine_info = {"type": "EXTERNAL", "name": core.ENGINE_NAME, "model": doc.engine.get("model") or "",
+        raise RefineError(appbase.L("Het origineel is niet meer op deze Mac.", "The original is no longer on this Mac."))
+    source = _source(item)
+    info = connectors.call(source, "open", key=items.asset_id(item), push=True, replace=True, allow_refined=True)
+    engine_info = {"type": "EXTERNAL", "name": appbase.ENGINE_NAME, "model": doc.engine.get("model") or "",
                    "version": doc.engine.get("version") or ""}
-    transcription_id, written = connector.write(info, doc, engine_info,
-                                                replaces=connector.all_own_names)
+    result = connectors.call(source, "write", info=info, doc=tmodel.to_dict(doc), engine_info=engine_info, replace="all")
+    transcription_id, written = result["id"], result["segments"]
     _complete(doc, open_session(item)["doc"])
     doc.source.update(transcription_id=transcription_id)
     doc.source.pop("refined", None)
-    core.save_transcript(doc, item)
+    items.save_transcript(doc, item)
     _original_path(item).unlink()
     discard_draft(item)
     with _lock:
@@ -716,15 +721,15 @@ def forget_item(item):
     except (OSError, ValueError, AttributeError, TypeError):
         base = None
     if base is not None:
-        gone += subtitles.forget([base.with_suffix(f".{fmt}") for fmt in ("srt", "vtt")], core.SIDECARS_FILE)
-    for path in (items.path(core.TRANSCRIPTS_DIR, item, ".json"), _waves_path(item), _media_info_path(item),
+        gone += subtitles.forget([base.with_suffix(f".{fmt}") for fmt in ("srt", "vtt")], appbase.SIDECARS_FILE)
+    for path in (items.path(appbase.TRANSCRIPTS_DIR, item, ".json"), _waves_path(item), _media_info_path(item),
                  _draft_path(item), _original_path(item), _subtitles_path(item)):
         try:
             path.unlink()
             gone.append(path.name)
         except FileNotFoundError:
             pass
-    _marks_cache.pop(items.path(core.TRANSCRIPTS_DIR, item, ".json"), None)
+    _marks_cache.pop(items.path(appbase.TRANSCRIPTS_DIR, item, ".json"), None)
     return gone
 
 
@@ -738,7 +743,7 @@ def marks(item):
     alleen opnieuw lezen als die veranderde."""
     if not items.valid(item):
         return {"refined": False, "draft": False, "subtitles": False}
-    copy = items.path(core.TRANSCRIPTS_DIR, item, ".json")
+    copy = items.path(appbase.TRANSCRIPTS_DIR, item, ".json")
     refined = False
     try:
         mtime = copy.stat().st_mtime

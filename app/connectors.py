@@ -122,6 +122,11 @@ class Host:
         import keychain
         return keychain.delete(instance, name)
 
+    def may_take(self):
+        """Mag deze Mac nu een opdracht uit een wachtrij aannemen? (Niets loopt of wacht, en niemand koos "Na deze
+        opdracht".) De app vult dit in; zonder app altijd ja."""
+        return True
+
     def log(self, text):
         base.print(str(text))
 
@@ -230,6 +235,8 @@ def start_all(the_host=None):
     """Zet de gastheer neer en laadt de connectors van de koppelingen die er zijn."""
     global host
     host = the_host or Host()
+    for module in _loaded.values():   # al eerder geladen (bijvoorbeeld door een test of een vroege aanroep)
+        module.start(host)
     for item in settings.integrations():
         if item["type"] in KINDS:
             load(item["type"])

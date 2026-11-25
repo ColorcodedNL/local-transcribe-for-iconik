@@ -106,28 +106,6 @@ _SCHEMA = [
        "The rules and choices of last time; refine.py checks them."),
       flat="subtitles", advanced=True),
 
-    # --- Iconik ---
-    S("iconik.host", "text", "https://app.iconik.io", ("Iconik-adres", "Iconik address"),
-      ("Alleen anders bij een eigen Iconik-omgeving.", "Only different for an own Iconik environment."),
-      flat="host", pattern=r"https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/?", max_length=200),
-    S("iconik.client_id", "text", "", ("Client-ID", "Client ID"),
-      ("Van de app-registratie in Iconik.", "From the app registration in Iconik."),
-      flat="client_id", pattern=r"[0-9a-f-]{36}", required=True, extra={"lower": True},
-      invalid=("Dat lijkt geen geldige client-ID.", "That does not look like a valid client ID.")),
-    S("iconik.mounts", "mapping", {}, ("Opslag op deze Mac", "Storage on this Mac"),
-      ("Per storage in Iconik de map op deze Mac.", "For each storage in Iconik the folder on this Mac."),
-      flat="mounts"),
-    S("iconik.worker_enabled", "bool", False, ("Opdrachten op afstand", "Remote jobs"), flat="worker_enabled"),
-    S("iconik.machine_name", "text", "", ("Naam van deze Mac", "Name of this Mac"),
-      ("Leeg is de computernaam.", "Empty means the computer name."), flat="machine_name", max_length=64),
-    S("iconik.iconik_language", "choice", "", ("Taal van de labels in Iconik", "Language of the labels in Iconik"),
-      ("Leeg volgt de app.", "Empty follows the app."), flat="iconik_language", choices=("", "nl", "en")),
-    S("iconik.auto_transcribe", "bool", False, ("Automatisch transcriberen", "Auto transcribe"),
-      ("Alleen als deze Mac ruimte heeft (zie Transcriptie).", "Only when this Mac has room (see Transcription)."),
-      flat="auto_transcribe"),
-    S("iconik.auto_audio", "bool", False, ("Ook audio", "Audio too"), flat="auto_audio"),
-    S("iconik.auto_max_minutes", "number", 60.0, ("Langste asset (minuten)", "Longest asset (minutes)"),
-      flat="auto_max_minutes", minimum=0, advanced=True),
 ]
 SCHEMA = {s.key: s for s in _SCHEMA}
 del S
@@ -191,7 +169,7 @@ def _copy(value):
 
 VERSION = 2
 GROUPS = ("general", "transcription", "refine")
-INTEGRATIONS = ("iconik",)        # groepen die een koppeling zijn
+INTEGRATIONS = ()                 # groepen die een koppeling zijn; een connector meldt zich aan (register_integration)
 BACKUP_NAME = "config-0.6.json"
 
 

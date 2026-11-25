@@ -30,6 +30,8 @@ from urllib.parse import parse_qs, quote, urljoin, urlparse
 import requests
 
 import app_shell
+import connectors
+import iconik
 import refine
 import resources
 import settings as setting   # de lijst met alle instellingen; `settings` hieronder is die van een opdracht
@@ -77,8 +79,9 @@ clear_log_hook = None  # idem: maakt het log leeg (alleen de app weet waar het s
 
 
 def client():
-    """De verbinding met Iconik, of None als er nog niet is ingelogd."""
-    return transcribe.make_client()
+    """De verbinding met Iconik, of None als er nog niet is ingelogd. Via de connector (iconik.client), zodat de
+    app en de connector dezelfde verbinding gebruiken."""
+    return iconik.client(items.iconik_source())
 
 
 def listener_key():
@@ -163,11 +166,11 @@ def page_text(file):
 
 
 def make_options(job):
-    # Een opdracht uit de rij die een andere Mac heeft overgenomen, wordt niet meer naar Iconik geschreven.
-    still_ours = (lambda: job.asset_id not in remote.lost) if job.remote else None
+    # Een opdracht uit de rij die een andere Mac heeft overgenomen, wordt niet meer naar Iconik geschreven
+    # (from_queue: de connector kijkt dat na).
     return argparse.Namespace(
         item=job.item, asset_id=job.asset_id, model=settings["model"], language=settings["language"] or setting.get("transcription.language"),
-        mount=settings["mount"], push=True, replace=True, speakers=None, still_ours=still_ours,
+        mount=settings["mount"], push=True, replace=True, speakers=None, from_queue=bool(job.remote),
         no_speakers=not transcribe.speaker_model_available(settings["hf_token"]), no_voice_check=False, out="/tmp/whisper-test")
 
 
@@ -207,11 +210,10 @@ def start_prefetch():
     def run():
         transcribe._local.events, transcribe._local.lines = box["events"], box["lines"]
         try:
-            connection = client()
-            if connection is not None:
+            if client() is not None:
                 def on_info(title, seconds, job=upcoming):
                     job.set(title=title or "", duration=seconds)
-                box["result"] = transcribe.prepare_asset(connection, make_options(upcoming), on_info, interactive=False)
+                box["result"] = transcribe.prepare_asset(make_options(upcoming), on_info, interactive=False)
         except transcribe.NeedsFolder:
             box["lines"].append("Vooruit lezen overgeslagen: mount point nog onbekend.")
         except Exception as error:
@@ -684,12 +686,7 @@ def settings_page():
 def set_labels_language(code):
     """De labels van de rij in Iconik in deze taal. Gelden voor iedereen in die Iconik-omgeving; daarom eerst
     in Iconik en pas daarna bewaren. Een fout gaat als Problem of andere fout naar boven."""
-    connection = client()
-    if connection is None:
-        raise Problem(transcribe.L("Niet ingelogd bij Iconik.", "Not logged in to Iconik."))
-    queue_in_iconik = remote.Queue(connection)
-    queue_in_iconik.setup(create=True, language=code)
-    queue_in_iconik.apply_language(code)
+    iconik.set_labels_language(items.iconik_source(), code)
 
 
 def _after_host(old, new):
@@ -1402,7 +1399,7 @@ def _refine_discard(h, r, item):
 
 @refine_route("/refine/save", methods=("POST",), limit=65536)
 def _refine_save(h, r, item):
-    return h.reply_json(refine.save_to_iconik(item))
+    return h.reply_json(refine.save_to_iconik(item, transcribe.APP_VERSION))
 
 
 @refine_route("/refine/subtitles/preview", methods=("POST",), limit=4096)
@@ -1456,12 +1453,7 @@ def report_remote(job):
     want blijft de status op "bezig" staan, dan gaat het asset na een paar uur opnieuw de rij in."""
     for attempt in range(3):
         try:
-            connection = client()
-            if connection is None:
-                raise Problem("Niet ingelogd bij Iconik.")
-            queue_in_iconik = remote.Queue(connection)
-            queue_in_iconik.setup()
-            outcome = remote.report(queue_in_iconik, job)
+            outcome = remote.report(job, log=say)
             if outcome == "requeued":
                 # Het ligt niet aan het asset: het staat weer in de rij en een andere Mac pakt het op.
                 with jobs_lock:
@@ -1757,6 +1749,13 @@ def auto_settings():
             "max_minutes": setting.get("iconik.auto_max_minutes")}
 
 
+class AppHost(connectors.Host):
+    """Wat de app de connectors geeft, met wat alleen de app weet: of deze Mac nu werk mag aannemen."""
+
+    def may_take(self):
+        return not busy() and worker_may_take()
+
+
 def worker_languages():
     """(taal van het detailveld, taal van de labels in Iconik). De labels volgen de app tot iemand
     een taal kiest: ze gelden voor iedereen in deze Iconik-omgeving, dus ze wisselen niet vanzelf mee."""
@@ -1867,11 +1866,9 @@ def worker():
             if prepared is not None:
                 print("Audio was al vooruit gelezen.")
         try:
-            connection = client()
-            if connection is None:
+            if client() is None:
                 raise Problem(transcribe.L("Niet ingelogd bij Iconik.", "Not logged in to Iconik."))
-            result = transcribe.process_asset(
-                connection, options, settings["hf_token"], on_info, prepared)
+            result = transcribe.process_asset(options, settings["hf_token"], on_info, prepared)
             job.set(title=result["title"] or "", status="klaar",
                     message=f"{result['segments']} regels, {result['speakers']} spreker(s)",
                     result={"segments": result["segments"], "speakers": result["speakers"]})
@@ -1945,8 +1942,11 @@ def start(model="mlx-community/whisper-large-v3-mlx", language=None, mount=None,
     threading.Thread(target=watchdog, daemon=True, name="waker").start()
     threading.Thread(target=keep_awake, daemon=True, name="wakker").start()
     threading.Thread(target=watch_storage, daemon=True, name="opslag").start()
-    remote.start(client, worker_may_take, busy, add_job, log=say, languages=worker_languages, healthy=progress_ok,
-                 auto=auto_settings)
+    connectors.start_all(AppHost())
+    # Automatisch werk alleen opvragen als deze Mac vrij is: auto_settings zet ook de meter en de tekst in de
+    # statusstrook, en die moeten tijdens een opdracht blijven zoals ze waren (zoals voor stap 5).
+    remote.start(lambda instance: worker_may_take(), add_job, log=say, healthy=progress_ok,
+                 auto=lambda instance: None if busy() else auto_settings())
     threading.Thread(target=check_update, daemon=True, name="update").start()
     return server
 

@@ -1,4 +1,5 @@
-"""Tests voor worker.py met een nagemaakte Iconik. Geen netwerk.
+"""Tests voor de wachtrij in Iconik (iconik_queue.py, tot stap 5 worker.py) en de lus in worker.py, met een
+nagemaakte Iconik. Geen netwerk.
 
 Draaien: python3 -B tests/test_worker.py
 """
@@ -9,7 +10,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "app"))
-import worker  # noqa: E402
+import iconik_queue as worker  # noqa: E402  (de rij; de naam worker bleef om de tests leesbaar te houden)
+import worker as loop  # noqa: E402  (de lus en de naam van deze Mac)
 from jobs import Job  # noqa: E402
 
 results = []
@@ -548,50 +550,101 @@ finally:
     worker.set_language("nl")
 check("onbekende taal valt terug op Nederlands", (worker.set_language("fr"), worker.language[0])[1] == "nl")
 
-# --- de lus
+# --- de lus (worker.py): via de Iconik-connector, met een nep-client
+import tempfile  # noqa: E402
+import base, settings, connectors, iconik  # noqa: E402,E401
+base.CONFIG_PATH = Path(tempfile.mkdtemp()) / "config.json"   # nooit de echte voorkeuren aanraken
+base.print = lambda *a, **k: None
+SOURCE = settings.add_integration("iconik")
+connectors.install(iconik)
+worker.current.clear()
 log = []
 stop = threading.Event()
 count = [0]
 asked = []
 
 
-def enabled_off():
+def enabled_off(instance):
     count[0] += 1
     if count[0] >= 2:
         stop.set()
     return False
 
 
-worker.run(lambda: asked.append(1), enabled_off, lambda: False, lambda *a, **k: None, stop, log.append, interval=0)
-check("lus uit: get_client nooit aangeroepen", not asked and worker.state["enabled"] is False)
+iconik.client = lambda instance: asked.append(instance)   # geeft None: niet ingelogd
+loop.run(enabled_off, lambda *a, **k: None, stop, log.append, interval=0)
+check("lus uit: de verbinding nooit gevraagd", not asked and worker.state["enabled"] is False)
 
 stop = threading.Event()
 count = [0]
 
 
-def enabled_on():
+def enabled_on(instance):
     count[0] += 1
     if count[0] >= 2:
         stop.set()
     return True
 
 
-worker.run(lambda: None, enabled_on, lambda: False, lambda *a, **k: None, stop, log.append, interval=0)
-check("lus aan maar niet ingelogd: fout in de status", "Niet ingelogd" in worker.state["error"])
+loop.run(enabled_on, lambda *a, **k: None, stop, log.append, interval=0)
+check("lus aan maar niet ingelogd: fout in de status", "Niet ingelogd" in worker.state["error"] and asked == [SOURCE, SOURCE])
 
 stop = threading.Event()
 count = [0]
+logged = []
+base.print = lambda *a, **k: logged.append(" ".join(str(x) for x in a))
 
 
-def boom():
+def boom(instance):
     raise RuntimeError("netwerk weg")
 
 
-worker.run(boom, enabled_on, lambda: False, lambda *a, **k: None, stop, log.append, interval=0)
+iconik.client = boom
+loop.run(enabled_on, lambda *a, **k: None, stop, log.append, interval=0)
 check("fout in een rondje stopt de lus niet, het hele verhaal staat in het log", count[0] >= 2
-      and any("RuntimeError: netwerk weg" in line for line in log), log[-1:])
+      and any("RuntimeError: netwerk weg" in line for line in logged), logged[-1:])
 check("  het venster krijgt een gewone zin, niet de ruwe fout", "netwerk weg" not in worker.state["error"]
       and "Details staan in het log" in worker.state["error"], worker.state["error"])
+base.print = lambda *a, **k: None
+
+# de lus neemt een asset aan uit de rij van het exemplaar, en zet het item met dat exemplaar in de lijst
+rij = Fake()
+iconik.client = lambda instance: rij
+rij.values["q1"] = {worker.FIELD: worker.REQUESTED}
+added = []
+worker.current.clear()
+worker._pause[0] = 0.0
+connectors.host = None
+iconik.host = connectors.Host()
+iconik._views.clear()
+got = loop.round_once(lambda instance: True, lambda key, **k: added.append((key, k)), log.append)
+check("lus: aangenomen asset komt met zijn exemplaar in de lijst", got == f"{SOURCE}:q1"
+      and added == [("q1", {"remote": 1, "auto": False, "source": SOURCE})], (got, added))
+check("lus: het asset staat op bezig met de naam van deze Mac", rij.values["q1"][worker.FIELD] == worker.BUSY
+      and loop.machine_name() in rij.values["q1"][worker.INFO])
+check("lus: de connector weet welk exemplaar de lopende opdracht heeft", worker.current.get("instance") == SOURCE)
+
+
+class NoRoom(connectors.Host):
+    def may_take(self):
+        return False
+
+
+rij.values["q2"] = {worker.FIELD: worker.REQUESTED}
+worker.current.clear()
+iconik.host = NoRoom()
+added.clear()
+check("lus: geen ruimte op deze Mac (may_take): niets aangenomen",
+      loop.round_once(lambda instance: True, lambda key, **k: added.append(key), log.append) is None and not added
+      and rij.values["q2"][worker.FIELD] == worker.REQUESTED)
+iconik.host = connectors.Host()
+
+# terugmelden via de connector, met gewone gegevens
+job = Job(**{"item": f"{SOURCE}:q1", "asset_id": "q1", "status": "klaar", "message": "12 regels", "remote": 1})
+worker.current.update(asset="q1", code=worker.claim_code(rij.values["q1"][worker.INFO]), beat=0, instance=SOURCE)
+check("terugmelden via de connector: klaar in Iconik", loop.report(job) is None and rij.values["q1"][worker.FIELD] == worker.DONE
+      and "12 regels" in rij.values["q1"][worker.INFO])
+worker.current.clear()
 
 # --- fouten in gewone woorden (de details alleen in het log)
 import requests  # noqa: E402
@@ -623,13 +676,13 @@ check("age_seconds leest een tijd van Iconik", abs(worker.age_seconds("2026-10-1
       datetime(2026, 10, 14, 10, 47, 36, 882000, tzinfo=timezone.utc)) - 600) < 0.01)
 check("busy_owner leest de naam", worker.busy_owner("Bezig op Mac Studio sinds 12:59 (a1b2c3)") == "Mac Studio" and worker.busy_owner("x") == "")
 check("stamp is lokale tijd, dag-maand uur:minuut", worker.stamp(datetime(2026, 10, 14, 12, 59)) == "14-10 12:59")
-name = worker.machine_name()
+name = loop.machine_name()
 check("machine_name is een leesbare naam", bool(name) and name.isprintable())
-check("zonder eigen naam: de computernaam", name == worker.computer_name())
-check("eigen naam voor deze Mac", worker.set_machine_alias("  Montage  3 ") == "Montage 3" and worker.machine_name() == "Montage 3")
+check("zonder eigen naam: de computernaam", name == loop.computer_name())
+check("eigen naam voor deze Mac", loop.set_machine_alias("  Montage  3 ") == "Montage 3" and loop.machine_name() == "Montage 3")
 check("eigen naam: tekens die de lijst breken en regeleinden eruit, niet te lang",
-      worker.clean_alias("a;b[c]\nd") == "abcd" and len(worker.clean_alias("x" * 100)) == worker.MAX_NAME, worker.clean_alias("a;b[c]\nd"))
-check("eigen naam leeg: weer de computernaam", worker.set_machine_alias("") == "" and worker.machine_name() == worker.computer_name())
+      loop.clean_alias("a;b[c]\nd") == "abcd" and len(loop.clean_alias("x" * 100)) == loop.MAX_NAME, loop.clean_alias("a;b[c]\nd"))
+check("eigen naam leeg: weer de computernaam", loop.set_machine_alias("") == "" and loop.machine_name() == loop.computer_name())
 
 fake.values["q"] = {worker.FIELD: worker.BUSY, worker.INFO: "Bezig op testmac sinds 13:00 (abc)"}
 queue.give_back("q", "testmac", "Is de opslag (ISG) gemount?", 1)

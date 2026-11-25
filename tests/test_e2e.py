@@ -367,8 +367,8 @@ with sync_playwright() as p:
                                                                   item=a2.item.replace(":A2", ":A3"),
                                                                   title="Titel A3", status="wachtend")))
         path = serve.items.path
-        kept = [path(serve.refine.core.TRANSCRIPTS_DIR, a1.item, ".json"), path(serve.refine.core.WAVES_DIR, a1.item, ".waves"),
-                path(serve.refine.DRAFTS_DIR, a1.item, ".draft.json"), path(serve.refine.core.TRANSCRIPTS_DIR, a2.item, ".json")]
+        kept = [path(serve.refine.appbase.TRANSCRIPTS_DIR, a1.item, ".json"), path(serve.refine.appbase.WAVES_DIR, a1.item, ".waves"),
+                path(serve.refine.DRAFTS_DIR, a1.item, ".draft.json"), path(serve.refine.appbase.TRANSCRIPTS_DIR, a2.item, ".json")]
         for f in kept:
             f.parent.mkdir(parents=True, exist_ok=True)
             f.write_text("{}")

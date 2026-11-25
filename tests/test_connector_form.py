@@ -163,6 +163,16 @@ import re  # noqa: E402
 code_files = re.search(r"^CODE_FILES = (\[.*?\])", Path("tools/make_manifest.py").read_text(), re.M).group(1)
 check("code-update: keychain.py en connectors.py in CODE_FILES", '"keychain.py"' in code_files and '"connectors.py"' in code_files)
 
+# --- start_all geeft ook een al geladen connector de gastheer van de app ---
+class AppHost(connectors.Host):
+    def may_take(self):
+        return False
+
+
+app_host = AppHost()
+connectors.start_all(app_host)
+check("start_all: al geladen connector krijgt de gastheer van de app", seen["host"] is app_host and connectors.host is app_host)
+
 # --- de Iconik-soort staat in de lijst ---
 check("soorten: iconik bekend", connectors.KINDS.get("iconik") == "iconik")
 

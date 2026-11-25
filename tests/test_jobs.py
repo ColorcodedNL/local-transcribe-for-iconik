@@ -108,15 +108,9 @@ serve.load_jobs()
 check("geen bestand: lege lijst", len(serve.jobs) == 0)
 
 # --- terug in de rij is geen eindfout en opdrachten uit de rij krijgen hun titel
-class FakeQueue:
-    def __init__(self, connection): pass
-    def setup(self): pass
-
-
 outcome = ["requeued"]
 serve.client = lambda: types.SimpleNamespace(get=lambda path: {"title": "Titel uit Iconik"})
-serve.remote.Queue = FakeQueue
-serve.remote.report = lambda queue, job: outcome[0]
+serve.remote.report = lambda job, log=None: outcome[0]   # de uitkomst van de connector (worker.report)
 reset()
 serve.add_job("r1", remote=2)
 import time

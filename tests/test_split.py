@@ -108,6 +108,14 @@ for i, name in enumerate(PART_NAMES):
     check(f"volgorde: {name} importeert transcribe niet", "transcribe" not in
           {getattr(n, "module", None) for n in tree.body if isinstance(n, ast.ImportFrom)})
 
+# --- connectors (stap 5c): Iconik en Refine praten niet via de ingang transcribe ---
+for name in ("iconik.py", "iconik_queue.py", "refine.py", "connectors.py", "keychain.py", "worker.py"):
+    tree = ast.parse(Path(f"app/{name}").read_text())
+    imported = {a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
+    imported |= {n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)}
+    check(f"connectors: {name} importeert transcribe niet", "transcribe" not in imported, sorted(imported))
+check("code-update: iconik_queue.py in CODE_FILES", "iconik_queue.py" in CODE_FILES)
+
 # --- code-updates en buildscripts ---
 check("code-update: alle delen in CODE_FILES", all(f"{n}.py" in CODE_FILES for n in PART_NAMES + ["transcribe"]))
 version_line = re.search(r'^APP_VERSION = "([0-9.]+)"', Path("app/transcribe.py").read_text(), re.M)

@@ -111,8 +111,9 @@ class StubQueue:
         calls.append(("apply", language))
 
 
-real_queue, real_client = serve.remote.Queue, serve.client
-serve.remote.Queue, serve.client = StubQueue, lambda: object()
+import iconik, iconik_queue  # noqa: E402,E401
+real_queue, real_client = iconik_queue.Queue, iconik.client
+iconik_queue.Queue, iconik.client = StubQueue, lambda instance: object()
 check("taal van de velden: zonder header 403", put({"iconik.iconik_language": "en"}, with_header=False) == 403 and not calls)
 check("taal van de velden: onbekende taal doet niets", put({"iconik.iconik_language": "fr"}) == 200 and not calls
       and settings.stored("iconik.iconik_language") is None)
@@ -120,12 +121,12 @@ check("taal van de velden: Engels kiezen maakt eerst de velden af en zet dan de 
       put({"iconik.iconik_language": "en"}) == 200 and calls == [("setup", True, "en"), ("apply", "en")])
 check("  en onthoudt de keuze", settings.stored("iconik.iconik_language") == "en"
       and serve.worker_languages()[1] == "en")
-serve.client = lambda: None
+iconik.client = lambda instance: None
 calls.clear()
 before = settings.stored("iconik.iconik_language")
 put({"iconik.iconik_language": "nl"})
 check("  niet ingelogd: niets gewijzigd, keuze blijft", not calls and settings.stored("iconik.iconik_language") == before)
-serve.remote.Queue, serve.client = real_queue, real_client
+iconik_queue.Queue, iconik.client = real_queue, real_client
 check("  en het venster krijgt de gekozen taal mee", serve.app_state()["worker"]["iconik_language"] == "en")
 
 # --- auto transcribe: schakelaars, instellingen, wakker houden

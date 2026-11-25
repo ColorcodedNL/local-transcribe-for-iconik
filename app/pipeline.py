@@ -11,6 +11,7 @@ import transcript as tmodel
 from base import (  # noqa: F401
     ENGINE_NAME, L, LISTENER, SAMPLE_RATE, _local, fail, load_config, memory_report, print, tell,
 )
+import connectors
 import items
 from items import save_transcript  # noqa: F401
 from iconik_api import make_client  # noqa: F401
@@ -47,12 +48,13 @@ def main():
     if iconik is None:
         fail("Niet ingelogd. Log in via de app, of zet ICONIK_APP_ID en ICONIK_TOKEN (source ~/.iconik-env).")
     print("Iconik:  " + ("ingelogd als gebruiker" if iconik.uses_login else "persoonlijk token"))
+    connectors.start_all()
 
     hf_token = os.environ.get("HF_TOKEN")
     if not args.no_speakers and not speaker_model_available(hf_token):
         fail("Geen sprekermodel: de lokale kopie ontbreekt en er is geen HF_TOKEN. Gebruik --no-speakers om zonder te draaien.")
 
-    process_asset(iconik, args, hf_token)
+    process_asset(args, hf_token)
 
 
 def item_of(args):
@@ -60,14 +62,14 @@ def item_of(args):
     return getattr(args, "item", None) or items.iconik(args.asset_id)
 
 
-def prepare_asset(iconik, args, on_info=None, interactive=True):
-    """Alles voor de GPU: controles bij Iconik, het bestand vinden en de audio lezen.
+def prepare_asset(args, on_info=None, interactive=True):
+    """Alles voor de GPU: controles bij de bron (de connector van het item), het bestand vinden en de audio lezen.
     Kan vooruit draaien terwijl een andere opdracht transcribeert."""
-    import iconik as connectors   # hier pas: iconik.py importeert deze module
-    connector = connectors.IconikConnector(iconik)
-    info = connector.open(args.asset_id, args.push, args.replace)
+    source = items.source(item_of(args))
+    info = connectors.call(source, "open", key=args.asset_id, push=bool(args.push), replace=bool(args.replace))
     asset, version_id, own = info["asset"], info["version_id"], info["own"]
-    path = connector.find_media(info, args.mount, getattr(args, "ask_mount", False), interactive)[0]
+    path = Path(connectors.call(source, "find_media", info=info, mount=args.mount,
+                                ask_mount=bool(getattr(args, "ask_mount", False)), interactive=bool(interactive))[0])
     print(f"Bestand: {path}")
 
     print(f"Model:   {args.model}")
@@ -96,13 +98,13 @@ def nothing_written(args, own):
     return L("Er is niets naar Iconik geschreven.", "Nothing was written to Iconik.")
 
 
-def process_asset(iconik, args, hf_token, on_info=None, prepared=None):
+def process_asset(args, hf_token, on_info=None, prepared=None):
     """Transcribeert een asset. `args` heeft de velden van de opties hierboven.
     Geeft een korte samenvatting terug; gooit Problem bij een fout.
     `on_info(titel, seconden)` wordt aangeroepen zodra die bekend zijn.
     `prepared` is de uitkomst van prepare_asset als die al vooruit gelezen is."""
     if prepared is None:
-        prepared = prepare_asset(iconik, args, on_info)
+        prepared = prepare_asset(args, on_info)
     else:
         memory_report("audio (vooruit gelezen)")
     asset, version_id, own = prepared["asset"], prepared["version_id"], prepared["own"]
@@ -256,11 +258,11 @@ def process_asset(iconik, args, hf_token, on_info=None, prepared=None):
                 "speakers": len(numbers), "pushed": False, "language": language}
 
     tell("stage", name="schrijven")
-    import iconik as connectors
     info = prepared.get("info") or {"asset_id": args.asset_id, "version_id": version_id,
                                     "title": asset.get("title") or "", "own": own}
-    transcription_id, written = connectors.IconikConnector(iconik).write(
-        info, doc, engine_info, getattr(args, "still_ours", None))
+    result = connectors.call(items.source(item_of(args)), "write", info=info, doc=tmodel.to_dict(doc),
+                             engine_info=engine_info, from_queue=bool(getattr(args, "from_queue", False)))
+    transcription_id, written = result["id"], result["segments"]
     print(f"\nKlaar. Transcript {transcription_id} staat op het asset.")
     doc.source["transcription_id"] = transcription_id
     save_transcript(doc, item_of(args))
