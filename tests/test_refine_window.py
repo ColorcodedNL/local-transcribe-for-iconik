@@ -179,7 +179,89 @@ with sync_playwright() as p:
         shape = ev("(() => { const s = document.getElementById('sub'), c = getComputedStyle(s); return [c.whiteSpace, Math.round((s.offsetHeight - 8) / (parseFloat(c.fontSize) * 1.35)), s.offsetWidth <= s.parentElement.clientWidth]; })()")
         check("in beeld: precies twee regels, niet verder afgebroken, binnen het beeld", shape == ["pre", 2, True], shape)
         check("de titel blijft leesbaar naast een lange melding", ev("document.getElementById('title').offsetWidth") >= 150, ev("document.getElementById('title').offsetWidth"))
+        # De afspeelbalk in een smal venster: niets loopt eruit, de afspeelknop blijft rond, de sneltoetsen wijken.
+        bar = "document.querySelector('#left > .bar')"
+        for width in (1280, 980, 820):
+            page.set_viewport_size({"width": width, "height": 700})
+            fits = ev(f"(() => {{ const b = {bar}, p = document.getElementById('play').getBoundingClientRect(), r = b.getBoundingClientRect(); "
+                      f"return [b.scrollWidth <= b.clientWidth + 1, Math.round(p.width) === Math.round(p.height), "
+                      f"[...b.children].filter(c => c.offsetParent).every(c => c.getBoundingClientRect().right <= r.right + 1)]; }})()")
+            check(f"afspeelbalk op {width} breed: past, ronde afspeelknop, niets erbuiten", fits == [True, True, True], fits)
+        page.set_viewport_size({"width": 820, "height": 700})
+        check("afspeelbalk heel smal: de lopende tijd blijft", ev("document.getElementById('tc').offsetWidth") > 40)
+        check("afspeelbalk smal: de sneltoetsen zijn weg, maar staan in de tooltip",
+              ev("getComputedStyle(document.getElementById('keys')).display") == "none"
+              and "spatie" in (ev(f"{bar}.title") or ""), ev(f"{bar}.title"))
+        # De werkbalk van de tijdlijn: de knoppen blijven, de rest wijkt en staat in de tooltip.
+        tools = "document.getElementById('tools')"
+        for width in (1280, 980, 820, 700):
+            page.set_viewport_size({"width": width, "height": 700})
+            fits = ev(f"(() => {{ const t = {tools}, r = t.getBoundingClientRect(); return [t.scrollWidth <= t.clientWidth + 1, "
+                      f"[...t.children].filter(c => c.offsetParent).every(c => c.getBoundingClientRect().right <= r.right + 1), "
+                      f"['splitBtn', 'mergeBtn', 'newBtn'].every(id => document.getElementById(id).offsetWidth > 30)]; }})()")
+            check(f"werkbalk tijdlijn op {width} breed: past, niets erbuiten, de drie knoppen zichtbaar", fits == [True, True, True], fits)
+        check("werkbalk smal: lettertjes en labels weg", ev("getComputedStyle(document.querySelector('#splitBtn kbd')).display") == "none"
+              and ev("getComputedStyle(document.getElementById('hearLabel')).display") == "none")
+        check("werkbalk smal: sneltoets en wat je hoort in de tooltip", ev("document.getElementById('splitBtn').title") == "Splitsen (S)"
+              and ev("document.getElementById('hear').title") == ev("document.getElementById('hear').textContent") != "",
+              [ev("document.getElementById('splitBtn').title"), ev("document.getElementById('hear').title")])
+        # Tot de kleinste maat van het venster (640) loopt geen balk buiten zichzelf.
+        for width in (980, 820, 700, 640):
+            page.set_viewport_size({"width": width, "height": 600})
+            over = ev("[...document.querySelectorAll('body *')].filter(e => e.offsetParent && getComputedStyle(e).display === 'flex' && e.scrollWidth > e.clientWidth + 1 && !['auto', 'scroll'].includes(getComputedStyle(e).overflowX)).map(e => (e.id || e.className || e.tagName) + ':' + e.clientWidth + '/' + e.scrollWidth)")
+            check(f"Refine op {width} breed: geen balk loopt over", over == [], over)
+        check("Refine op 640 breed: de video houdt ruimte", ev("document.getElementById('left').offsetWidth") >= 280, ev("document.getElementById('left').offsetWidth"))
+        # De kleinste maat van het venster (app_main.MIN_SIZE): de kop past met al zijn knoppen, de video schuift niet
+        # over de tijdlijn en de afspeelbalk staat er helemaal.
+        import re as _re
+        main_src = Path("app/app_main.py").read_text()
+        min_w, min_h = map(int, _re.search(r"^MIN_SIZE = \((\d+), (\d+)\)", main_src, _re.M).groups())
+        std_w, std_h = map(int, _re.search(r"width=(\d+), height=(\d+), min_size=MIN_SIZE", main_src).groups())
+        check("kleinste maat: het standaardvenster is minstens zo groot", std_w >= min_w and std_h >= min_h, (min_w, min_h, std_w, std_h))
+        page.set_viewport_size({"width": min_w, "height": min_h - 28})   # min. de titelbalk van macOS
+        # Wat er in de kop tegelijk kan staan (refine.html, de knoppen rechts): weggooien en opslaan, of origineel
+        # terugzetten en opslaan, of bij ondertitels bewaren. Met een lange melding ernaast.
+        ev("window._st = document.getElementById('status').textContent; window._shown = ['restore', 'save', 'writeBtn', 'discard'].filter(id => !document.getElementById(id).hidden)")
+        for shown in (["discard", "save"], ["restore", "save"], ["writeBtn"]):
+            ev(f"(() => {{ for (const id of ['restore', 'save', 'writeBtn', 'discard']) document.getElementById(id).hidden = !{json.dumps(shown)}.includes(id); "
+               "document.getElementById('status').textContent = 'Een lange melding over het transcript dat in Iconik staat en wat er met de kopie gebeurt'; })()")
+            head = ev("(() => { const h = document.querySelector('header'), r = h.getBoundingClientRect(); "
+                      "return [[...h.children].filter(c => c.offsetParent && c.tagName !== 'H1' && c.id !== 'status' && !c.classList.contains('grow')).every(c => c.getBoundingClientRect().right <= r.right + 1 && c.offsetWidth > 0), "
+                      "document.getElementById('title').offsetWidth]; })()")
+            check(f"kleinste maat: de kop past met {' en '.join(shown)}", head[0] is True and head[1] >= 150, head)
+            page.wait_for_timeout(50)   # ResizeObserver en MutationObserver plaatsen de melding
+            st = ev("(() => { const s = document.getElementById('status'), r = s.getBoundingClientRect(), t = document.getElementById('title').getBoundingClientRect(), "
+                    "h = document.querySelector('header').getBoundingClientRect(); "
+                    "return s.classList.contains('below') ? ['eronder', r.top >= t.bottom - 1 && r.width > 300 && r.right <= h.right + 1] "
+                    ": ['ernaast', s.scrollHeight <= s.clientHeight + 1 && (r.width >= 320 || s.scrollWidth <= s.clientWidth + 1)]; })()")
+            check(f"kleinste maat met {' en '.join(shown)}: de melding naast de titel (breed genoeg) of eronder (leesbaar)", st[1] is True, st)
+        ev("(() => { for (const id of ['restore', 'save', 'writeBtn', 'discard']) document.getElementById(id).hidden = !window._shown.includes(id); "
+           "document.getElementById('status').textContent = window._st; })()")
+        layout = ev("(() => { const left = document.getElementById('left').getBoundingClientRect(), low = document.getElementById('lower').getBoundingClientRect(), "
+                    "bar = document.querySelector('#left > .bar').getBoundingClientRect(); "
+                    "return [Math.round(left.bottom) <= Math.round(low.top), bar.bottom <= low.top + 1, bar.height >= 30]; })()")
+        check("kleinste maat: video en afspeelbalk boven de tijdlijn, niets eroverheen", layout == [True, True, True], layout)
+        page.set_viewport_size({"width": 1600, "height": 860})
+        ev("document.getElementById('status').textContent = 'Gecorrigeerd transcript in Iconik'")
+        page.wait_for_timeout(50)
+        check("breed venster: een korte melding staat naast de titel", ev("document.getElementById('status').classList.contains('below')") is False
+              and ev("document.getElementById('status').offsetWidth") >= 140)
+        ev("window._title = document.getElementById('title').textContent; document.getElementById('title').textContent = 'INTERVIEW_LANGE_BESTANDSNAAM_0208_CAMERA_A.mp4'")
+        page.set_viewport_size({"width": min_w, "height": min_h - 28})
+        page.wait_for_timeout(50)
+        check("kleinste maat met een lange titel: de melding gaat eronder in plaats van in stukjes",
+              ev("document.getElementById('status').classList.contains('below')") is True, ev("document.getElementById('status').offsetWidth"))
+        page.set_viewport_size({"width": 1600, "height": 860})
+        page.wait_for_timeout(50)
+        check("weer breed: de melding staat weer naast de titel", ev("document.getElementById('status').classList.contains('below')") is False)
+        ev("document.getElementById('status').textContent = window._st; document.getElementById('title').textContent = window._title")
+        page.set_viewport_size({"width": 980, "height": 700})
+        check("Refine op 980 breed (standaard): het rechterpaneel blijft 440", ev("document.getElementById('right').offsetWidth") == 440,
+              ev("document.getElementById('right').offsetWidth"))
         page.set_viewport_size({"width": 1280, "height": 860})
+        check("afspeelbalk breed: de sneltoetsen staan er", ev("getComputedStyle(document.getElementById('keys')).display") != "none")
+        check("werkbalk breed: lettertjes en labels staan er", ev("getComputedStyle(document.querySelector('#splitBtn kbd')).display") != "none"
+              and ev("getComputedStyle(document.getElementById('hearLabel')).display") != "none")
 
         # 4. Instellingen: een andere regel verandert de waarschuwingen, niet de verdeling en niet het bestand.
         before_file = srt.read_text(encoding="utf-8")

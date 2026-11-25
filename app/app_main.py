@@ -18,6 +18,9 @@ INTERNAL_NAME = "Local Transcribe for Iconik"   # zoals transcribe.INTERNAL_NAME
 RES = Path(os.environ.get("LOCALTRANSCRIBE_RES") or Path(__file__).resolve().parent.parent)  # Contents/Resources van de bundel
 CODE_VERSION = os.environ.get("LOCALTRANSCRIBE_CODE")   # gezet door main.py als een code-update draait
 SUPPORT = Path.home() / "Library" / "Application Support" / INTERNAL_NAME
+# Kleinste maat van het venster: daaronder valt in Refine de kop rechts weg en schuift de video over de tijdlijn
+# (gezien 25 november). Het standaardvenster (980 x 620) zit er net boven.
+MIN_SIZE = (960, 600)
 LOGDIR = Path.home() / "Library" / "Logs" / INTERNAL_NAME
 PORT = 8765
 BASE = f"http://localhost:{PORT}"
@@ -752,7 +755,7 @@ def main():
     storage = SUPPORT / "webview"
     storage.mkdir(parents=True, exist_ok=True)
     # Het venster meldt zich met de sessie van deze start en krijgt de cookie; daarna gaat het naar de app.
-    window = webview.create_window(transcribe.DISPLAY_NAME, BASE + serve.window_url(), width=980, height=620, min_size=(640, 360))
+    window = webview.create_window(transcribe.DISPLAY_NAME, BASE + serve.window_url(), width=980, height=620, min_size=MIN_SIZE)
     window.events.closing += on_closing
     # Niet in privemodus: zo blijft de inlog bij Iconik in dit venster bewaard.
     threading.Thread(target=watch_settings, daemon=True).start()
