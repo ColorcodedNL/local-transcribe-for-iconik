@@ -145,6 +145,14 @@ def register(setting):
     return setting
 
 
+def register_integration(kind):
+    """Een connector (connectors.install) meldt zijn soort aan als koppeling: zijn instellingen staan dan per
+    exemplaar onder integrations."""
+    global INTEGRATIONS
+    if kind not in INTEGRATIONS:
+        INTEGRATIONS = INTEGRATIONS + (kind,)
+
+
 def spec(key):
     try:
         return SCHEMA[key]

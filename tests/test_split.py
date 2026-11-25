@@ -136,7 +136,7 @@ check("platform: platform_mac heeft alle namen van system", not missing, missing
 check("platform: system geeft de Mac-versie door", system.mount_reachable is platform_mac.mount_reachable
       and system.computer_name is platform_mac.computer_name)
 MAC_ONLY = ["osascript", "caffeinate", "pmset", "vm_stat", "ioreg", "scutil", "LaunchAgents", "libSystem",
-            '"open"', '"Library"', "/Volumes\")"]
+            '["open"', '"Library"', "/Volumes\")"]   # ["open": het macOS-commando, niet een functie die open heet
 SHELL = {"platform_mac.py", "app_main.py", "main.py", "app_shell.py"}
 found = {f.name: [w for w in MAC_ONLY if w in f.read_text()] for f in Path("app").glob("*.py") if f.name not in SHELL}
 found = {k: v for k, v in found.items() if v}
