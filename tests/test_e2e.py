@@ -530,7 +530,8 @@ with sync_playwright() as p:
         page.goto(BASE + "/settings-window?tab=integrations")
         page.locator("#logout").wait_for(timeout=5000)
         check("Integraties: één Iconik in de lijst, ingelogd", page.locator(".item").count() == 1 and logged_in())
-        check("Integraties: + staat uit zolang er een Iconik is", page.locator("#addIntegration").is_disabled())
+        check("Integraties: + kan altijd (stap 5f: meer Iconiks)", page.locator("#addIntegration").is_enabled()
+              and page.locator("#untested").count() == 0)
         icon = page.locator(".item img")
         icon.wait_for(timeout=10000)   # het icoon wordt op de achtergrond opgezocht; de tab ververst elke 3 seconden
         check("Integraties: het icoon van de Iconik-omgeving zelf, van haar eigen host, opgehaald door de app",
@@ -574,6 +575,9 @@ with sync_playwright() as p:
         check("Integraties: − verwijdert de koppeling en logt uit",
               not logged_in() and not app_settings.integrations() and app_settings.stored("iconik.client_id") is None)
         page.locator("#addIntegration").click()
+        check("Integraties: + vraagt een naam, de eerste heet Iconik, zonder melding over meer omgevingen",
+              page.locator("#addName").input_value() == "Iconik" and page.locator("#addUntested").count() == 0)
+        page.locator("#addConfirm").click()
         cid = page.locator("#f-iconik-client_id")
         cid.wait_for(timeout=5000)
         app_settings.raw_put("iconik.host", FAKE)   # het schema wil https; de nep-Iconik draait op http
@@ -625,6 +629,62 @@ with sync_playwright() as p:
         check("twee Iconiks: elke opdracht toont bij welke Iconik hij hoort", tags == {"Archief", "Iconik"}, tags)
         check("twee Iconiks: rechtsboven: ingelogd bij beide", page.locator("#who").inner_text() == "Ingelogd bij 2 Iconiks",
               page.locator("#who").inner_text())
+
+        # 13. + en − (stap 5f): een derde Iconik met de vraag om een naam en de melding dat meerdere omgevingen nog niet
+        # echt getest zijn; − met "ook van deze Mac"; de knoppen uit Iconik halen alleen waar dat kan.
+        page.goto(BASE + "/settings-window?tab=integrations")
+        page.locator("#untested").wait_for(timeout=5000)
+        check("+ en −: onder de lijst de melding dat meerdere omgevingen nog niet getest zijn",
+              "nog niet getest" in page.locator("#untested").inner_text())
+        page.locator("#addIntegration").click()
+        check("+: de naam staat klaar als Iconik (3), met de melding", page.locator("#addName").input_value() == "Iconik (3)"
+              and page.locator("#addUntested").count() == 1)
+        page.locator("#addCancel").click()
+        check("+ en Annuleer: niets toegevoegd", len(app_settings.instances("iconik")) == 2)
+        page.locator("#addIntegration").click()
+        page.locator("#addName").fill("Klant X")
+        page.locator("#addName").press("Enter")
+        page.wait_for_function("document.querySelector('.iname') && document.querySelector('.iname').textContent === 'Klant X'", timeout=5000)
+        third = app_settings.instances("iconik")[-1]
+        check("+: de nieuwe Iconik is gekozen, met zijn naam bewaard", len(app_settings.instances("iconik")) == 3
+              and app_settings.stored("iconik.name", third) == "Klant X" and page.locator("#f-iconik-client_id").count() == 1)
+        kept = transcribe.TRANSCRIPTS_DIR / third / "abcdef14.json"
+        kept.parent.mkdir(parents=True, exist_ok=True)
+        kept.write_text('{"format": "local-transcribe"}')
+        other_kept = transcribe.TRANSCRIPTS_DIR / first / "abcdef15.json"
+        other_kept.parent.mkdir(parents=True, exist_ok=True)
+        other_kept.write_text('{"format": "local-transcribe"}')
+        with serve.jobs_lock:
+            serve.jobs.append(serve.job_list.Job(n=serve.jobs.next_number(), item=f"{third}:abcdef14", asset_id="abcdef14",
+                                                 title="Van klant X", status="klaar"))
+        page.locator("#removeIntegration").click()
+        check("−: de titel noemt de Iconik, 'ook van deze Mac' staat uit, knoppen weghalen kan hier niet (niet ingelogd)",
+              page.locator(".sheet h2").inner_text() == "Klant X verwijderen?" and not page.locator("#removeForget").is_checked()
+              and page.locator("#removeButtons").count() == 0)
+        page.locator("#removeForget").check()
+        page.locator("#removeConfirm").click()
+        page.wait_for_function("!document.querySelector('.sheet')", timeout=5000)
+        with serve.jobs_lock:
+            rows = [job.item for job in serve.jobs]
+        check("− met 'ook van deze Mac': de Iconik, zijn bestanden en zijn regels weg; de andere Iconiks houden de hunne",
+              third not in app_settings.instances("iconik") and not kept.exists() and not kept.parent.exists()
+              and other_kept.exists() and not any(r.startswith(third) for r in rows), (app_settings.instances("iconik"), rows))
+        page.locator(f'.item[data-instance="{first}"]').click()
+        page.wait_for_function("document.querySelector('.iname').textContent === 'Iconik'", timeout=5000)
+        page.locator("#removeIntegration").click()
+        check("−: knoppen weghalen niet bij een Iconik waarvan een andere koppeling dezelfde omgeving gebruikt",
+              page.locator("#removeButtons").count() == 0)
+        page.locator("#removeCancel").click()
+        page.locator(f'.item[data-instance="{second}"]').click()
+        page.wait_for_function("document.querySelector('.iname').textContent === 'Archief'", timeout=5000)
+        page.locator("#removeIntegration").click()
+        page.locator("#removeConfirm").click()
+        page.wait_for_function("document.querySelectorAll('.item').length === 1", timeout=5000)
+        page.locator("#removeIntegration").click()
+        check("−: weer één Iconik, ingelogd: nu kan 'De knoppen uit Iconik halen' wel (standaard uit)",
+              page.locator("#removeButtons").count() == 1 and not page.locator("#removeButtons").is_checked()
+              and page.locator("#untested").count() == 0)
+        page.locator("#removeCancel").click()
 
         browser.close()
     except Exception as error:

@@ -55,7 +55,7 @@ EXPECTED = {
     "/worker": (P, True, True, "window"), "/login-item": (P, True, True, "window"),
     "/asset/open": (P, True, True, "window"), "/actions/install": (P, True, True, "window"),
     "/log/clear": (P, True, True, "window"), "/jobs/remove": (P, True, True, "window"),
-    "/integrations/remove": (P, True, True, "window"), "/clear": (P, True, True, "window"),
+    "/integrations/remove": (P, True, True, "window"), "/integrations/add": (P, True, True, "window"), "/clear": (P, True, True, "window"),
     "/logout": (P, True, True, "window"),
     "/login": (W, True, False, "window"), "/oauth/callback": (W, False, False, "link"),
     "/transcribe": (W, False, False, "link"),
@@ -77,7 +77,7 @@ check("één route met iets na het pad: /transcribe/<sleutel>, open, van buiten"
 
 OLD_PROTECTED = {"/clear", "/mount/change", "/mount/remove", "/actions/install", "/update/open", "/update/install",
                  "/worker", "/login-item", "/settings", "/logout", "/window/show", "/asset/open", "/window/settings",
-                 "/window/title", "/integrations/remove", "/jobs/remove", "/log/clear"}
+                 "/window/title", "/integrations/remove", "/integrations/add", "/jobs/remove", "/log/clear"}
 check("alles wat op 4fabc1b beschermd was, is het nog", OLD_PROTECTED <= serve.protected_paths(),
       OLD_PROTECTED - serve.protected_paths())
 check("elke route die POST aanneemt is beschermd", all(r.protected for r in serve.ROUTES.values() if "POST" in r.methods),

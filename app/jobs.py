@@ -164,6 +164,16 @@ class JobList:
             self.cleared += len(gone)
         return gone, item, ""
 
+    def remove_source(self, source):
+        """Alle regels van één bron weg (een Iconik die wordt weggehaald, met "ook van deze Mac"). Een opdracht die
+        wacht of loopt blijft staan. Geeft het aantal."""
+        prefix = source + ":"
+        with lock:
+            gone = [j for j in self._items if (j.item or "").startswith(prefix) and not j.active]
+            self._items[:] = [j for j in self._items if not any(j is g for g in gone)]
+            self.cleared += len(gone)
+        return len(gone)
+
     # --- bewaren ---
     def payload(self):
         """Wat er in jobs.json komt. Wat buiten de bewaarde 500 valt telt mee als opgeruimd, anders krijgt een

@@ -201,8 +201,17 @@ check("http: zonder instance bewaren bij meer Iconiks: een nette weigering", rep
 
 # --- een Iconik weghalen ---
 iconik_queue.pause(reason="x", instance=B)
-r = serve.remove_integration(B)
+for inst, key in ((A, "abcdef01"), (B, "abcdef02")):
+    (transcribe.TRANSCRIPTS_DIR / inst).mkdir(parents=True, exist_ok=True)
+    (transcribe.TRANSCRIPTS_DIR / inst / f"{key}.json").write_text("{}")
+check("weghalen: de knoppen kunnen weg bij B (een eigen omgeving), niet bij A (C gebruikt dezelfde)",
+      serve.buttons_removable(B) and not serve.buttons_removable(A) and not serve.buttons_removable(C))
+clients[B] = None   # Iconik niet bereikbaar, zoals na een afgelopen abonnement
+r = serve.remove_integration(B, forget=True, buttons=True)
 check("weghalen: B is weg, A en C blijven", r["ok"] and serve.iconiks() == [A, C], (r, serve.iconiks()))
+check("weghalen: knoppen niet weg te halen: de koppeling gaat toch, met een melding", "knoppen" in r["note"].lower() or "buttons" in r["note"].lower(), r)
+check("weghalen: 'ook van deze Mac' haalt de bestanden van B weg, die van A blijven",
+      not (transcribe.TRANSCRIPTS_DIR / B).exists() and (transcribe.TRANSCRIPTS_DIR / A / "abcdef01.json").exists())
 check("weghalen: de stand van de rij van B is vergeten", B not in iconik_queue._lanes)
 check("weghalen: A werkt nog", serve.worker_enabled(A) and settings.get("iconik.machine_name", A) == "Montage A")
 

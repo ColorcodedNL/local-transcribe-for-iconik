@@ -733,6 +733,23 @@ def forget_item(item):
     return gone
 
 
+def forget_source(source):
+    """Alles wat de app op deze Mac van één bron (een Iconik-exemplaar) bewaart, item voor item zoals forget_item,
+    daarna de lege mappen van die bron. Geeft het aantal weggehaalde bestanden."""
+    roots = {"transcripts": appbase.TRANSCRIPTS_DIR, "waves": appbase.WAVES_DIR, "refine": DRAFTS_DIR}
+    found = set()
+    for name, root in roots.items():
+        for suffix in items.SUFFIXES[name]:
+            found |= {item for item, _ in items.files(root, suffix) if items.source(item) == source}
+    gone = sum(len(forget_item(item)) for item in sorted(found))
+    for root in roots.values():
+        try:
+            (root / source).rmdir()   # alleen als hij leeg is; iets onbekends blijft staan
+        except OSError:
+            pass
+    return gone
+
+
 # --- labels in de opdrachtenlijst ---
 _marks_cache = {}   # pad van de kopie -> (mtime, gecorrigeerd)
 

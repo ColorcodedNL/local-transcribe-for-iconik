@@ -35,13 +35,19 @@ def check(name, cond, detail=""):
 
 class FakeIconik:
     def __init__(self, existing):
-        self.existing, self.posted = list(existing), []
+        self.existing, self.posted, self.deleted = [dict(a, id=a.get("id") or f"id{i}") for i, a in enumerate(existing)], [], []
 
     def get(self, path):
         return {"objects": self.existing}
 
     def post(self, path, body):
-        self.posted.append((path, body)); self.existing.append(body); return {}
+        made = dict(body, id=f"nieuw{len(self.posted)}")
+        self.posted.append((path, body)); self.existing.append(made); return made
+
+    def delete(self, path, body=None):
+        self.deleted.append(path)
+        action_id = path.rstrip("/").rsplit("/", 1)[-1]
+        self.existing = [a for a in self.existing if a["id"] != action_id]
 
 
 old = [{"context": c, "title": "Local Transcribe", "url": "iconiktranscribe://transcribe"} for c in ("ASSET", "COLLECTION", "BULK")]
@@ -94,8 +100,26 @@ check("nieuwe knoppen hebben het domein van de omgeving in de link", urls == [
       f"iconiktranscribe://refine?lt_domain={DOMAIN}", f"iconiktranscribe://transcribe?lt_domain={DOMAIN}"], urls)
 check("het exemplaar onthoudt bij welke omgeving het hoort", serve.setting.noted(src, serve.items.DOMAIN_KEY) == DOMAIN)
 check("daarna niets meer te doen", serve.missing_actions(fake) == [])
-old_style = DomainIconik([{"context": c, "title": t, "url": u} for t, u, cs in serve.ACTIONS for c in cs])
-check("knoppen van vóór stap 4e tellen als aanwezig: geen gele balk, geen dubbele knoppen", serve.missing_actions(old_style) == [])
+# Stap 5f (besloten 25 november): knoppen van vóór stap 4e worden vervangen door knoppen met het domein.
+old_style = DomainIconik([{"context": c, "title": t, "url": u} for t, u, cs in serve.ACTIONS for c in cs]
+                         + [{"context": "ASSET", "title": "Iets van een ander", "url": "https://elders.example/hook"}])
+serve.client = lambda *a: old_style
+serve.check_actions()
+urls = sorted((a["context"], a["url"]) for a in old_style.existing)
+check("oude knoppen vervangen: dezelfde vier, nu met het domein, en die van een ander blijft",
+      urls == sorted([(c, f"{u}?lt_domain={DOMAIN}") for _, u, cs in serve.ACTIONS for c in cs] + [("ASSET", "https://elders.example/hook")]), urls)
+check("oude knoppen vervangen: eerst de nieuwe, dan de oude weg (nooit zonder knop)",
+      len(old_style.posted) == 4 and len(old_style.deleted) == 4 and serve.actions["state"] == "aanwezig")
+check("oude knoppen vervangen: een tweede keer kijken doet niets meer",
+      serve.replace_old_actions(old_style) == 0 and len(old_style.posted) == 4)
+removed = serve.remove_actions()
+check("knoppen weghalen (−): alleen de onze, de knop van een ander blijft",
+      removed == 4 and [a["url"] for a in old_style.existing] == ["https://elders.example/hook"], old_style.existing)
+serve.setting.note(src, serve.items.DOMAIN_KEY, None)
+unknown = DomainIconik([{"context": c, "title": t, "url": u} for t, u, cs in serve.ACTIONS for c in cs], domain=None)
+check("domein onbekend: oude knoppen blijven staan en tellen als aanwezig", serve.replace_old_actions(unknown) == 0
+      and serve.missing_actions(unknown) == [] and not unknown.deleted)
+serve.setting.note(src, serve.items.DOMAIN_KEY, DOMAIN)
 
 # Links uit Iconik: Refine transcript
 link = f"iconiktranscribe://refine?lt_domain={DOMAIN}&asset_ids={aid}"

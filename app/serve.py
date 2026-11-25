@@ -426,19 +426,69 @@ def action_url(url, domain):
 
 def missing_actions(connection, instance=None):
     """De knoppen die nog niet in deze Iconik-omgeving staan, als (context, titel, link). Een knop van vóór stap 4e
-    (zonder lt_domain) telt als aanwezig: die blijft werken via de eerste Iconik, en zo komt er geen tweede bij."""
+    (zonder lt_domain) telt niet: die wordt vervangen (replace_old_actions). Is het domein nog niet bekend, dan
+    telt hij wel, zodat er geen tweede bij komt."""
     domain = current_domain(connection, instance)
     existing = connection.get("assets/v1/custom_actions/?per_page=200").get("objects", [])
     have = {(a.get("context"), a.get("url")) for a in existing}
     return [(context, title, action_url(url, domain)) for title, url, contexts in ACTIONS for context in contexts
-            if (context, url) not in have and (context, action_url(url, domain)) not in have]
+            if (context, action_url(url, domain)) not in have]
+
+
+def our_actions(connection, instance=None):
+    """Onze knoppen in deze Iconik-omgeving: [(context, id, oud)]. Oud is een knop van vóór stap 4e (zonder lt_domain);
+    nieuw is een knop met het domein van deze omgeving. Knoppen van anderen blijven buiten beeld."""
+    domain = current_domain(connection, instance)
+    plain = {url for _, url, _ in ACTIONS}
+    own = {action_url(url, domain) for url in plain} if items.valid_domain(domain) else set()
+    existing = connection.get("assets/v1/custom_actions/?per_page=200").get("objects", [])
+    return [(a.get("context"), a.get("id"), a.get("url") in plain) for a in existing
+            if a.get("id") and (a.get("url") in plain or a.get("url") in own)]
+
+
+def replace_old_actions(connection, instance=None):
+    """Vervangt de knoppen van vóór stap 4e door knoppen die zeggen uit welke omgeving ze komen (besloten 25
+    november: er zijn nog geen andere gebruikers). Eerst de nieuwe plaatsen, dan de oude weghalen, zodat er nooit
+    een moment zonder knop is. Alleen als het domein bekend is. Geeft het aantal vervangen knoppen."""
+    if not items.valid_domain(current_domain(connection, instance)):
+        return 0
+    old = [(context, action_id) for context, action_id, is_old in our_actions(connection, instance) if is_old]
+    if not old:
+        return 0
+    for context, title, url in missing_actions(connection, instance):
+        connection.post(f"assets/v1/custom_actions/{context}/", {"context": context, "title": title, "type": "OPEN", "url": url})
+    for context, action_id in old:
+        connection.delete(f"assets/v1/custom_actions/{context}/{action_id}/")
+    print(f"Knoppen in Iconik bijgewerkt: {len(old)} van een oudere versie vervangen.")
+    return len(old)
+
+
+def remove_actions(instance=None):
+    """Haalt onze knoppen uit de Iconik-omgeving van dit exemplaar (de knop − met "ook de knoppen"). Geldt voor
+    iedereen in die omgeving. Geeft het aantal."""
+    connection = client(instance)
+    if connection is None:
+        raise Problem(transcribe.L("Niet ingelogd bij Iconik.", "Not logged in to Iconik."))
+    ours = our_actions(connection, instance)
+    for context, action_id, _ in ours:
+        connection.delete(f"assets/v1/custom_actions/{context}/{action_id}/")
+    return len(ours)
 
 
 def check_actions(instance=None):
-    """Kijkt of de knop al in deze Iconik-omgeving staat. Dat hoeft maar een keer, door een beheerder."""
+    """Kijkt of de knop al in deze Iconik-omgeving staat, en vervangt knoppen van een oudere versie. Een tweede
+    koppeling naar dezelfde omgeving doet dat niet: de knoppen lopen via de eerste."""
     state = bits(instance)["actions"]
     try:
-        state["state"] = "ontbreekt" if missing_actions(client(instance), instance) else "aanwezig"
+        if instance and not items.shares_queue(instance):
+            state["state"] = "elders"
+            return
+        connection = client(instance)
+        try:
+            replace_old_actions(connection, instance)
+        except Exception as error:   # geen rechten: dan blijft de oude knop werken en vraagt de gele balk om de nieuwe
+            print(f"Knoppen in Iconik bijwerken lukte niet: {type(error).__name__}: {str(error)[:200]}")
+        state["state"] = "ontbreekt" if missing_actions(connection, instance) else "aanwezig"
     except Exception:
         # niet kunnen kijken: dan vallen we de gebruiker er niet mee lastig
         state.setdefault("state", "onbekend")  # bij een storing houden we de vorige uitslag aan
@@ -451,9 +501,10 @@ def install_actions(instance=None):
     state = bits(instance)["actions"]
     try:
         connection = client(instance)
-        for context, title, url in missing_actions(connection, instance):
-            connection.post(f"assets/v1/custom_actions/{context}/",
-                            {"context": context, "title": title, "type": "OPEN", "url": url})
+        if not replace_old_actions(connection, instance):
+            for context, title, url in missing_actions(connection, instance):
+                connection.post(f"assets/v1/custom_actions/{context}/",
+                                {"context": context, "title": title, "type": "OPEN", "url": url})
         state["state"] = "aanwezig"
         print("De knoppen van Local Transcribe staan in Iconik.")
     except Exception as error:
@@ -893,6 +944,7 @@ def _iconik_extra(instance=None):
     return {"instances": iconik_rows(), "instance": instance, "name": iconik_name(instance) if instance else "Iconik",
             "auto_name": iconik_name(instance, own=False) if instance else "Iconik",
             "same_as": same, "same_as_name": iconik_name(same) if same else "",
+            "buttons_removable": buttons_removable(instance) and account in ("gebruiker", "token"),
             "account": account, "user": bits(instance)["who"].get("name", ""),
             "has_client_id": bool(client_id), "actions": bits(instance)["actions"].get("state", "onbekend"),
             "mounts": mount_list(setting.get("iconik.mounts", instance), instance) if instance else [],
@@ -902,14 +954,52 @@ def _iconik_extra(instance=None):
 SETTINGS_DATA = {"general": _general_extra, "transcription": _transcription_extra, "iconik": _iconik_extra}
 
 
-def remove_integration(instance_id):
+def add_integration(name=""):
+    """Een Iconik toevoegen (de knop + bij Integraties), met de naam uit het venster. Een naam gelijk aan de automatische
+    wordt niet bewaard, zodat de nummering vanzelf klopt als er later een weggaat."""
+    instance = setting.add_integration("iconik")
+    name = " ".join(str(name or "").split())[:40]
+    if name and name != iconik_name(instance, own=False):
+        setting.put("iconik.name", name, instance)
+    print(f"[{datetime.now():%H:%M:%S}] integratie toegevoegd: {instance}")
+    return {"ok": True, "id": instance}
+
+
+def buttons_removable(instance):
+    """Mag − de knoppen uit Iconik halen? Alleen als deze koppeling de knoppen van haar omgeving beheert en geen
+    andere koppeling op deze Mac dezelfde omgeving gebruikt (die heeft ze nog nodig)."""
+    if not instance or not items.shares_queue(instance):
+        return False
+    return not any(items.same_environment(other) == instance for other in iconiks() if other != instance)
+
+
+def remove_integration(instance_id, forget=False, buttons=False):
     """Een koppeling verwijderen (de knop − bij Integraties): uitloggen en de instellingen van die koppeling
-    vergeten. Niet tijdens een opdracht. Transcripten in Iconik blijven staan."""
+    vergeten. Niet tijdens een opdracht. Transcripten in Iconik blijven altijd staan. Met `forget` ook alles wat
+    deze Mac van die Iconik bewaart (kopieën, golfvormen, Refine, de regels in de lijst); met `buttons` eerst de
+    knoppen uit Iconik (voor iedereen in die omgeving). Lukt dat laatste niet, dan gaat de rest door, met een
+    melding (besloten 19 november: na een afgelopen abonnement is Iconik vaak niet meer bereikbaar)."""
     known = {item["id"] for item in setting.integrations()}
     if instance_id not in known:
         return {"ok": False, "error": transcribe.L("Deze integratie bestaat niet (meer).", "This integration does not exist (any more).")}
     if busy():
         return {"ok": False, "error": transcribe.L("Wacht tot de lopende opdracht klaar is.", "Wait until the running job has finished.")}
+    note = ""
+    if buttons and buttons_removable(instance_id):
+        try:
+            count = remove_actions(instance_id)
+            print(f"[{datetime.now():%H:%M:%S}] knoppen uit Iconik gehaald: {count}")
+        except Exception as error:
+            print(f"Knoppen uit Iconik halen lukte niet: {type(error).__name__}: {str(error)[:200]}")
+            note = transcribe.L("De knoppen konden niet uit Iconik worden gehaald (Iconik niet bereikbaar of geen rechten). "
+                                "De koppeling is wel weg.",
+                                "The buttons could not be removed from Iconik (Iconik not reachable or no rights). "
+                                "The integration is gone.")
+    if forget:
+        rows = jobs.remove_source(instance_id)
+        save_jobs()
+        files = refine.forget_source(instance_id)
+        print(f"[{datetime.now():%H:%M:%S}] van deze Mac verwijderd: {rows} regel(s), {files} bestand(en) van één integratie")
     transcribe.clear_login(instance_id)
     bits(instance_id)["who"].clear()
     bits(instance_id)["actions"].clear()
@@ -918,7 +1008,7 @@ def remove_integration(instance_id):
     setting.remove_integration(instance_id)
     _wake_worker(True, False, None)   # de werker ziet dat opdrachten op afstand nu uit staan
     print(f"[{datetime.now():%H:%M:%S}] integratie verwijderd: {instance_id}")
-    return {"ok": True}
+    return {"ok": True, "note": note}
 
 
 def settings_data(group, instance=None):
@@ -1384,7 +1474,12 @@ def _jobs_remove(h, r):
 
 @route("/integrations/remove", protected=True)
 def _integrations_remove(h, r):
-    return h.reply_json(remove_integration(r.first("id")))
+    return h.reply_json(remove_integration(r.first("id"), forget=r.first("forget") == "1", buttons=r.first("buttons") == "1"))
+
+
+@route("/integrations/add", protected=True)
+def _integrations_add(h, r):
+    return h.reply_json(add_integration(r.first("name") or ""))
 
 
 @route("/clear", protected=True)
