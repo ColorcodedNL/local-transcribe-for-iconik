@@ -162,6 +162,65 @@ check("/settings-data: een onbekende groep bestaat niet", fetch("/settings-data?
 check("alle wijzigingen in serve.py via apply_settings", "set_config(" not in Path("app/serve.py").read_text())
 check("elke sleutel in AFTER_SAVE bestaat", all(k in serve.setting.SCHEMA for k in serve.AFTER_SAVE))
 
+# --- het icoon van de Iconik-omgeving: één keer opgehaald, als data:-adres in het geheugen ---
+import base64  # noqa: E402
+PNG = b"\x89PNG\r\n\x1a\n" + b"x" * 50
+pages, fetched = {}, []
+
+
+class Reply:
+    """Wat requests.get teruggeeft: tekst of bytes, met headers."""
+    def __init__(self, url):
+        body, self.headers = pages.get(url, (None, {}))
+        self.ok = body is not None
+        self.content = body if isinstance(body, bytes) else (body or "").encode()
+        self.text = body if isinstance(body, str) else ""
+
+
+def fake_get(url, timeout=None):
+    fetched.append(url)
+    return Reply(url)
+
+
+real_get = serve.requests.get
+serve.requests.get = fake_get
+HOST = "https://iconik.example"
+pages[HOST + "/"] = ('<html><head><link rel="icon" href="/fav.ico"><link rel="apple-touch-icon" href="/touch.png"></head>', {})
+pages[HOST + "/touch.png"] = (PNG, {"Content-Type": "image/png"})
+serve.find_icon(HOST)
+check("icoon: apple-touch-icon opgehaald als data:-adres", serve.icons[HOST][0] == "data:image/png;base64," + base64.b64encode(PNG).decode()
+      and fetched == [HOST + "/", HOST + "/touch.png"], fetched)
+pages[HOST + "/touch.png"] = ("<html>geen plaatje</html>", {"Content-Type": "text/html"})
+serve.find_icon(HOST)
+check("icoon: iets wat geen plaatje is wordt de stekker", serve.icons[HOST][0] == "")
+pages[HOST + "/touch.png"] = (b"x" * (serve.ICON_MAX_BYTES + 1), {"Content-Type": "image/png"})
+serve.find_icon(HOST)
+check("icoon: te groot wordt de stekker", serve.icons[HOST][0] == "")
+pages[HOST + "/"] = ('<link rel="apple-touch-icon" href="https://elders.example/touch.png">', {})
+fetched.clear()
+serve.find_icon(HOST)
+check("icoon: een adres op een andere host wordt nooit opgehaald", serve.icons[HOST][0] == "" and fetched == [HOST + "/"], fetched)
+
+# bij een ander Iconik-adres wordt het icoon van de nieuwe omgeving meteen gezocht
+started = []
+real_thread = serve.threading.Thread
+
+
+class NoThread:
+    def __init__(self, target=None, args=(), **k):
+        self.target, self.args = target, args
+
+    def start(self):
+        started.append(self.args)
+
+
+serve.threading.Thread = NoThread
+serve.icons.clear()
+serve._after_host("https://oud.example", "https://nieuw.example")
+serve.threading.Thread = real_thread
+check("icoon: ander adres zoekt meteen het icoon van de nieuwe omgeving", started == [(serve.transcribe.api_host(),)], started)
+serve.requests.get = real_get
+
 server.shutdown()
 print("ALLES OK" if not fails else f"{fails} FOUT")
 sys.exit(1 if fails else 0)

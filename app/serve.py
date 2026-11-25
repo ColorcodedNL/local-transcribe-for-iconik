@@ -12,6 +12,7 @@ Stoppen met Ctrl+C. Luistert alleen op deze Mac zelf (127.0.0.1).
 """
 
 import argparse
+import base64
 import atexit
 import json
 import os
@@ -697,6 +698,7 @@ def _after_host(old, new):
         source = items.iconik_source()
         if source:
             setting.note(source, items.DOMAIN_KEY, None)
+        integration_icon()   # het icoon van de nieuwe omgeving alvast zoeken
 
 
 def _wake_worker(old, new):
@@ -748,13 +750,15 @@ def _transcription_extra():
 
 # Wat het venster Instellingen per tab ophaalt: het schema (ook wat geavanceerd is), de waarden, wat iemand
 # zelf heeft ingesteld en wat er verder op die tab staat maar geen instelling is.
-icons = {}   # host van de Iconik-omgeving -> (adres van het icoon of "", wanneer gezocht)
+icons = {}   # host van de Iconik-omgeving -> (het icoon als data:-adres of "", wanneer gezocht)
+ICON_MAX_BYTES = 256 * 1024
 
 
 def find_icon(host):
     """Op de achtergrond: zoekt op de startpagina van de Iconik-omgeving het apple-touch-icon (scherper) of anders
     het favicon, voor de lijst bij Integraties. Alleen een adres op dezelfde host telt; anders blijft het de stekker.
-    Er komt zo geen logo van Iconik in de app zelf."""
+    Er komt zo geen logo van Iconik in de app zelf: het wordt bij het starten opgehaald en alleen in het geheugen
+    gehouden, als data:-adres, zodat het venster het meteen toont zonder zelf nog naar Iconik te gaan."""
     found = ""
     try:
         page = requests.get(host + "/", timeout=8).text[:200000]
@@ -769,14 +773,27 @@ def find_icon(host):
                         break
             if found:
                 break
+        if found:
+            found = icon_data(found)
     except Exception as error:
+        found = ""
         print(f"[{datetime.now():%H:%M:%S}] icoon van {host} niet gevonden: {type(error).__name__}")
     icons[host] = (found, time.time())
 
 
+def icon_data(url):
+    """Haalt het plaatje op en geeft het als data:-adres, of "" als het geen plaatje is of te groot."""
+    response = requests.get(url, timeout=8)
+    kind = (response.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+    body = response.content
+    if not response.ok or not re.fullmatch(r"image/[a-z0-9.+-]{1,40}", kind) or not body or len(body) > ICON_MAX_BYTES:
+        return ""
+    return f"data:{kind};base64,{base64.b64encode(body).decode()}"
+
+
 def integration_icon():
-    """Het adres van het icoon van de Iconik-omgeving, of None (dan de stekker). Zoekt het één keer op; lukte
-    dat niet, dan na tien minuten opnieuw."""
+    """Het icoon van de Iconik-omgeving als data:-adres, of None (dan de stekker). Zoekt het één keer op (bij het
+    starten van de app, of als het adres verandert); lukte dat niet, dan na tien minuten opnieuw."""
     host = transcribe.api_host()
     url, when = icons.get(host, (None, 0))
     if url is None or (not url and time.time() - when > 600):
@@ -1943,6 +1960,8 @@ def start(model="mlx-community/whisper-large-v3-mlx", language=None, mount=None,
     threading.Thread(target=keep_awake, daemon=True, name="wakker").start()
     threading.Thread(target=watch_storage, daemon=True, name="opslag").start()
     connectors.start_all(AppHost())
+    if setting.integrations():
+        integration_icon()   # alvast op de achtergrond, zodat het er staat als iemand Instellingen opent
     # Automatisch werk alleen opvragen als deze Mac vrij is: auto_settings zet ook de meter en de tekst in de
     # statusstrook, en die moeten tijdens een opdracht blijven zoals ze waren (zoals voor stap 5).
     remote.start(lambda instance: worker_may_take(), add_job, log=say, healthy=progress_ok,

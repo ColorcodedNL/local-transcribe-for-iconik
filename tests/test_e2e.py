@@ -530,9 +530,9 @@ with sync_playwright() as p:
         check("Integraties: + staat uit zolang er een Iconik is", page.locator("#addIntegration").is_disabled())
         icon = page.locator(".item img")
         icon.wait_for(timeout=10000)   # het icoon wordt op de achtergrond opgezocht; de tab ververst elke 3 seconden
-        check("Integraties: het icoon van de Iconik-omgeving zelf, van haar eigen host",
-              icon.get_attribute("src") == FAKE + "/static/apple-touch-icon.png"
-              and icon.evaluate("img => img.complete && img.naturalWidth > 0"), icon.get_attribute("src"))
+        check("Integraties: het icoon van de Iconik-omgeving zelf, van haar eigen host, opgehaald door de app",
+              icon.get_attribute("src") == "data:image/png;base64," + base64.b64encode(ICON_PNG).decode()
+              and icon.evaluate("img => img.complete && img.naturalWidth > 0"), (icon.get_attribute("src") or "")[:60])
         page.locator("#f-iconik-worker_enabled").check()
         name = page.locator("#f-iconik-machine_name")
         name.wait_for(timeout=5000)
