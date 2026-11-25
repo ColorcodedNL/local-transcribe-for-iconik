@@ -97,7 +97,8 @@ def first_iconik():
 
 def iconik_name(instance, own=True):
     """Hoe een Iconik in de app heet: de eigen naam uit Instellingen, anders Iconik, Iconik (2), ... op volgorde van
-    koppelen (besloten 25 november; Iconik geeft zelf geen naam voor een omgeving, gemeten met tools/name_probe.py)."""
+    koppelen (besloten 25 november; Iconik geeft zelf geen naam voor een omgeving, gemeten met tools/name_probe.py,
+    nu in de git-geschiedenis)."""
     name = (setting.get("iconik.name", instance) or "").strip() if own and instance in iconiks() else ""
     if name:
         return name
@@ -420,7 +421,8 @@ def refine_link(url):
 
 def action_url(url, domain):
     """De link van een knop met de omgeving erin (?lt_domain=...), zodat elke Mac weet uit welke Iconik hij komt.
-    Iconik laat die query staan en zet er &asset_ids=... achter (gemeten op 20 november, tools/action_url_probe.py)."""
+    Iconik laat die query staan en zet er &asset_ids=... achter (gemeten op 20 november met tools/action_url_probe.py,
+    nu in de git-geschiedenis)."""
     return f"{url}?lt_domain={domain}" if items.valid_domain(domain) else url
 
 

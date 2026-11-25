@@ -506,7 +506,7 @@ function note(text) {
   return same ? `same signal as track ${same[1]}` : T.notes[text] || text;
 }
 
-// --- speler: stukjes van het origineel via Media Source Extensions (zie tools/video_window_probe.py) ---
+// --- speler: stukjes van het origineel via Media Source Extensions (gemeten met tools/video_window_probe.py, in de git-geschiedenis) ---
 const v = $("video");
 const TYPE = 'video/mp4; codecs="mp4v.20.9, mp4a.40.2"', AUDIO_TYPE = 'audio/mp4; codecs="mp4a.40.2"';
 let ms, sb, gen = 0, target = null, next = 0, running = false, solo = 0, wantPlay = false;

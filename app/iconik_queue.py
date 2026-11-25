@@ -320,7 +320,7 @@ class Queue:
         """Assets voor auto transcribe: zonder status en zonder transcript, op opslag die deze Mac kent,
         video (en met `audio` ook audio), niet langer dan `max_minutes`, nieuwste eerst.
 
-        Getest tegen Iconik (23 oktober, scripts/probe_search.py): opslag en mediatype werken als filter,
+        Getest tegen Iconik (23 oktober, met scripts/probe_search.py in de git-geschiedenis): opslag en mediatype werken als filter,
         opslag in de query draait de hele query om. De rest staat in de query, die op een spatie moet
         eindigen. De zoekindex kan achterlopen; claim() leest de status daarom zelf nog eens na."""
         query = (f"NOT _exists_:metadata.{FIELD} AND NOT _exists_:transcription_text "
