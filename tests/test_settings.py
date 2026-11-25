@@ -255,6 +255,66 @@ check("koppeling verwijderen: weg uit config.json met haar instellingen",
       not settings.integrations() and settings.stored("iconik.client_id") is None)
 settings.remove_integration(iid)   # twee keer is geen fout
 
+# --- meerdere exemplaren van een koppeling (stap 5a) ---
+transcribe.CONFIG_PATH.write_text(json.dumps({"version": 2, "general": {}, "transcription": {}, "refine": {},
+                                              "integrations": {}}))
+first = settings.add_integration("iconik")
+second = settings.add_integration("iconik")
+check("meerdere: add_integration maakt twee exemplaren", first != second and settings.instances("iconik") == sorted([first, second])
+      and all(raw()["integrations"][i] == {"type": "iconik"} for i in (first, second)), raw())
+settings.put("iconik.host", "https://een.example", instance=first)
+settings.put_many({"iconik.client_id": "22222222-2222-2222-2222-222222222222", "iconik.auto_transcribe": True,
+                   "transcription.language": "nl"}, instance=second)
+check("meerdere: bewaren raakt alleen het gekozen exemplaar",
+      raw()["integrations"][first] == {"type": "iconik", "host": "https://een.example"}
+      and raw()["integrations"][second] == {"type": "iconik", "client_id": "22222222-2222-2222-2222-222222222222",
+                                            "auto_transcribe": True}, raw())
+check("meerdere: een instelling van de app gaat niet in het exemplaar", raw()["transcription"].get("language") == "nl")
+check("meerdere: lezen per exemplaar", settings.get("iconik.host", first) == "https://een.example"
+      and settings.get("iconik.host", second) == "https://app.iconik.io"
+      and settings.get("iconik.auto_transcribe", second) is True and settings.get("iconik.auto_transcribe", first) is False)
+check("meerdere: stored en custom per exemplaar", settings.stored("iconik.host", second) is None
+      and settings.custom("iconik", first) == ["iconik.host"] and "iconik.auto_transcribe" in settings.custom("iconik", second))
+check("meerdere: values per exemplaar", settings.values("iconik", first)["iconik.host"] == "https://een.example")
+settings.update("iconik.mounts", lambda mounts: mounts.update({"s1": "/opslag"}), instance=second)
+check("meerdere: update per exemplaar", settings.get("iconik.mounts", second) == {"s1": "/opslag"}
+      and settings.get("iconik.mounts", first) == {})
+check("meerdere: reset per exemplaar", settings.reset(["iconik.host"], instance=first) == ["iconik.host"]
+      and settings.stored("iconik.host", first) is None)
+check("meerdere: een instelling van de app leest gewoon zonder exemplaar", settings.get("transcription.language") == "nl")
+
+
+def raises(what, error=settings.InstanceError):
+    try:
+        what()
+    except error:
+        return True
+    return False
+
+
+check("meerdere: zonder exemplaar lezen is een fout, nooit stil het eerste",
+      raises(lambda: settings.get("iconik.host")) and raises(lambda: settings.values("iconik")))
+check("meerdere: zonder exemplaar bewaren is een fout en bewaart niets",
+      raises(lambda: settings.put("iconik.auto_audio", True)) and "auto_audio" not in json.dumps(raw()))
+check("meerdere: instance_id zonder keuze is een fout", raises(lambda: settings.instance_id("iconik")))
+check("meerdere: een exemplaar dat er niet is: lezen geeft standaard, bewaren is een fout",
+      settings.get("iconik.host", "iconik-ffffff") == "https://app.iconik.io"
+      and raises(lambda: settings.put("iconik.host", "https://x.example", instance="iconik-ffffff"))
+      and "iconik-ffffff" not in raw()["integrations"])
+check("meerdere: onbekende soort", raises(lambda: settings.add_integration("nextcloud")))
+before = json.dumps(raw())
+cfg = raw()
+cfg["auto_audio"] = True                       # een platte sleutel die later opduikt, bij twee Iconiks
+transcribe.CONFIG_PATH.write_text(json.dumps(cfg))
+check("meerdere: een losse platte sleutel van een koppeling wordt niet geraden", settings.get("transcription.language") == "nl"
+      and raw().get("auto_audio") is True and all("auto_audio" not in raw()["integrations"][i] for i in (first, second)), raw())
+cfg.pop("auto_audio")
+transcribe.CONFIG_PATH.write_text(before)
+settings.remove_integration(second)
+check("meerdere: na weghalen van één weer zonder exemplaar te lezen",
+      settings.instance_id("iconik") == first and settings.get("iconik.host") == "https://app.iconik.io")
+settings.remove_integration(first)
+
 # --- via de vaste ingang ---
 check("transcribe kent settings als deel", settings in transcribe.PARTS
       and transcribe.PARTS.index(settings) == transcribe.PARTS.index(transcribe.base) + 1)

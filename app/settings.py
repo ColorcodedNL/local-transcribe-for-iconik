@@ -1,13 +1,16 @@
 """Alle instellingen van de app op één plek: wat er is, de standaardwaarde, wat mag en een uitleg in twee talen.
 
 Elke instelling heeft een sleutel met de groep ervoor ("general.app_language", "iconik.client_id"). De groep
-is waar hij later in config.json en in het venster Instellingen staat; "iconik" is een koppeling en komt
-straks per koppeling onder integrations.<id>.
+is waar hij in config.json en in het venster Instellingen staat; "iconik" is een koppeling en staat per
+exemplaar onder integrations.<id>. Het schema zegt wat elk exemplaar van die soort heeft.
 
-    register(setting) een deel dat later komt (een engine, een koppeling) voegt zijn eigen instelling toe
-    get(key)          de waarde, of de standaardwaarde als er niets (bruikbaars) staat
-    put(key, value)   controleert de waarde tegen het schema en bewaart hem; anders SettingError
-    put_many(changes) hetzelfde voor meerdere tegelijk: alles of niets
+    register(setting)           een deel dat later komt (een engine, een koppeling) voegt zijn eigen instelling toe
+    get(key, instance)          de waarde, of de standaardwaarde als er niets (bruikbaars) staat
+    put(key, value, instance)   controleert de waarde tegen het schema en bewaart hem; anders SettingError
+    put_many(changes, instance) hetzelfde voor meerdere tegelijk: alles of niets
+
+`instance` is het ID van een exemplaar (iconik-a1b2c3) en telt alleen bij een instelling van een koppeling.
+Zonder is het het enige exemplaar van die soort; zijn het er meer, dan is dat een fout (InstanceError).
 
 Lezen is ruim: alleen het type en de grenzen tellen, zoals de app het altijd deed. Bewaren is streng.
 config.json is in groepen ingedeeld (zie "opslag" hieronder); `flat` is de naam uit het platte bestand van 0.6.
@@ -18,6 +21,11 @@ import shutil
 from dataclasses import dataclass, field
 
 import base
+
+
+class InstanceError(LookupError):
+    """Een instelling van een koppeling zonder te zeggen welk exemplaar, terwijl er meer zijn; of een exemplaar
+    dat er niet is of van een andere soort is. Een fout in de code, geen melding voor de gebruiker."""
 
 
 class SettingError(ValueError):
@@ -169,7 +177,7 @@ def _copy(value):
 #   {"version": 2, "general": {...}, "transcription": {...}, "refine": {...},
 #    "integrations": {"iconik-a1b2c3": {"type": "iconik", ...}}}
 #
-# Een koppeling staat per exemplaar onder integrations, met een eigen ID; de app kent er nu één per soort.
+# Een koppeling staat per exemplaar onder integrations, met een eigen ID; er kunnen er meer van een soort zijn.
 # Tot 0.6 was het bestand één platte lijst. Die wordt bij het eerste lezen eenmalig omgezet; het oude bestand
 # blijft daarbij als config-0.6.json naast het nieuwe staan.
 
@@ -183,22 +191,40 @@ def _new_id(kind):
     return f"{kind}-{secrets.token_hex(3)}"
 
 
-def _instance(config, kind, create=False):
-    """Het exemplaar van deze koppeling (nu altijd het eerste van die soort), of None."""
+def _ids(config, kind):
+    found = config.get("integrations") or {}
+    return [iid for iid in sorted(found) if isinstance(found[iid], dict) and found[iid].get("type") == kind]
+
+
+def _instance(config, kind, create=False, instance=None):
+    """Het blok van een exemplaar van deze koppeling, of None als er (nog) geen is.
+
+    Met `instance` precies dat exemplaar; het moet bestaan en van deze soort zijn, ook met create (een nieuw
+    exemplaar komt alleen via add_integration). Zonder: het enige exemplaar van de soort, met create een nieuw
+    als er nog geen is. Zijn er meer, dan InstanceError: nooit stil het eerste kiezen."""
     found = config.setdefault("integrations", {}) if create else config.get("integrations") or {}
-    for iid in sorted(found):
-        if isinstance(found[iid], dict) and found[iid].get("type") == kind:
-            return found[iid]
+    if instance is not None:
+        block = found.get(instance)
+        if isinstance(block, dict) and block.get("type") == kind:
+            return block
+        if block is None and not create:
+            return None
+        raise InstanceError(f"geen {kind}-exemplaar: {instance!r}")
+    ids = _ids(config, kind)
+    if len(ids) > 1:
+        raise InstanceError(f"meerdere {kind}-exemplaren ({', '.join(ids)}); zeg welk")
+    if ids:
+        return found[ids[0]]
     if not create:
         return None
     found[_new_id(kind)] = item = {"type": kind}
     return item
 
 
-def _home(config, s, create=False):
+def _home(config, s, create=False, instance=None):
     """Het blok in config waar deze instelling staat, of None als het er (nog) niet is."""
     if s.group in INTEGRATIONS:
-        return _instance(config, s.group, create)
+        return _instance(config, s.group, create, instance)
     if create:
         return config.setdefault(s.group, {})
     block = config.get(s.group)
@@ -216,7 +242,11 @@ def _adopt(config):
     changed = False
     for flat in [k for k in config if k in by_flat]:
         s = by_flat[flat]
-        _home(config, s, create=True)[_name(s)] = config.pop(flat)
+        try:
+            home = _home(config, s, create=True)
+        except InstanceError:
+            continue   # meerdere exemplaren: niet raden bij welk het hoort; de sleutel blijft los staan
+        home[_name(s)] = config.pop(flat)
         changed = True
     return changed
 
@@ -250,57 +280,57 @@ def _config():
     return base.update_config(_migrate)
 
 
-def _read(config, s):
-    home = _home(config, s)
+def _read(config, s, instance=None):
+    home = _home(config, s, instance=instance)
     return home.get(_name(s)) if home is not None else None
 
 
-def _write(config, s, value):
+def _write(config, s, value, instance=None):
     _migrate(config)
-    _home(config, s, create=True)[_name(s)] = value
+    _home(config, s, create=True, instance=instance)[_name(s)] = value
 
 
-def get(key):
+def get(key, instance=None):
     s = spec(key)
-    value = _read(_config(), s)
+    value = _read(_config(), s, instance)
     if not _usable(s, value):
         return _copy(s.default)
     return float(value) if s.kind == "number" else _copy(value)
 
 
-def stored(key):
+def stored(key, instance=None):
     """Wat er echt in het bestand staat, zonder standaardwaarde of controle; None als er niets staat."""
-    return _copy(_read(_config(), spec(key)))
+    return _copy(_read(_config(), spec(key), instance))
 
 
-def values(group):
+def values(group, instance=None):
     """Alle instellingen van een groep met hun huidige waarde, voor het venster."""
-    return {key: get(key) for key, s in SCHEMA.items() if s.group == group}
+    return {key: get(key, instance) for key, s in SCHEMA.items() if s.group == group}
 
 
 def integrations():
-    """De koppelingen in config.json: [{"id", "type"}]. Nu hooguit één per soort."""
+    """De koppelingen in config.json: [{"id", "type"}], op volgorde van ID."""
     found = _config().get("integrations") or {}
     return [{"id": iid, "type": item.get("type")} for iid, item in sorted(found.items()) if isinstance(item, dict)]
 
 
-def update(key, change):
+def update(key, change, instance=None):
     """Voor een instelling met een eigen weg (mounts, ondertitels): leest de huidige waarde, laat `change`
     hem aanpassen en bewaart, in één keer onder de grendel. Geen controle: die doet de eigen weg."""
     s = spec(key)
 
     def apply(config):
-        current = _read(config, s)
+        current = _read(config, s, instance)
         current = _copy(current) if _usable(s, current) else _copy(s.default)
         change(current)
-        _write(config, s, current)
+        _write(config, s, current, instance)
     base.update_config(apply)
 
 
-def raw_put(key, value):
+def raw_put(key, value, instance=None):
     """Bewaart zonder controle. Alleen voor tests (een kapotte waarde in het bestand) en de omzetting."""
     s = spec(key)
-    base.update_config(lambda config: _write(config, s, value))
+    base.update_config(lambda config: _write(config, s, value, instance))
 
 
 def clean(key, value):
@@ -352,19 +382,20 @@ def clean(key, value):
     raise wrong  # een soort die het schema niet kent
 
 
-def put(key, value):
+def put(key, value, instance=None):
     """Controleert en bewaart. Geeft de bewaarde waarde terug."""
-    return put_many({key: value})[key]
+    return put_many({key: value}, instance)[key]
 
 
-def put_many(changes):
+def put_many(changes, instance=None):
     """Controleert alles eerst; mag één waarde niet, dan wordt niets bewaard (SettingError van de eerste).
-    Daarna in één keer weggeschreven. Geeft de bewaarde waarden terug."""
+    Daarna in één keer weggeschreven. Geeft de bewaarde waarden terug. `instance` geldt voor de instellingen
+    van een koppeling; de andere staan voor de hele app."""
     cleaned = {key: clean(key, value) for key, value in changes.items()}
 
     def change(config):
         for key, value in cleaned.items():
-            _write(config, spec(key), value)
+            _write(config, spec(key), value, instance)
     base.update_config(change)
     return cleaned
 
@@ -373,7 +404,7 @@ def defaults():
     return {key: _copy(s.default) for key, s in SCHEMA.items()}
 
 
-def reset(keys):
+def reset(keys, instance=None):
     """Terug naar de standaardwaarde: de sleutels gaan uit config.json, zodat een latere andere standaard
     (bijvoorbeeld per Mac) vanzelf geldt. Geeft de sleutels die er echt stonden."""
     specs = [spec(key) for key in keys]
@@ -381,7 +412,7 @@ def reset(keys):
 
     def change(config):
         for s in specs:
-            home = _home(config, s)
+            home = _home(config, s, instance=instance)
             if home is not None and _name(s) in home:
                 del home[_name(s)]
                 removed.append(s.key)
@@ -390,10 +421,37 @@ def reset(keys):
     return removed
 
 
+def instances(kind):
+    """De ID's van alle exemplaren van een soort, op volgorde."""
+    return [item["id"] for item in integrations() if item["type"] == kind]
+
+
+def add_integration(kind):
+    """Maakt een nieuw exemplaar van een koppeling en geeft zijn ID."""
+    if kind not in INTEGRATIONS:
+        raise InstanceError(f"onbekende koppeling: {kind!r}")
+    made = []
+
+    def change(config):
+        if config.get("version") != VERSION:
+            _migrate(config)
+        found = config.setdefault("integrations", {})
+        iid = _new_id(kind)
+        while iid in found:
+            iid = _new_id(kind)
+        found[iid] = {"type": kind}
+        made.append(iid)
+    base.update_config(change)
+    return made[0]
+
+
 def instance_id(kind, create=False):
-    """Het ID van het exemplaar van deze koppeling (nu hooguit één per soort), of None. Met create komt er een
-    als het er nog niet is: dan is er werk van die soort (een opdracht of bestanden van vóór stap 4)."""
-    found = [item["id"] for item in integrations() if item["type"] == kind]
+    """Het ID van het enige exemplaar van deze koppeling, of None. Met create komt er een als het er nog niet
+    is: dan is er werk van die soort (een opdracht of bestanden van vóór stap 4). Zijn er meer, dan
+    InstanceError: wie dan iets wil, moet zeggen welk."""
+    found = instances(kind)
+    if len(found) > 1:
+        raise InstanceError(f"meerdere {kind}-exemplaren ({', '.join(found)}); zeg welk")
     if found or not create:
         return found[0] if found else None
     made = []
@@ -435,12 +493,12 @@ def remove_integration(instance_id):
         base.update_config(lambda config: (config.get("integrations") or {}).pop(instance_id, None))
 
 
-def custom(group):
+def custom(group, instance=None):
     """De sleutels van een groep die iemand zelf anders heeft ingesteld dan de standaard. Een bewaarde waarde
     die gelijk is aan de standaard telt niet: dan is er niets aangepast."""
     config = _config()
-    return [key for key, s in SCHEMA.items() if s.group == group and _read(config, s) is not None
-            and _read(config, s) != s.default]
+    return [key for key, s in SCHEMA.items() if s.group == group and _read(config, s, instance) is not None
+            and _read(config, s, instance) != s.default]
 
 
 def describe(group=None, advanced=False):
