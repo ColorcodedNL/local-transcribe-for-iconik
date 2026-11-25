@@ -66,7 +66,7 @@ def window_url(page="/"):
     klik soms voor het eerste openen klaar is; rechtstreeks laden gaf dan 403 in het venster."""
     return f"/window/open?t={SESSION}&next={quote(page or '/', safe='')}"
 KEY_HEADER = "X-Local-Transcribe-Key"
-pending_login = {}        # state -> verifier, voor een inlog die onderweg is
+pending_login = {}        # state -> (verifier, exemplaar), voor een inlog die onderweg is
 pending_back = {}         # state -> pagina waar het venster na het inloggen heen gaat (Instellingen)
 pending_ids = []          # opdrachten die wachten tot er is ingelogd
 window_state = {"n": 0, "page": "/"}   # wat het venster van de app moet tonen
@@ -692,10 +692,10 @@ def set_labels_language(code):
 
 def _after_host(old, new):
     if old != new:   # een andere Iconik-omgeving: de inlog en het domein horen bij de oude
-        transcribe.clear_login()
+        source = items.iconik_source()
+        transcribe.clear_login(source)
         who.clear()
         actions.clear()
-        source = items.iconik_source()
         if source:
             setting.note(source, items.DOMAIN_KEY, None)
         integration_icon()   # het icoon van de nieuwe omgeving alvast zoeken
@@ -822,7 +822,7 @@ def remove_integration(instance_id):
         return {"ok": False, "error": transcribe.L("Deze integratie bestaat niet (meer).", "This integration does not exist (any more).")}
     if busy():
         return {"ok": False, "error": transcribe.L("Wacht tot de lopende opdracht klaar is.", "Wait until the running job has finished.")}
-    transcribe.clear_login()
+    transcribe.clear_login(instance_id)
     who.clear()
     actions.clear()
     setting.remove_integration(instance_id)
@@ -1058,7 +1058,7 @@ class Handler(BaseHTTPRequestHandler):
             pass
 
     def finish_login(self, code, state, error):
-        verifier = pending_login.pop(state, None)
+        verifier, instance = pending_login.pop(state, (None, None))
         back = pending_back.pop(state, None)
         if back and (error or not verifier or not code):
             return self.redirect(back + "&login=failed")
@@ -1067,7 +1067,7 @@ class Handler(BaseHTTPRequestHandler):
         if not verifier or not code:
             return self.reply(200, status_page(transcribe.L("Deze inlog is verlopen of hoort niet bij deze app. Probeer opnieuw.",
                                                             "This login has expired or does not belong to this app. Try again.")))
-        transcribe.finish_login(code, verifier)
+        transcribe.finish_login(code, verifier, instance)
         who.clear()
         actions.clear()
         print("Ingelogd bij Iconik.")
@@ -1289,9 +1289,17 @@ def _clear(h, r):
     return _ok(h)
 
 
+def iconik_instance(r):
+    """Het Iconik-exemplaar uit ?instance= (moet bestaan), anders de enige Iconik."""
+    wanted = r.first("instance")
+    if wanted and wanted in setting.instances("iconik"):
+        return wanted
+    return items.iconik_source()
+
+
 @route("/logout", protected=True)
 def _logout(h, r):
-    transcribe.clear_login()
+    transcribe.clear_login(iconik_instance(r))
     who.clear()
     actions.clear()
     return _ok(h)
@@ -1301,10 +1309,11 @@ def _logout(h, r):
 
 @route("/login")
 def _login(h, r):
-    address, state, verifier = transcribe.start_login()
+    instance = iconik_instance(r)
+    address, state, verifier = transcribe.start_login(instance)
     pending_login.clear()
     pending_back.clear()
-    pending_login[state] = verifier
+    pending_login[state] = (verifier, instance)
     if r.first("back") == "settings":   # ingelogd vanuit Instellingen: daarna daar terug, niet naar /
         pending_back[state] = "/settings-window?tab=integrations"
     return h.redirect(address)

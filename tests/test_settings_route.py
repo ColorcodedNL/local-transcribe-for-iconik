@@ -37,7 +37,7 @@ transcribe.save_config({"client_id": "12345678-1234-1234-1234-123456789abc", "ap
 serve.settings.update(key="k", hf_token=None, model="m", language=None, mount=None, idle_exit=False)
 serve.client = lambda: None   # niet ingelogd: niemand praat met Iconik
 logouts = []
-transcribe.clear_login = lambda: logouts.append(1)
+transcribe.clear_login = lambda *a: logouts.append(1)
 is_busy = [False]
 serve.busy = lambda: is_busy[0]
 server = ThreadingHTTPServer(("127.0.0.1", 0), serve.Handler)

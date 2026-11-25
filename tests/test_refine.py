@@ -227,7 +227,7 @@ import iconik  # noqa: E402
 transcribe.delete_transcription = fake_delete
 transcribe.find_version = lambda asset: "V"
 fake = FakeIconik()
-transcribe.make_client = lambda: fake
+transcribe.make_client = lambda *a, **k: fake
 # Het Whisper-transcript staat in Iconik, zoals na een opdracht.
 connector = iconik.IconikConnector(fake)
 info = connector.open("A1", push=True)

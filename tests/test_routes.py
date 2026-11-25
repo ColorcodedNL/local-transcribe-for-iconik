@@ -103,7 +103,7 @@ for name in ("remove_jobs", "remove_integration", "apply_settings", "reset_setti
 serve.client = lambda: None
 serve.system.open_url = lambda *a: None
 serve.remote.resume = lambda: None
-transcribe.clear_login = lambda: None
+transcribe.clear_login = lambda *a: None
 R = serve.refine
 for name in ("save_to_iconik", "preview_subtitles", "make_subtitles", "import_subtitles", "write_subtitles", "fit_subtitles"):
     setattr(R, name, OK)

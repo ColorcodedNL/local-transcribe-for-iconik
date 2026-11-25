@@ -16,6 +16,7 @@ import requests
 from base import (  # noqa: F401
     KEYCHAIN_SERVICE, L, MEDIA_EXTENSIONS, NeedsFolder, OLD_APP_NAME, Problem, SIDECAR_EXTENSIONS, fail, load_config, print, update_config,
 )
+import keychain
 import settings
 from system import ask_folder, find_moved_mount, mount_reachable  # noqa: F401  (macOS: platform_mac.py)
 
@@ -61,82 +62,113 @@ for _setting in SETTINGS:
     settings.register(_setting)
 
 
-def api_host():
-    return (settings.get("iconik.host") or DEFAULT_HOST).rstrip("/")
+def api_host(instance=None):
+    return (settings.get("iconik.host", _instance(instance)) or DEFAULT_HOST).rstrip("/")
 
 
-# De inlog in het geheugen: de sleutelhanger één keer lezen in plaats van bij elke aanroep naar Iconik. Bij
-# een testbuild die macOS niet herkent scheelt dat een rij wachtwoordvragen. Deze app werkt het geheugen zelf
-# bij als hij ververst (save_login); ververst iets anders het token, dan leest _authorize opnieuw (fresh).
-_login_cache = [False, None]   # [gelezen, inlog]
-# Bij het opstarten vragen het venster en de achtergrondtaak tegelijk om de inlog. Zonder slot lazen ze allebei
-# de sleutelhanger terwijl macOS nog op het wachtwoord wachtte: twee vragen. Nu wacht de tweede op de eerste.
+def _instance(instance=None):
+    """Het exemplaar: het gegeven, of de enige Iconik (None als er nog geen is; settings.InstanceError bij meer)."""
+    return instance or settings.instance_id("iconik")
+
+
+# De inlog bij Iconik staat per exemplaar in de sleutelhanger (keychain.py: account "<exemplaar>:login"), en wordt
+# één keer gelezen en daarna uit het geheugen gehaald. Tot stap 5 stond hij voor de enige Iconik onder account "login"
+# (en nog eerder onder de oude app-naam). Dat item verhuist eenmalig naar het enige exemplaar: lezen, onder de nieuwe
+# naam schrijven en het oude weghalen. Lukt weghalen niet (macOS kan er nog eens om vragen), dan probeert uitloggen het
+# opnieuw. Dat het verhuisd is, staat bij het exemplaar (settings.note), zodat een oude inlog nooit terugkomt.
+LOGIN = "login"
+LEGACY_ACCOUNT = "login"
+LEGACY_NOTE = "keychain"       # settings.note(exemplaar, ...): "moved" als het oude item is verhuisd (of er niet was)
+
+
+def _legacy_owner(instance):
+    """Het oude item hoort bij de enige Iconik, en alleen zolang het nog niet verhuisd is."""
+    return settings.instances("iconik") == [instance] and settings.noted(instance, LEGACY_NOTE) != "moved"
+
+
+def _move_legacy(instance):
+    """Verhuist de inlog van vóór stap 5 naar dit exemplaar. Geeft de inlog (tekst) of None."""
+    import keyring
+    raw = keyring.get_password(KEYCHAIN_SERVICE, LEGACY_ACCOUNT)
+    if not raw:
+        raw = keyring.get_password(OLD_APP_NAME, LEGACY_ACCOUNT)   # nog van voor de naamswijziging
+    if raw:
+        keychain.put(instance, LOGIN, raw)
+        print("Inlog bij Iconik verhuisd naar een eigen item per koppeling.")
+        _delete_legacy()
+    settings.note(instance, LEGACY_NOTE, "moved")
+    return raw
+
+
+def _delete_legacy():
+    """Haalt de oude items weg (als ze er nog zijn). Een weigering van macOS alleen in het log."""
+    import keyring
+    for service in (KEYCHAIN_SERVICE, OLD_APP_NAME):
+        try:
+            keyring.delete_password(service, LEGACY_ACCOUNT)
+        except Exception as error:
+            if type(error).__name__ != "PasswordDeleteError":   # stond er niet: goed
+                print(f"Oude inlog weghalen uit de sleutelhanger lukte niet ({type(error).__name__}); bij uitloggen opnieuw.")
+
+
+# Bij het opstarten vragen het venster en de achtergrondtaak tegelijk om de inlog; keychain.py laat de tweede op de
+# eerste wachten, en de verhuizing gebeurt onder dit slot maar één keer.
 _login_read = threading.Lock()
 
 
-def load_login(fresh=False):
-    """De bewaarde inlog (uit het geheugen, of met `fresh` uit de sleutelhanger van macOS), of None."""
+def load_login(instance=None, fresh=False):
+    """De bewaarde inlog van een exemplaar (uit het geheugen, of met `fresh` uit de sleutelhanger), of None."""
+    instance = _instance(instance)
+    if not instance:
+        return None
     with _login_read:
-        if _login_cache[0] and not fresh:
-            return dict(_login_cache[1]) if _login_cache[1] else None
-        return _read_login()
-
-
-def _read_login():
-    import keyring
-    raw = keyring.get_password(KEYCHAIN_SERVICE, "login")
-    if not raw:
-        # Inlog van voor de naamswijziging: overzetten naar de nieuwe naam.
-        raw = keyring.get_password(OLD_APP_NAME, "login")
-        if raw:
-            keyring.set_password(KEYCHAIN_SERVICE, "login", raw)
-            try:
-                keyring.delete_password(OLD_APP_NAME, "login")
-            except Exception:
-                pass
+        raw = keychain.get(instance, LOGIN, fresh=fresh)
+        if raw is None and _legacy_owner(instance):
+            raw = _move_legacy(instance)
     try:
         login = json.loads(raw) if raw else None
     except ValueError:
         login = None
-    _login_cache[:] = [True, login]
-    return dict(login) if login else None
+    return login if isinstance(login, dict) else None
 
 
-def save_login(login):
-    import keyring
-    keyring.set_password(KEYCHAIN_SERVICE, "login", json.dumps(login))
-    _login_cache[:] = [True, dict(login)]
-    _has_login[:] = [True, time.monotonic()]
+def save_login(login, instance=None):
+    instance = _instance(instance)
+    keychain.put(instance, LOGIN, json.dumps(login))
+    _has_login[instance] = (True, time.monotonic())
 
 
-def clear_login():
-    import keyring
-    _login_cache[:] = [True, None]
-    _has_login[:] = [False, time.monotonic()]
-    try:
-        keyring.delete_password(KEYCHAIN_SERVICE, "login")
-    except Exception:
-        pass
+def clear_login(instance=None):
+    instance = _instance(instance)
+    if not instance:
+        return
+    _has_login[instance] = (False, time.monotonic())
+    keychain.delete(instance, LOGIN)
+    if settings.instances("iconik") == [instance]:
+        _delete_legacy()   # een oud item dat bij het verhuizen bleef staan, gaat nu alsnog weg
 
 
-# Is er een inlog? Het venster vraagt dat elke seconde; de sleutelhanger hoeft dan niet elke keer.
-# (Sinds de inlog in het geheugen staat, is dit vooral nog voor de eerste keer lezen.)
+# Is er een inlog? Het venster vraagt dat elke seconde; daarvoor hoeft de sleutelhanger niet elke keer.
 HAS_LOGIN_SECONDS = 5
-_has_login = [None, 0.0]   # [uitkomst, wanneer gekeken]
+_has_login = {}   # exemplaar -> (uitkomst, wanneer gekeken)
 
 
-def has_login():
-    known, checked = _has_login
+def has_login(instance=None):
+    instance = _instance(instance)
+    if not instance:
+        return False
+    known, checked = _has_login.get(instance, (None, 0.0))
     if known is not None and time.monotonic() - checked < HAS_LOGIN_SECONDS:
         return known
-    found = bool(load_login())
-    _has_login[:] = [found, time.monotonic()]
+    found = bool(load_login(instance))
+    _has_login[instance] = (found, time.monotonic())
     return found
 
 
-def token_request(fields):
-    """Vraagt bij Iconik een token op en bewaart het meteen. Geeft de inlog terug."""
-    response = requests.post(f"{api_host()}/API/auth/v1/oauth/token/", data=fields, timeout=30)
+def token_request(fields, instance=None):
+    """Vraagt bij de Iconik van een exemplaar een token op en bewaart het meteen. Geeft de inlog terug."""
+    instance = _instance(instance)
+    response = requests.post(f"{api_host(instance)}/API/auth/v1/oauth/token/", data=fields, timeout=30)
     if not response.ok:
         fail(L(f"Iconik gaf geen token: HTTP {response.status_code} {response.text[:200]}",
                f"Iconik did not return a token: HTTP {response.status_code} {response.text[:200]}"))
@@ -148,13 +180,14 @@ def token_request(fields):
         "scope": payload.get("scope", ""),
     }
     # Een ververstoken is eenmalig; het nieuwe moet bewaard zijn voor er iets anders gebeurt.
-    save_login(login)
+    save_login(login, instance)
     return login
 
 
-def start_login():
-    """Begin van de inlog: geeft (adres voor de browser, state, verifier)."""
-    client_id = settings.get("iconik.client_id")
+def start_login(instance=None):
+    """Begin van de inlog bij een exemplaar: geeft (adres voor de browser, state, verifier)."""
+    instance = _instance(instance)
+    client_id = settings.get("iconik.client_id", instance)
     if not client_id:
         fail(L("Er is nog geen client-ID van de Iconik-applicatie ingesteld.",
                "No client ID for the Iconik application has been set yet."))
@@ -167,26 +200,28 @@ def start_login():
         "response_type": "code", "code_challenge": challenge,
         "code_challenge_method": "S256", "state": state,
     })
-    return f"{api_host()}/oauth/authorize?{query}", state, verifier
+    return f"{api_host(instance)}/oauth/authorize?{query}", state, verifier
 
 
-def finish_login(code, verifier):
+def finish_login(code, verifier, instance=None):
+    instance = _instance(instance)
     return token_request({
-        "grant_type": "authorization_code", "client_id": settings.get("iconik.client_id"),
+        "grant_type": "authorization_code", "client_id": settings.get("iconik.client_id", instance),
         "code": code, "code_verifier": verifier, "redirect_uri": REDIRECT_URI,
-    })
+    }, instance)
 
 
 class Iconik:
     """Praat met de API van Iconik.
 
-    Zonder argumenten: met de inlog van de gebruiker (wordt vanzelf ververst).
+    Zonder app_id: met de inlog van de gebruiker bij dit exemplaar (wordt vanzelf ververst).
     Met app_id en token: met een persoonlijk token, zoals in ~/.iconik-env.
     """
 
-    def __init__(self, app_id=None, token=None):
+    def __init__(self, app_id=None, token=None, instance=None):
         self.session = requests.Session()
         self.uses_login = app_id is None
+        self.instance = _instance(instance)
         if not self.uses_login:
             self.session.headers.update({"App-ID": app_id, "Auth-Token": token})
 
@@ -195,38 +230,38 @@ class Iconik:
         # Een slot voor het hele programma: een ververstoken mag maar een keer gebruikt
         # worden, en hergebruik maakt de hele inlog ongeldig.
         with LOGIN_LOCK:
-            login = load_login()
+            login = load_login(self.instance)
             if not login:
                 fail(L("Niet ingelogd bij Iconik.", "Not logged in to Iconik."), local=True)
             # Is het geweigerde token intussen al door een ander vervangen, dan niet opnieuw verversen.
             stale = rejected is not None and login["access_token"] == rejected
             if stale or login["expires_at"] - time.time() < 120:
                 if not login.get("refresh_token"):
-                    clear_login()
+                    clear_login(self.instance)
                     fail(L("De inlog bij Iconik is verlopen. Log opnieuw in.", "The Iconik login has expired. Log in again."), local=True)
                 try:
                     login = token_request({
                         "grant_type": "refresh_token",
-                        "client_id": settings.get("iconik.client_id"),
+                        "client_id": settings.get("iconik.client_id", self.instance),
                         "refresh_token": login["refresh_token"],
-                    })
+                    }, self.instance)
                 except Problem:
                     # Misschien heeft iets anders (het script op de opdrachtregel) intussen ververst: dan
                     # staat er een nieuwere inlog in de sleutelhanger dan in het geheugen.
-                    latest = load_login(fresh=True)
+                    latest = load_login(self.instance, fresh=True)
                     if latest and latest.get("refresh_token") != login.get("refresh_token") \
                             and latest["expires_at"] - time.time() >= 120:
                         login = latest
                         self.session.headers["Authorization"] = f"Bearer {login['access_token']}"
                         return
-                    clear_login()
+                    clear_login(self.instance)
                     fail(L("De inlog bij Iconik is verlopen. Log opnieuw in.", "The Iconik login has expired. Log in again."), local=True)
             self.session.headers["Authorization"] = f"Bearer {login['access_token']}"
 
     def _call(self, method, path, **kwargs):
         if self.uses_login:
             self._authorize()
-        url = f"{api_host()}/API/{path}"
+        url = f"{api_host(self.instance)}/API/{path}"
         response = self.session.request(method, url, timeout=60, **kwargs)
         if response.status_code == 401 and self.uses_login:
             used = self.session.headers.get("Authorization", "").removeprefix("Bearer ")
@@ -250,11 +285,13 @@ class Iconik:
         return self._call("DELETE", path, json=body)
 
 
-def make_client():
-    """De inlog van de gebruiker als die er is, anders het token uit de omgeving, anders None."""
+def make_client(instance=None):
+    """De inlog van de gebruiker bij dit exemplaar (zonder: de enige Iconik) als die er is, anders het token uit de
+    omgeving, anders None."""
     try:
-        if has_login():
-            return Iconik()
+        instance = _instance(instance)
+        if instance and has_login(instance):
+            return Iconik(instance=instance)
     except Exception:
         pass  # sleutelhanger niet beschikbaar: dan alleen het token uit de omgeving
     app_id, token = os.environ.get("ICONIK_APP_ID"), os.environ.get("ICONIK_TOKEN")
@@ -293,14 +330,14 @@ def find_version(asset):
     return versions[-1]["id"]
 
 
-def set_mount(storage_id, folder):
+def set_mount(storage_id, folder, instance=None):
     """Onthoudt (of vergeet, met None) waar een storage op deze Mac staat."""
     def change(mounts):
         if folder is None:
             mounts.pop(storage_id, None)
         else:
             mounts[storage_id] = str(folder)
-    settings.update("iconik.mounts", change)
+    settings.update("iconik.mounts", change, _instance(instance))
 
 
 
@@ -335,7 +372,8 @@ def find_media_file(iconik, asset_id, mount_override=None, ask_mount=False, inte
         fail(L(f"Bestand niet gevonden: {Path(mount_override) / relative_of(media[0])}",
                f"File not found: {Path(mount_override) / relative_of(media[0])}"))
 
-    mounts = settings.get("iconik.mounts")
+    instance = getattr(iconik, "instance", None)   # de opslag hoort bij de Iconik van deze verbinding
+    mounts = settings.get("iconik.mounts", _instance(instance))
     chosen = media[0]
     if not ask_mount:
         # Iconik koppelt identieke bestanden op verschillende plekken aan een asset. Elke kopie op een
@@ -347,7 +385,7 @@ def find_media_file(iconik, asset_id, mount_override=None, ask_mount=False, inte
                 return Path(known) / relative
             moved = find_moved_mount(known, relative)
             if moved is not None:
-                set_mount(item["storage_id"], moved)
+                set_mount(item["storage_id"], moved, instance)
                 print(f"Opslag staat nu op {moved} (was {known}), dat is onthouden.")
                 return moved / relative
         unknown = [item for item in media if not mounts.get(item.get("storage_id"))]
@@ -371,7 +409,7 @@ def find_media_file(iconik, asset_id, mount_override=None, ask_mount=False, inte
 
     def remember(mount):
         # Pas nu lezen en schrijven: het venster kan lang open hebben gestaan.
-        set_mount(storage_id, mount)
+        set_mount(storage_id, mount, instance)
         print(f"Onthouden: storage {name} staat hier op {mount}")
 
     # Staat de storage hier op hetzelfde pad als in Iconik, dan hoeft niemand iets te kiezen.

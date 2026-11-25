@@ -197,7 +197,7 @@ def start(the_host):
 def client(instance):
     """De verbinding met de Iconik van dit exemplaar, of None als er niet is ingelogd. Tests vervangen deze
     functie onder deze naam."""
-    return iconik_api.make_client()
+    return iconik_api.make_client(instance)
 
 
 def _connector(instance):

@@ -139,7 +139,7 @@ with serve.jobs_lock:
 # De oude instellingenroutes (/applang, /auto, ...) zijn weg: tests/test_routes.py legt de hele routetabel vast.
 
 
-def boom():
+def boom(*a, **k):
     raise ConnectionError("geen netwerk")
 
 
