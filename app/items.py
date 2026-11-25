@@ -66,7 +66,8 @@ def asset_id(item):
 
 
 def iconik_source(create=False):
-    """Het exemplaar van de Iconik-koppeling (nu hooguit één). Met create komt het er als het er nog niet is."""
+    """Het exemplaar van de enige Iconik-koppeling. Met create komt het er als het er nog niet is. Zijn er meer, dan
+    settings.InstanceError: wie dan iets wil, moet zeggen welke."""
     return settings.instance_id("iconik", create=create)
 
 
@@ -93,9 +94,9 @@ def iconik_for_domain(domain=""):
     """Het exemplaar van de Iconik-omgeving waar een knop vandaan komt, of None. Zonder domein (een knop van vóór
     stap 4e): de enige Iconik. Weet het exemplaar zijn domein nog niet (net ingelogd, nog niet opgehaald) en is er
     maar één Iconik, dan is het die."""
-    found = [item["id"] for item in settings.integrations() if item["type"] == "iconik"]
+    found = settings.instances("iconik")   # op volgorde van koppelen: bij dezelfde omgeving telt de eerste
     if not domain:
-        return found[0] if found else None
+        return found[0] if found else None   # een knop van vóór stap 4e zette de eerste (en toen enige) Iconik neer
     if not valid_domain(domain):
         return None
     for instance in found:
@@ -104,6 +105,27 @@ def iconik_for_domain(domain=""):
     if len(found) == 1 and not settings.noted(found[0], DOMAIN_KEY):
         return found[0]
     return None
+
+
+def same_environment(instance):
+    """Het eerder gekoppelde exemplaar met dezelfde Iconik-omgeving (hetzelfde domein), of None. Twee koppelingen naar
+    één omgeving mogen (om te testen; besloten 25 november), maar wat Macs delen (de knoppen, de wachtrij) doet alleen
+    de eerste: twee koppelingen in dezelfde rij onder dezelfde Mac-naam zouden elkaars claims voor achtergebleven
+    claims aanzien."""
+    domain = settings.noted(instance, DOMAIN_KEY)
+    if not valid_domain(domain):
+        return None
+    for other in settings.instances("iconik"):
+        if other == instance:
+            return None
+        if settings.noted(other, DOMAIN_KEY) == domain:
+            return other
+    return None
+
+
+def shares_queue(instance):
+    """Doet dit exemplaar mee aan wat Macs delen (opdrachten op afstand, automatisch transcriberen, de knoppen)?"""
+    return same_environment(instance) is None
 
 
 def from_request(item="", asset=""):

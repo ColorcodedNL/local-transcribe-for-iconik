@@ -100,7 +100,7 @@ for name in ("install_update", "install_actions", "change_mount", "set_login_ite
     setattr(serve, name, lambda *a, **k: None)
 for name in ("remove_jobs", "remove_integration", "apply_settings", "reset_settings", "app_state"):
     setattr(serve, name, OK)
-serve.client = lambda: None
+serve.client = lambda *a: None
 serve.system.open_url = lambda *a: None
 serve.remote.resume = lambda: None
 transcribe.clear_login = lambda *a: None

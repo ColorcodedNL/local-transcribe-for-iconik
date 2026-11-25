@@ -23,7 +23,7 @@ for name in ("keyring", "numpy", "mlx", "mlx_whisper", "torch", "webview"):
 import transcribe, serve, resources  # noqa: E402,E401
 
 transcribe.CONFIG_PATH = Path(tempfile.mkdtemp()) / "config.json"   # nooit de echte voorkeuren aanraken
-serve.client = lambda: None   # vooruit lezen praat dan met niemand
+serve.client = lambda *a: None   # vooruit lezen praat dan met niemand
 fails = 0
 
 

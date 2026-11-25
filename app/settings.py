@@ -18,6 +18,7 @@ config.json is in groepen ingedeeld (zie "opslag" hieronder); `flat` is de naam 
 import re
 import secrets
 import shutil
+import time
 from dataclasses import dataclass, field
 
 import base
@@ -179,7 +180,8 @@ def _new_id(kind):
 
 def _ids(config, kind):
     found = config.get("integrations") or {}
-    return [iid for iid in sorted(found) if isinstance(found[iid], dict) and found[iid].get("type") == kind]
+    rows = [((found[iid].get("added") or 0), iid) for iid in found if isinstance(found[iid], dict) and found[iid].get("type") == kind]
+    return [iid for _, iid in sorted(rows)]
 
 
 def _instance(config, kind, create=False, instance=None):
@@ -295,9 +297,11 @@ def values(group, instance=None):
 
 
 def integrations():
-    """De koppelingen in config.json: [{"id", "type"}], op volgorde van ID."""
+    """De koppelingen in config.json: [{"id", "type"}], op volgorde van toevoegen (een koppeling van vóór stap 5
+    heeft geen tijd en komt eerst; bij gelijke tijd op ID)."""
     found = _config().get("integrations") or {}
-    return [{"id": iid, "type": item.get("type")} for iid, item in sorted(found.items()) if isinstance(item, dict)]
+    rows = [(item.get("added") or 0, iid, item) for iid, item in found.items() if isinstance(item, dict)]
+    return [{"id": iid, "type": item.get("type")} for _, iid, item in sorted(rows, key=lambda r: (r[0], r[1]))]
 
 
 def update(key, change, instance=None):
@@ -425,7 +429,9 @@ def add_integration(kind):
         iid = _new_id(kind)
         while iid in found:
             iid = _new_id(kind)
-        found[iid] = {"type": kind}
+        # De volgorde van koppelen telt (de eerste van een omgeving doet mee aan de wachtrij): altijd na de vorige.
+        last = max([b.get("added") or 0 for b in found.values() if isinstance(b, dict)] + [0])
+        found[iid] = {"type": kind, "added": round(max(time.time(), last + 0.001), 3)}
         made.append(iid)
     base.update_config(change)
     return made[0]

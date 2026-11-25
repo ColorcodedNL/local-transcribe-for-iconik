@@ -209,7 +209,7 @@ def _connector(instance):
 
 def status(instance):
     import iconik_queue
-    return {"connected": client(instance) is not None, "queue": _plain_state(iconik_queue.state)}
+    return {"connected": client(instance) is not None, "queue": _plain_state(iconik_queue.state_of(instance))}
 
 
 def _plain_state(state):
@@ -253,7 +253,7 @@ def _queue(instance, connection):
     language = host.language() if host else "nl"
     iconik_queue.set_language(language)
     iconik_queue.iconik_language[0] = labels if labels in ("nl", "en") else language
-    queue = iconik_queue.Queue(connection, _views.get(instance))
+    queue = iconik_queue.Queue(connection, _views.get(instance), instance=instance)
     if queue.view_id is None:
         _views[instance] = queue.setup(create=True, language=iconik_queue.iconik_language[0])
     return queue
@@ -263,7 +263,7 @@ def poll(instance, who, enabled=True, auto=None):
     """Kijkt of er iets in de rij ligt en neemt hooguit één asset aan. Een fout komt in de staat (voor het venster)
     en in het log, niet als uitzondering: het volgende rondje probeert het opnieuw."""
     import iconik_queue
-    state = iconik_queue.state
+    state = iconik_queue.state_of(instance)
     state["enabled"] = bool(enabled)
     if not enabled:
         return None
@@ -334,6 +334,6 @@ def set_labels_language(instance, code):
     connection = client(instance)
     if connection is None:
         base.fail(base.L("Niet ingelogd bij Iconik.", "Not logged in to Iconik."))
-    queue = iconik_queue.Queue(connection)
+    queue = iconik_queue.Queue(connection, instance=instance)
     queue.setup(create=True, language=code)
     queue.apply_language(code)

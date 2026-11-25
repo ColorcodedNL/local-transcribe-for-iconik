@@ -101,7 +101,7 @@ calls = []
 
 
 class StubQueue:
-    def __init__(self, connection):
+    def __init__(self, connection, view_id=None, instance=None):
         pass
 
     def setup(self, create=False, language="nl"):

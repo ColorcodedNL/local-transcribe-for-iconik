@@ -79,10 +79,31 @@ title_hook = None  # idem: zet de titel van het venster Instellingen (pywebview 
 clear_log_hook = None  # idem: maakt het log leeg (alleen de app weet waar het staat)
 
 
-def client():
-    """De verbinding met Iconik, of None als er nog niet is ingelogd. Via de connector (iconik.client), zodat de
-    app en de connector dezelfde verbinding gebruiken."""
-    return iconik.client(items.iconik_source())
+def client(instance=None):
+    """De verbinding met een Iconik (zonder: de enige), of None als er nog niet is ingelogd. Via de connector
+    (iconik.client), zodat de app en de connector dezelfde verbinding gebruiken."""
+    return iconik.client(instance or items.iconik_source())
+
+
+def iconiks():
+    """De Iconik-exemplaren, op volgorde van koppelen."""
+    return setting.instances("iconik")
+
+
+def first_iconik():
+    found = iconiks()
+    return found[0] if found else None
+
+
+# Wat de app per Iconik bijhoudt voor het venster: wie er is ingelogd en of de knoppen in Iconik staan. De eerste
+# Iconik houdt de namen van vóór stap 5 (who, actions); een volgende krijgt een eigen set.
+_other_iconiks = {}
+
+
+def bits(instance=None):
+    if instance is None or instance == first_iconik():
+        return {"who": who, "actions": actions}
+    return _other_iconiks.setdefault(instance, {"who": {}, "actions": {}})
 
 
 def listener_key():
@@ -372,69 +393,73 @@ def action_url(url, domain):
     return f"{url}?lt_domain={domain}" if items.valid_domain(domain) else url
 
 
-def missing_actions(connection):
+def missing_actions(connection, instance=None):
     """De knoppen die nog niet in deze Iconik-omgeving staan, als (context, titel, link). Een knop van vóór stap 4e
-    (zonder lt_domain) telt als aanwezig: die blijft werken via de enige Iconik, en zo komt er geen tweede bij."""
-    domain = current_domain(connection)
+    (zonder lt_domain) telt als aanwezig: die blijft werken via de eerste Iconik, en zo komt er geen tweede bij."""
+    domain = current_domain(connection, instance)
     existing = connection.get("assets/v1/custom_actions/?per_page=200").get("objects", [])
     have = {(a.get("context"), a.get("url")) for a in existing}
     return [(context, title, action_url(url, domain)) for title, url, contexts in ACTIONS for context in contexts
             if (context, url) not in have and (context, action_url(url, domain)) not in have]
 
 
-def check_actions():
+def check_actions(instance=None):
     """Kijkt of de knop al in deze Iconik-omgeving staat. Dat hoeft maar een keer, door een beheerder."""
+    state = bits(instance)["actions"]
     try:
-        actions["state"] = "ontbreekt" if missing_actions(client()) else "aanwezig"
+        state["state"] = "ontbreekt" if missing_actions(client(instance), instance) else "aanwezig"
     except Exception:
         # niet kunnen kijken: dan vallen we de gebruiker er niet mee lastig
-        actions.setdefault("state", "onbekend")  # bij een storing houden we de vorige uitslag aan
+        state.setdefault("state", "onbekend")  # bij een storing houden we de vorige uitslag aan
     finally:
-        actions["checked"] = time.time()
-        actions["busy"] = False
+        state["checked"] = time.time()
+        state["busy"] = False
 
 
-def install_actions():
+def install_actions(instance=None):
+    state = bits(instance)["actions"]
     try:
-        connection = client()
-        for context, title, url in missing_actions(connection):
+        connection = client(instance)
+        for context, title, url in missing_actions(connection, instance):
             connection.post(f"assets/v1/custom_actions/{context}/",
                             {"context": context, "title": title, "type": "OPEN", "url": url})
-        actions["state"] = "aanwezig"
+        state["state"] = "aanwezig"
         print("De knoppen van Local Transcribe staan in Iconik.")
     except Exception as error:
-        actions["state"] = "geweigerd"
+        state["state"] = "geweigerd"
         print(f"Knop in Iconik zetten lukte niet: {error}")
 
 
 who = {}                  # "name": wie er is ingelogd, zodra dat is opgehaald
 
 
-def fetch_who():
+def fetch_who(instance=None):
+    found = bits(instance)["who"]
     try:
-        user = client().get("users/v1/users/current/")
-        remember_domain(user)
+        user = client(instance).get("users/v1/users/current/")
+        remember_domain(user, instance)
         full = " ".join(part for part in (user.get("first_name"), user.get("last_name")) if part)
         email = user.get("email") or ""
-        who["name"] = f"{full} ({email})" if full and email else full or email
+        found["name"] = f"{full} ({email})" if full and email else full or email
     except Exception:
-        who["name"] = ""  # dan tonen we alleen dat er verbinding is
+        found["name"] = ""  # dan tonen we alleen dat er verbinding is
 
 
-def remember_domain(user):
+def remember_domain(user, instance=None):
     """Onthoudt bij welke Iconik-omgeving (system_domain_id) het exemplaar hoort, voor de knoppen (items.py)."""
     domain = (user or {}).get("system_domain_id")
-    source = items.iconik_source()
+    source = instance or items.iconik_source()
     if source and items.valid_domain(domain) and setting.noted(source, items.DOMAIN_KEY) != domain:
         setting.note(source, items.DOMAIN_KEY, domain)
+        remote.wake.set()   # een andere koppeling naar dezelfde omgeving doet nu niet meer mee aan de rij
 
 
-def current_domain(connection):
+def current_domain(connection, instance=None):
     """Het system_domain_id van de verbonden omgeving: wat dit exemplaar weet, anders bij Iconik opgehaald."""
-    source = items.iconik_source()
+    source = instance or items.iconik_source()
     domain = setting.noted(source, items.DOMAIN_KEY) if source else None
     if not domain:
-        remember_domain(connection.get("users/v1/users/current/"))
+        remember_domain(connection.get("users/v1/users/current/"), source)
         domain = setting.noted(source, items.DOMAIN_KEY) if source else None
     return domain or ""
 
@@ -442,46 +467,48 @@ def current_domain(connection):
 storage_names = {}        # storage-ID -> naam in Iconik, voor de instellingen
 
 
-def fetch_storage_name(storage_id):
+def fetch_storage_name(storage_id, instance=None):
     try:
-        storage_names[storage_id] = client().get(f"files/v1/storages/{storage_id}/").get("name") or ""
+        storage_names[storage_id] = client(instance).get(f"files/v1/storages/{storage_id}/").get("name") or ""
     except Exception:
         storage_names[storage_id] = ""  # geen recht of geen verbinding: dan zonder naam
 
 
-def mount_list(mounts):
+def mount_list(mounts, instance=None):
     rows = []
     for storage_id, path in mounts.items():
         if storage_id not in storage_names:
             storage_names[storage_id] = ""
-            threading.Thread(target=fetch_storage_name, args=(storage_id,), daemon=True).start()
+            threading.Thread(target=fetch_storage_name, args=(storage_id, instance), daemon=True).start()
         rows.append({"id": storage_id, "name": storage_names[storage_id], "path": path})
     return rows
 
 
-def change_mount(storage_id, remove=False):
-    mounts = setting.get("iconik.mounts")
+def change_mount(storage_id, remove=False, instance=None):
+    mounts = setting.get("iconik.mounts", instance)
     if storage_id not in mounts:
         return
     seen.update(offline=None, looked=[])     # opnieuw kijken voor de statusstrook
     storage_wake.set()
     if remove:
-        transcribe.set_mount(storage_id, None)
+        transcribe.set_mount(storage_id, None, instance)
         return
     name = storage_names.get(storage_id) or storage_id
     folder = transcribe.ask_folder(transcribe.L(
         f"ISG \u201c{name}\u201d: kies het mount point van deze ISG op deze Mac.",
         f"ISG \u201c{name}\u201d: choose the mount point of this ISG on this Mac."), mounts[storage_id])
     if folder:
-        transcribe.set_mount(storage_id, folder)   # na het venster opnieuw gelezen, zie set_mount
+        transcribe.set_mount(storage_id, folder, instance)   # na het venster opnieuw gelezen, zie set_mount
         storage_wake.set()
 
 
-def iconik_account():
-    """Hoe deze Mac met Iconik verbonden is: ("geen" | "uitgelogd" | "gebruiker" | "token", client-ID). Start op
+def iconik_account(instance=None):
+    """Hoe deze Mac met een Iconik verbonden is: ("geen" | "uitgelogd" | "gebruiker" | "token", client-ID). Start op
     de achtergrond de controle op de knoppen in Iconik en het ophalen van de naam van de gebruiker."""
-    client_id = setting.get("iconik.client_id")
-    connection = client()
+    instance = instance or first_iconik()
+    actions, who = bits(instance)["actions"], bits(instance)["who"]
+    client_id = setting.get("iconik.client_id", instance) if instance else ""
+    connection = client(instance) if instance else client()
     account = ("geen" if connection is None and not client_id else
                "uitgelogd" if connection is None else
                "gebruiker" if connection.uses_login else "token")
@@ -490,10 +517,10 @@ def iconik_account():
     elif "state" not in actions or (not actions.get("busy") and actions.get("state") != "geweigerd" and time.time() - actions.get("checked", 0) > 60):
         actions.setdefault("state", "onbekend")
         actions["busy"] = True
-        threading.Thread(target=check_actions, daemon=True).start()
+        threading.Thread(target=check_actions, args=(instance,), daemon=True).start()
     if connection is not None and "name" not in who:
         who["name"] = ""
-        threading.Thread(target=fetch_who, daemon=True).start()
+        threading.Thread(target=fetch_who, args=(instance,), daemon=True).start()
     return account, client_id
 
 
@@ -514,16 +541,18 @@ def app_state():
             "elapsed": (end - row["started"]).total_seconds() if row["started"] else None,
             "auto": row["auto"],
         })
-    account, _ = iconik_account()
+    first = first_iconik()
+    account, _ = iconik_account(first)
     # Alleen wat het opdrachtenvenster gebruikt; het venster Instellingen haalt zijn gegevens bij /settings-data.
+    # De statusstrook toont (nog) de eerste Iconik; per Iconik komt met het venster van stap 5e-2.
     return {
-        "jobs": out, "account": account, "actions": actions.get("state", "onbekend"), "lang": transcribe.app_language(),
-        "update": update_view(), "mounts": mount_list(setting.get("iconik.mounts")), "storage": storage_view(),
-        "worker": dict(remote.state, enabled=worker_enabled(), machine=remote.machine_name(),
-                       machine_alias=remote.machine_alias[0], computer=remote.computer_name(),
+        "jobs": out, "account": account, "actions": bits(first)["actions"].get("state", "onbekend"), "lang": transcribe.app_language(),
+        "update": update_view(), "mounts": mount_list(setting.get("iconik.mounts", first), first), "storage": storage_view(),
+        "worker": dict(remote.state_of(first), enabled=worker_enabled(first), machine=remote.machine_name(first),
+                       machine_alias=remote.alias_of(first), computer=remote.computer_name(),
                        login=login_item_on(), login_available=bundle_path() is not None,
-                       iconik_language=worker_languages()[1], auto_on=setting.get("iconik.auto_transcribe"),
-                       auto_audio=setting.get("iconik.auto_audio"), awake=awake["on"]),
+                       iconik_language=worker_languages(first)[1], auto_on=setting.get("iconik.auto_transcribe", first),
+                       auto_audio=setting.get("iconik.auto_audio", first), awake=awake["on"]),
     }
 
 
@@ -577,7 +606,7 @@ def fill_titles(new_jobs):
         if job.title:
             continue
         try:
-            title = client().get(f"assets/v1/assets/{job.asset_id}/").get("title")
+            title = client(items.source(job.item)).get(f"assets/v1/assets/{job.asset_id}/").get("title")
             with jobs_lock:
                 if title and not job.title:
                     job.title = title
@@ -633,14 +662,14 @@ def unpack_collections(collection_ids, source=None):
     """Pakt collecties uit en zet de assets in de rij. Lukt dat niet, dan een rode regel in de lijst."""
     for collection_id in collection_ids:
         try:
-            connection = client()
+            connection = client(source)
             if connection is None:
                 raise Problem(transcribe.L("Niet ingelogd bij Iconik.", "Not logged in to Iconik."))
             found = collection_assets(connection, collection_id)
         except Exception as error:
             name = collection_id
             try:
-                name = client().get(f"assets/v1/collections/{collection_id}/").get("title") or collection_id
+                name = client(source).get(f"assets/v1/collections/{collection_id}/").get("title") or collection_id
             except Exception:
                 pass
             print(f"Collectie {collection_id} uitpakken mislukte: {error}")
@@ -684,44 +713,44 @@ def settings_page():
 # Routes die iets veranderen: alleen als POST met de header X-Local-Transcribe, die alleen het venster
 # meestuurt (en de sessie, zoals alles). Een link, een plaatje of een formulier op een andere pagina kan zo'n
 # verzoek niet maken. De waarden staan nog in de querystring, zoals voorheen.
-def set_labels_language(code):
+def set_labels_language(code, instance=None):
     """De labels van de rij in Iconik in deze taal. Gelden voor iedereen in die Iconik-omgeving; daarom eerst
     in Iconik en pas daarna bewaren. Een fout gaat als Problem of andere fout naar boven."""
-    iconik.set_labels_language(items.iconik_source(), code)
+    iconik.set_labels_language(instance or items.iconik_source(), code)
 
 
-def _after_host(old, new):
+def _after_host(old, new, instance=None):
     if old != new:   # een andere Iconik-omgeving: de inlog en het domein horen bij de oude
-        source = items.iconik_source()
+        source = instance or items.iconik_source()
         transcribe.clear_login(source)
-        who.clear()
-        actions.clear()
+        bits(source)["who"].clear()
+        bits(source)["actions"].clear()
         if source:
             setting.note(source, items.DOMAIN_KEY, None)
-        integration_icon()   # het icoon van de nieuwe omgeving alvast zoeken
+        integration_icon(source)   # het icoon van de nieuwe omgeving alvast zoeken
 
 
-def _wake_worker(old, new):
-    remote.resume()
+def _wake_worker(old, new, instance=None):
+    remote.resume(instance)
     remote.wake.set()
 
 
-def _wake_auto(old, new):
+def _wake_auto(old, new, instance=None):
     storage_wake.set()  # meteen kijken of de opslag er is
     remote.wake.set()   # meteen kijken, en de meter begint te meten
 
 
-# Wat er na het bewaren moet gebeuren: functie(oude waarde, nieuwe waarde).
+# Wat er na het bewaren moet gebeuren: functie(oude waarde, nieuwe waarde, exemplaar).
 AFTER_SAVE = {
     "iconik.host": _after_host,
     "iconik.worker_enabled": _wake_worker,
-    "iconik.machine_name": lambda old, new: remote.set_machine_alias(new),
+    "iconik.machine_name": lambda old, new, instance=None: remote.set_machine_alias(new, instance),
     "iconik.auto_transcribe": _wake_auto,
     "iconik.auto_audio": _wake_auto,
 }
 
 
-def reset_settings(keys):
+def reset_settings(keys, instance=None):
     """Zet instellingen terug op hun standaardwaarde. Alleen gewone instellingen; mounts en ondertitels hebben
     hun eigen weg. Daarna dezelfde stappen als na bewaren."""
     if not isinstance(keys, list) or not keys or not all(isinstance(k, str) for k in keys):
@@ -729,12 +758,30 @@ def reset_settings(keys):
     unknown = [k for k in keys if k not in setting.SCHEMA or setting.SCHEMA[k].kind == "mapping"]
     if unknown:
         return {"ok": False, "error": transcribe.L("Onbekende instelling.", "Unknown setting."), "keys": unknown}
-    old = {key: setting.get(key) for key in keys}
-    setting.reset(keys)
+    try:
+        instance = own_instance(keys, instance)
+    except setting.InstanceError:
+        return {"ok": False, "error": NO_INSTANCE()}
+    old = {key: setting.get(key, instance) for key in keys}
+    setting.reset(keys, instance)
     for key in keys:
-        if key in AFTER_SAVE and old[key] != setting.get(key):
-            AFTER_SAVE[key](old[key], setting.get(key))
-    return {"ok": True, "values": {key: setting.get(key) for key in keys}}
+        if key in AFTER_SAVE and old[key] != setting.get(key, instance):
+            AFTER_SAVE[key](old[key], setting.get(key, instance), instance)
+    return {"ok": True, "values": {key: setting.get(key, instance) for key in keys}}
+
+
+def NO_INSTANCE():
+    return transcribe.L("Kies eerst bij welke Iconik dit hoort.", "First choose which Iconik this belongs to.")
+
+
+def own_instance(keys, instance):
+    """Het exemplaar voor instellingen van een koppeling: het gegeven (als het bestaat), anders de enige Iconik.
+    Instellingen van de app zelf hebben er geen nodig."""
+    if not any(setting.SCHEMA[k].group in setting.INTEGRATIONS for k in keys if k in setting.SCHEMA):
+        return None
+    if instance and instance in iconiks():
+        return instance
+    return items.iconik_source()
 
 
 def _general_extra():
@@ -791,10 +838,11 @@ def icon_data(url):
     return f"data:{kind};base64,{base64.b64encode(body).decode()}"
 
 
-def integration_icon():
+def integration_icon(instance=None):
     """Het icoon van de Iconik-omgeving als data:-adres, of None (dan de stekker). Zoekt het één keer op (bij het
-    starten van de app, of als het adres verandert); lukte dat niet, dan na tien minuten opnieuw."""
-    host = transcribe.api_host()
+    starten van de app, of als het adres verandert); lukte dat niet, dan na tien minuten opnieuw. Per host: twee
+    koppelingen met hetzelfde adres delen het."""
+    host = transcribe.api_host(instance or first_iconik())
     url, when = icons.get(host, (None, 0))
     if url is None or (not url and time.time() - when > 600):
         icons[host] = ("", time.time())   # wordt gezocht; niet nog een keer tegelijk
@@ -802,13 +850,17 @@ def integration_icon():
     return icons[host][0] or None
 
 
-def _iconik_extra():
-    account, client_id = iconik_account()
-    worker = dict(remote.state, enabled=worker_enabled(), machine=remote.machine_name(),
-                  machine_alias=remote.machine_alias[0], computer=remote.computer_name(), awake=awake["on"])
-    return {"instances": setting.integrations(), "account": account, "user": who.get("name", ""),
-            "has_client_id": bool(client_id), "actions": actions.get("state", "onbekend"),
-            "mounts": mount_list(setting.get("iconik.mounts")), "worker": worker, "icon": integration_icon()}
+def _iconik_extra(instance=None):
+    instance = instance or first_iconik()
+    account, client_id = iconik_account(instance)
+    worker = dict(remote.state_of(instance), enabled=worker_enabled(instance), machine=remote.machine_name(instance),
+                  machine_alias=remote.alias_of(instance), computer=remote.computer_name(), awake=awake["on"])
+    same = items.same_environment(instance) if instance else None
+    return {"instances": setting.integrations(), "instance": instance, "same_as": same,
+            "account": account, "user": bits(instance)["who"].get("name", ""),
+            "has_client_id": bool(client_id), "actions": bits(instance)["actions"].get("state", "onbekend"),
+            "mounts": mount_list(setting.get("iconik.mounts", instance), instance) if instance else [],
+            "worker": worker, "icon": integration_icon(instance)}
 
 
 SETTINGS_DATA = {"general": _general_extra, "transcription": _transcription_extra, "iconik": _iconik_extra}
@@ -823,20 +875,26 @@ def remove_integration(instance_id):
     if busy():
         return {"ok": False, "error": transcribe.L("Wacht tot de lopende opdracht klaar is.", "Wait until the running job has finished.")}
     transcribe.clear_login(instance_id)
-    who.clear()
-    actions.clear()
+    bits(instance_id)["who"].clear()
+    bits(instance_id)["actions"].clear()
+    _other_iconiks.pop(instance_id, None)
+    remote.forget_lane(instance_id)
     setting.remove_integration(instance_id)
-    _wake_worker(True, False)   # de werker ziet dat opdrachten op afstand nu uit staan
+    _wake_worker(True, False, None)   # de werker ziet dat opdrachten op afstand nu uit staan
     print(f"[{datetime.now():%H:%M:%S}] integratie verwijderd: {instance_id}")
     return {"ok": True}
 
 
-def settings_data(group):
+def settings_data(group, instance=None):
+    if group in setting.INTEGRATIONS:
+        instance = instance if instance in iconiks() else first_iconik()
+        return {"settings": setting.describe(group, advanced=True), "values": setting.values(group, instance),
+                "custom": setting.custom(group, instance), "extra": SETTINGS_DATA[group](instance)}
     return {"settings": setting.describe(group, advanced=True), "values": setting.values(group),
             "custom": setting.custom(group), "extra": SETTINGS_DATA[group]()}
 
 
-def apply_settings(changes):
+def apply_settings(changes, instance=None):
     """Eén ingang voor elke wijziging uit het venster: {sleutel: waarde}. Alles wordt eerst gecontroleerd
     tegen het schema; mag één waarde niet, dan verandert er niets. Geeft {"ok": True, "values": ...} of
     {"ok": False, "errors": {sleutel: melding}, "error": de eerste melding}."""
@@ -857,6 +915,10 @@ def apply_settings(changes):
             cleaned[key] = setting.clean(key, value)
         except setting.SettingError as error:
             errors[key] = error.message()
+    try:
+        instance = own_instance(list(cleaned), instance)
+    except setting.InstanceError:
+        return {"ok": False, "errors": {}, "error": NO_INSTANCE()}
     if "iconik.machine_name" in cleaned and busy():
         # Niet tijdens een opdracht: het asset staat dan onder de oude naam op "bezig", en de werker herkent
         # zijn eigen werk aan die naam.
@@ -864,16 +926,16 @@ def apply_settings(changes):
                                                      "Wait until the running job has finished.")
     if not errors and cleaned.get("iconik.iconik_language") in ("nl", "en"):
         try:
-            set_labels_language(cleaned["iconik.iconik_language"])
+            set_labels_language(cleaned["iconik.iconik_language"], instance)
         except Exception as error:
             errors["iconik.iconik_language"] = str(error)[:300]
     if errors:
         return {"ok": False, "errors": errors, "error": next(iter(errors.values()))}
-    old = {key: setting.get(key) for key in cleaned}
-    setting.put_many(cleaned)
+    old = {key: setting.get(key, instance) for key in cleaned}
+    setting.put_many(cleaned, instance)
     for key, value in cleaned.items():
         if key in AFTER_SAVE:
-            AFTER_SAVE[key](old[key], value)
+            AFTER_SAVE[key](old[key], value, instance)
     return {"ok": True, "values": cleaned}
 
 
@@ -1068,8 +1130,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, status_page(transcribe.L("Deze inlog is verlopen of hoort niet bij deze app. Probeer opnieuw.",
                                                             "This login has expired or does not belong to this app. Try again.")))
         transcribe.finish_login(code, verifier, instance)
-        who.clear()
-        actions.clear()
+        bits(instance)["who"].clear()
+        bits(instance)["actions"].clear()
         print("Ingelogd bij Iconik.")
         waiting, pending_ids[:] = list(pending_ids), []
         if waiting:
@@ -1112,7 +1174,7 @@ def _settings_data(h, r):
     group = r.first("group")
     if group not in SETTINGS_DATA:
         return h.send_error(404)
-    return h.reply_json(settings_data(group))
+    return h.reply_json(settings_data(group, r.first("instance") or None))
 
 
 @route("/window/open", session=False)
@@ -1167,7 +1229,7 @@ def _settings(h, r):
         changes = json.loads(r.body())
     except ValueError:
         return h.reply_json({"ok": False, "errors": {}, "error": "json"})
-    return h.reply_json(apply_settings(changes))
+    return h.reply_json(apply_settings(changes, r.first("instance") or None))
 
 
 @route("/settings/reset", protected=True)
@@ -1180,7 +1242,7 @@ def _settings_reset(h, r):
         keys = data.get("keys")
     except (ValueError, AttributeError):
         keys = None
-    return h.reply_json(reset_settings(keys))
+    return h.reply_json(reset_settings(keys, r.first("instance") or None))
 
 
 @route("/window/title", protected=True)
@@ -1211,13 +1273,13 @@ def _window_settings(h, r):
 
 @route("/mount/change", protected=True)
 def _mount_change(h, r):
-    change_mount(r.first("id"))
+    change_mount(r.first("id"), instance=r.first("instance") if r.first("instance") in iconiks() else None)
     return _ok(h)
 
 
 @route("/mount/remove", protected=True)
 def _mount_remove(h, r):
-    change_mount(r.first("id"), remove=True)
+    change_mount(r.first("id"), remove=True, instance=r.first("instance") if r.first("instance") in iconiks() else None)
     return _ok(h)
 
 
@@ -1237,7 +1299,9 @@ def _update_open(h, r):
 @route("/worker", protected=True)
 def _worker(h, r):   # alleen "Nu hervatten"; aan en uit gaat via POST /settings
     if r.first("value") == "resume":
-        remote.resume()
+        wanted = r.first("instance")
+        for instance in ([wanted] if wanted in iconiks() else iconiks() or [None]):
+            remote.resume(instance)
         remote.wake.set()
     return _ok(h)
 
@@ -1253,8 +1317,12 @@ def _login_item(h, r):   # opstarten bij inloggen op de Mac; /login is inloggen 
 def _asset_open(h, r):
     # Het asset in Iconik, in de gewone browser. Alleen een asset-ID: geen willekeurige adressen openen.
     asset_id = r.first("id")
+    item = r.first("item")
+    source = items.source(item) if items.is_iconik(item) else None
+    if items.is_iconik(item):
+        asset_id = items.asset_id(item)
     if re.fullmatch(r"[0-9a-fA-F-]{8,64}", asset_id or ""):
-        system.open_url(f"{transcribe.api_host()}/asset/{asset_id}")
+        system.open_url(f"{transcribe.api_host(source or first_iconik())}/asset/{asset_id}")
     return _ok(h)
 
 
@@ -1299,9 +1367,10 @@ def iconik_instance(r):
 
 @route("/logout", protected=True)
 def _logout(h, r):
-    transcribe.clear_login(iconik_instance(r))
-    who.clear()
-    actions.clear()
+    instance = iconik_instance(r)
+    transcribe.clear_login(instance)
+    bits(instance)["who"].clear()
+    bits(instance)["actions"].clear()
     return _ok(h)
 
 
@@ -1335,11 +1404,12 @@ def _transcribe(h, r):
         print("Geweigerd: verzoek zonder geldige sleutel.")
         return h.reply(403, "Geen geldige sleutel.")
     request = (split_ids(r.query.get("asset_ids", [])), split_ids(r.query.get("collection_ids", [])), r.first("lt_domain"))
-    if client() is None:
+    source = items.iconik_for_domain(request[2])
+    if source is not None and client(source) is None:
         # Eerst inloggen; de opdracht gaat daarna alsnog de rij in.
         pending_ids.append(request)
-        if setting.get("iconik.client_id"):
-            return h.redirect("/login")
+        if setting.get("iconik.client_id", source):
+            return h.redirect(f"/login?instance={source}")
         return h.redirect("/")
     queue_request([request])
     # Doorsturen naar de statuspagina, zodat de sleutel uit de adresbalk verdwijnt
@@ -1500,8 +1570,11 @@ def say(text):
     sys.stdout.flush()
 
 
-def worker_enabled():
-    return setting.get("iconik.worker_enabled")
+def worker_enabled(instance=None):
+    """Staan opdrachten op afstand aan voor deze Iconik (zonder: voor een van de Iconiks)? Alleen bij de eerste
+    koppeling van een omgeving: een tweede koppeling naar dezelfde omgeving doet niet mee aan de rij (items.py)."""
+    found = [instance] if instance else iconiks()
+    return any(setting.get("iconik.worker_enabled", i) and items.shares_queue(i) for i in found if i in iconiks())
 
 
 meter = resources.Meter(lambda: busy())   # meet pas zodra auto transcribe aan staat
@@ -1546,18 +1619,20 @@ def request_quit():
         quit_hook()
 
 
-def worker_may_take():
+def worker_may_take(instance=None):
     """De werker mag opdrachten uit de rij (en automatische) oppakken: aan, en niet aan het afsluiten.
     Ook niet zolang de vraag bij Cmd+Q openstaat: anders werd de lopende opdracht klaar terwijl de vraag
     er stond, en claimde de werker alvast de volgende (gezien 23 oktober)."""
-    return worker_enabled() and not quit_after.is_set() and not quit_asking.is_set()
+    return worker_enabled(instance) and not quit_after.is_set() and not quit_asking.is_set()
 
 
 RELEASE_AFTER = 120   # met auto aan: modellen pas vrijgeven na zoveel seconden zonder opdracht
 
 
-def auto_active():
-    return setting.get("iconik.worker_enabled") and setting.get("iconik.auto_transcribe")
+def auto_active(instance=None):
+    """Staat automatisch transcriberen aan (voor deze Iconik, of voor een van de Iconiks)?"""
+    found = [instance] if instance else iconiks()
+    return any(worker_enabled(i) and setting.get("iconik.auto_transcribe", i) for i in found)
 
 
 def release_models_now():
@@ -1584,7 +1659,7 @@ def want_awake():
         return True
     if quit_after.is_set():
         return False
-    return setting.get("iconik.worker_enabled") and setting.get("iconik.auto_transcribe") and resources.on_mains_power() is True
+    return auto_active() and resources.on_mains_power() is True
 
 
 def keep_awake(want=want_awake, interval=10, once=False):
@@ -1626,9 +1701,19 @@ storage_pending = []   # waarschuwingen van voor het venster er was
 _storage_checks = {}   # pad -> draad van een controle die nog hangt
 
 
+def all_mounts():
+    """De mount points van alle Iconiks samen: {storage-ID: map}. Storage-ID's zijn UUID's van Iconik en botsen niet
+    tussen omgevingen; twee koppelingen naar dezelfde omgeving delen hun storages (de eerste wint)."""
+    found = {}
+    for instance in iconiks():
+        for storage_id, path in setting.get("iconik.mounts", instance).items():
+            found.setdefault(storage_id, path)
+    return found
+
+
 def storage_labels(storage_ids):
     """Namen voor in een melding: de naam van de ISG in Iconik, anders het mount point."""
-    mounts = setting.get("iconik.mounts")
+    mounts = all_mounts()
     return [storage_names.get(storage_id) or mounts.get(storage_id) or storage_id for storage_id in storage_ids]
 
 
@@ -1671,7 +1756,7 @@ def check_storage(state):
     De waarschuwing pas als hij twee keer achter elkaar weg is: een korte hapering geeft geen melding,
     en bij inloggen koppelt macOS netwerkschijven vaak pas na een paar seconden.
     Geeft het aantal seconden tot de volgende ronde."""
-    mounts = setting.get("iconik.mounts")
+    mounts = all_mounts()
     offline = [storage_id for storage_id, path in mounts.items() if not path_reachable(path)]
     storage["offline"] = offline
     storage["checked"] = time.time()
@@ -1692,10 +1777,11 @@ def check_storage(state):
         warn_storage("back", back)
         remote.wake.set()   # er is weer opslag: de werker kijkt meteen
     if new or back or offline != state.get("shown"):
-        # Het venster leest remote.state["auto"], dat de werker anders pas bij zijn volgende ronde bijwerkt
-        # (tot een halve minuut later dan de melding): nu meteen.
+        # Het venster leest de status van automatisch werk, die de werker anders pas bij zijn volgende ronde bijwerkt
+        # (tot een halve minuut later dan de melding): nu meteen, voor elke Iconik.
         try:
-            auto_settings()
+            for instance in iconiks():
+                auto_settings(instance)
         except Exception as error:
             print(f"Opslag bewaken (venster bijwerken): {error}")
         state["shown"] = offline
@@ -1707,13 +1793,13 @@ def check_storage(state):
 def look_storage():
     """Stil kijken, voor de statusstrook: welke opslag (ISG) nu niet bereikbaar is. Met dezelfde tijdslimiet als
     check_storage, maar zonder meldingen en zonder dat de werker er iets mee doet."""
-    mounts = setting.get("iconik.mounts")
+    mounts = all_mounts()
     seen.update(offline=[storage_id for storage_id, path in mounts.items() if not path_reachable(path)], looked=list(mounts))
 
 
 def storage_view():
     """Voor het venster: {"checked": elk mount point is al bekeken, "offline": namen van wat niet bereikbaar is}."""
-    mounts = setting.get("iconik.mounts")
+    mounts = all_mounts()
     offline = seen["offline"]
     if offline is None or any(storage_id not in seen["looked"] for storage_id in mounts):
         if offline is not None:
@@ -1743,15 +1829,17 @@ def watch_storage():
         storage_wake.clear()
 
 
-def auto_settings():
-    """Voor de werker: de instellingen van auto transcribe als die aan staat en er op deze Mac ruimte
-    is, anders None. Wat de meter vond staat in remote.state["auto"], voor het venster.
-    De grenzen (transcription.auto_min_free_gb, auto_max_cpu, auto_max_gpu en iconik.auto_max_minutes)
+def auto_settings(instance=None):
+    """Voor de werker: de instellingen van auto transcribe van een Iconik (zonder: de eerste) als die aan staat en er
+    op deze Mac ruimte is, anders None. Wat de meter vond staat in de status van die Iconik (remote.state_of), voor
+    het venster. De grenzen (transcription.auto_min_free_gb, auto_max_cpu, auto_max_gpu en iconik.auto_max_minutes)
     staan in het schema als geavanceerd: bewust niet in het gewone venster."""
-    if not setting.get("iconik.auto_transcribe"):
-        remote.state["auto"] = None
+    instance = instance or first_iconik()
+    state = remote.state_of(instance)
+    if not instance or not setting.get("iconik.auto_transcribe", instance):
+        state["auto"] = None
         return None
-    mounts = setting.get("iconik.mounts")
+    mounts = setting.get("iconik.mounts", instance)
     offline = [storage_id for storage_id in storage["offline"] if storage_id in mounts]
     storages = [storage_id for storage_id in mounts if storage_id not in offline]
     meter.start()
@@ -1765,14 +1853,14 @@ def auto_settings():
     else:
         limits = {key: setting.get(f"transcription.{key}") for key in resources.DEFAULTS}
         ready, reason, values = meter.check(limits)
-    remote.state["auto"] = {"ready": ready, "reason": reason,
-                            "values": {k: round(v, 1) if isinstance(v, float) else v for k, v in values.items()}}
+    state["auto"] = {"ready": ready, "reason": reason,
+                     "values": {k: round(v, 1) if isinstance(v, float) else v for k, v in values.items()}}
     if offline and storage["checked"]:
-        remote.state["auto"]["offline"] = storage_labels(offline)
+        state["auto"]["offline"] = storage_labels(offline)
     if not ready:
         return None
-    return {"storages": storages, "audio": setting.get("iconik.auto_audio"),
-            "max_minutes": setting.get("iconik.auto_max_minutes")}
+    return {"storages": storages, "audio": setting.get("iconik.auto_audio", instance),
+            "max_minutes": setting.get("iconik.auto_max_minutes", instance)}
 
 
 class AppHost(connectors.Host):
@@ -1782,10 +1870,10 @@ class AppHost(connectors.Host):
         return not busy() and worker_may_take()
 
 
-def worker_languages():
+def worker_languages(instance=None):
     """(taal van het detailveld, taal van de labels in Iconik). De labels volgen de app tot iemand
     een taal kiest: ze gelden voor iedereen in deze Iconik-omgeving, dus ze wisselen niet vanzelf mee."""
-    chosen = setting.get("iconik.iconik_language")
+    chosen = setting.get("iconik.iconik_language", instance or first_iconik()) if (instance or first_iconik()) else ""
     return transcribe.app_language(), chosen if chosen in ("nl", "en") else transcribe.app_language()
 
 
@@ -1866,7 +1954,7 @@ def worker():
         try:
             job = work.get(timeout=30)
         except queue.Empty:
-            if settings.get("idle_exit") and not remote.state["enabled"] and time.time() - max(activity["poll"], activity["done"]) > IDLE_EXIT:
+            if settings.get("idle_exit") and not worker_enabled() and time.time() - max(activity["poll"], activity["done"]) > IDLE_EXIT:
                 print(f"Geen opdrachten en geen venster sinds {IDLE_EXIT} s, de ontvanger stopt.", flush=True)
                 os._exit(0)
             continue
@@ -1892,7 +1980,7 @@ def worker():
             if prepared is not None:
                 print("Audio was al vooruit gelezen.")
         try:
-            if client() is None:
+            if client(items.source(job.item)) is None:
                 raise Problem(transcribe.L("Niet ingelogd bij Iconik.", "Not logged in to Iconik."))
             result = transcribe.process_asset(options, settings["hf_token"], on_info, prepared)
             job.set(title=result["title"] or "", status="klaar",
@@ -1951,7 +2039,8 @@ def start(model="mlx-community/whisper-large-v3-mlx", language=None, mount=None,
         language=language, mount=mount, idle_exit=idle_exit)
 
     transcribe.LISTENER = listen
-    remote.set_machine_alias(setting.get("iconik.machine_name"))
+    for instance in iconiks():
+        remote.set_machine_alias(setting.get("iconik.machine_name", instance), instance)
     migrate_items()
     load_jobs()
     atexit.register(save_jobs)
@@ -1959,9 +2048,10 @@ def start(model="mlx-community/whisper-large-v3-mlx", language=None, mount=None,
     server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     threading.Thread(target=server.serve_forever, daemon=True, name="ontvanger").start()
     print(f"Luistert op http://localhost:{port}")
-    connection = client()
-    print("Iconik: " + ("niet ingelogd" if connection is None else
-                        "ingelogd als gebruiker" if connection.uses_login else "persoonlijk token"))
+    for instance in iconiks() or [None]:
+        connection = client(instance)
+        print("Iconik: " + ("niet ingelogd" if connection is None else
+                            "ingelogd als gebruiker" if connection.uses_login else "persoonlijk token"))
     if not transcribe.speaker_model_available(settings["hf_token"]):
         print("Let op: geen sprekermodel gevonden, sprekerherkenning staat uit.")
     threading.Thread(target=worker, daemon=True, name="werkrij").start()
@@ -1969,12 +2059,12 @@ def start(model="mlx-community/whisper-large-v3-mlx", language=None, mount=None,
     threading.Thread(target=keep_awake, daemon=True, name="wakker").start()
     threading.Thread(target=watch_storage, daemon=True, name="opslag").start()
     connectors.start_all(AppHost())
-    if setting.integrations():
-        integration_icon()   # alvast op de achtergrond, zodat het er staat als iemand Instellingen opent
+    for instance in iconiks():
+        integration_icon(instance)   # alvast op de achtergrond, zodat het er staat als iemand Instellingen opent
     # Automatisch werk alleen opvragen als deze Mac vrij is: auto_settings zet ook de meter en de tekst in de
     # statusstrook, en die moeten tijdens een opdracht blijven zoals ze waren (zoals voor stap 5).
-    remote.start(lambda instance: worker_may_take(), add_job, log=say, healthy=progress_ok,
-                 auto=lambda instance: None if busy() else auto_settings())
+    remote.start(worker_may_take, add_job, log=say, healthy=progress_ok,
+                 auto=lambda instance: None if busy() else auto_settings(instance))
     threading.Thread(target=check_update, daemon=True, name="update").start()
     return server
 

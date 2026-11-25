@@ -85,7 +85,7 @@ check("installeren: start kreeg een gastheer", isinstance(seen.get("host"), conn
 a = settings.add_integration("proef")
 b = settings.add_integration("proef")
 settings.put("proef.host", "https://a.example", instance=a)
-check("exemplaren: beide bekend", sorted(connectors.instances()) == sorted([a, b]) and connectors.instances("queue") == sorted([a, b]))
+check("exemplaren: beide bekend, op volgorde van koppelen", connectors.instances() == [a, b] and connectors.instances("queue") == [a, b])
 check("aanroepen: per exemplaar de eigen instelling",
       connectors.call(a, "status") == {"instance": a, "host": "https://a.example"}
       and connectors.call(b, "status")["host"] == "https://proef.example")

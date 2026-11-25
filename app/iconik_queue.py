@@ -107,28 +107,62 @@ def current_attempt(info):
     return int(match.group(1)) if match else 1
 
 
-def pause(seconds=COOLDOWN, reason=""):
-    """Deze Mac heeft een probleem (opslag weg, geen inlog): even niets oppakken. `reden` is wat de
-    gebruiker te zien krijgt, zonder paden."""
-    _pause[0] = time.time() + seconds
-    state["paused_until"] = stamp(datetime.fromtimestamp(_pause[0]))[-5:]
-    state["pause_reason"] = scrub(reason).strip()[:160]
+# Per Iconik-exemplaar een eigen stand van de rij: status voor het venster, pauze en wanneer iemand hervatte. De
+# eerste Iconik houdt de namen van vóór stap 5 (state, _pause, _resumed_at), zodat alles met één Iconik precies
+# werkt als voorheen; een volgende krijgt een eigen set. Een probleem met de opslag van de ene Iconik laat de
+# andere zo gewoon doorwerken.
+_FIRST = {"state": state, "pause": _pause, "resumed": _resumed_at}
+_lanes = {}
 
 
-def resume():
+def lane(instance=None):
+    """De stand van de rij van een exemplaar: {"state", "pause", "resumed"}. Zonder exemplaar die van de eerste."""
+    if instance is None:
+        return _FIRST
+    import settings
+    found = settings.instances("iconik")
+    if not found or instance == found[0]:
+        return _FIRST
+    if instance not in _lanes:
+        _lanes[instance] = {"state": {k: None for k in state} | {"enabled": False, "error": "", "pause_reason": ""},
+                            "pause": [0.0], "resumed": [0.0]}
+    return _lanes[instance]
+
+
+def forget_lane(instance):
+    """Een koppeling is weggehaald: haar stand van de rij vergeten."""
+    _lanes.pop(instance, None)
+
+
+def state_of(instance=None):
+    return lane(instance)["state"]
+
+
+def pause(seconds=COOLDOWN, reason="", instance=None):
+    """Deze Mac heeft een probleem met dit exemplaar (opslag weg, geen inlog): even niets oppakken. `reden` is wat
+    de gebruiker te zien krijgt, zonder paden."""
+    one = lane(instance)
+    one["pause"][0] = time.time() + seconds
+    one["state"]["paused_until"] = stamp(datetime.fromtimestamp(one["pause"][0]))[-5:]
+    one["state"]["pause_reason"] = scrub(reason).strip()[:160]
+
+
+def resume(instance=None):
     """De gebruiker zegt dat het weer mag (knop Nu hervatten of de schakelaar): de pauze vervalt, en de
     Mac mag ook meteen weer pakken waar hij net op mislukte. Hij heeft het probleem immers opgelost."""
-    _pause[0] = 0.0
-    _resumed_at[0] = time.time()
-    state["paused_until"] = None
-    state["pause_reason"] = ""
+    one = lane(instance)
+    one["pause"][0] = 0.0
+    one["resumed"][0] = time.time()
+    one["state"]["paused_until"] = None
+    one["state"]["pause_reason"] = ""
 
 
-def paused():
-    if time.time() < _pause[0]:
+def paused(instance=None):
+    one = lane(instance)
+    if time.time() < one["pause"][0]:
         return True
-    state["paused_until"] = None
-    state["pause_reason"] = ""
+    one["state"]["paused_until"] = None
+    one["state"]["pause_reason"] = ""
     return False
 
 
@@ -204,9 +238,10 @@ def refresh_sign(info, now=None):
 class Queue:
     """De rij in Iconik. `iconik` is de verbinding uit transcribe.make_client()."""
 
-    def __init__(self, iconik, view_id=None):
+    def __init__(self, iconik, view_id=None, instance=None):
         self.iconik = iconik
         self.view_id = view_id
+        self.instance = instance   # het exemplaar (voor de eigen pauze en status); None: de eerste Iconik
 
     def _view(self):
         views = self.iconik.get("metadata/v1/views/").get("objects", [])
@@ -355,7 +390,8 @@ class Queue:
             if status != REQUESTED:
                 return 0
             recent = age_seconds(since)
-            resumed_since = time.time() - _resumed_at[0] if _resumed_at[0] else None
+            resumed = lane(self.instance)["resumed"][0]
+            resumed_since = time.time() - resumed if resumed else None
             if (clean_name(who) in failed and recent is not None and recent < RETRY_ELSEWHERE
                     and not (resumed_since is not None and resumed_since < recent)):   # zelf hervat na het zetten van de status: laten gaan
                 return 0
@@ -460,11 +496,11 @@ def report(queue, job, who, log=print):
         job.set(message=(job.message or "") + tr(" (asset is door een andere Mac overgenomen, status niet aangepast)",
                                                  " (asset was taken over by another Mac, status not changed)"))
         if job.status == "fout" and job.local:
-            pause(reason=job.message or "")
+            pause(reason=job.message or "", instance=queue.instance)
         return "lost"
     if job.status == "fout" and job.local:
         if queue.give_back(job.asset_id, who, (job.message or ""), int(job.remote or 1)):
-            pause(reason=job.message or "")
+            pause(reason=job.message or "", instance=queue.instance)
             return "requeued"
         return None
     if job.status == "klaar":
@@ -505,7 +541,7 @@ def poll_once(queue, who, busy, add_job, sleep=time.sleep, auto=None, allowed=No
     `allowed()` wordt vlak voor elke claim opnieuw gevraagd: kiest iemand tijdens deze ronde "Na deze
     opdracht", dan mag er niets meer bij komen, ook niet als de lopende opdracht net klaar is."""
     may = allowed or (lambda: True)
-    if busy() or paused() or not may():
+    if busy() or paused(queue.instance) or not may():
         return None
     queue.release_stale(who)
     for asset_id in queue.find(REQUESTED, 5):
@@ -523,7 +559,7 @@ def poll_once(queue, who, busy, add_job, sleep=time.sleep, auto=None, allowed=No
             return None
         attempt = queue.claim(asset_id, who, sleep=sleep, auto=True)
         if attempt:
-            state["last_auto"] = asset_id
+            state_of(queue.instance)["last_auto"] = asset_id
             return _take(queue, asset_id, attempt, add_job, auto=True)
     return None
 

@@ -260,15 +260,23 @@ transcribe.CONFIG_PATH.write_text(json.dumps({"version": 2, "general": {}, "tran
                                               "integrations": {}}))
 first = settings.add_integration("iconik")
 second = settings.add_integration("iconik")
-check("meerdere: add_integration maakt twee exemplaren", first != second and settings.instances("iconik") == sorted([first, second])
-      and all(raw()["integrations"][i] == {"type": "iconik"} for i in (first, second)), raw())
+check("meerdere: add_integration maakt twee exemplaren, op volgorde van toevoegen", first != second
+      and settings.instances("iconik") == [first, second]
+      and all(raw()["integrations"][i]["type"] == "iconik" for i in (first, second))
+      and raw()["integrations"][first]["added"] < raw()["integrations"][second]["added"], raw())
+
+
+def block(iid):
+    return {k: v for k, v in raw()["integrations"][iid].items() if k != "added"}
+
+
 settings.put("iconik.host", "https://een.example", instance=first)
 settings.put_many({"iconik.client_id": "22222222-2222-2222-2222-222222222222", "iconik.auto_transcribe": True,
                    "transcription.language": "nl"}, instance=second)
 check("meerdere: bewaren raakt alleen het gekozen exemplaar",
-      raw()["integrations"][first] == {"type": "iconik", "host": "https://een.example"}
-      and raw()["integrations"][second] == {"type": "iconik", "client_id": "22222222-2222-2222-2222-222222222222",
-                                            "auto_transcribe": True}, raw())
+      block(first) == {"type": "iconik", "host": "https://een.example"}
+      and block(second) == {"type": "iconik", "client_id": "22222222-2222-2222-2222-222222222222",
+                            "auto_transcribe": True}, raw())
 check("meerdere: een instelling van de app gaat niet in het exemplaar", raw()["transcription"].get("language") == "nl")
 check("meerdere: lezen per exemplaar", settings.get("iconik.host", first) == "https://een.example"
       and settings.get("iconik.host", second) == "https://app.iconik.io"
@@ -302,6 +310,12 @@ check("meerdere: een exemplaar dat er niet is: lezen geeft standaard, bewaren is
       and raises(lambda: settings.put("iconik.host", "https://x.example", instance="iconik-ffffff"))
       and "iconik-ffffff" not in raw()["integrations"])
 check("meerdere: onbekende soort", raises(lambda: settings.add_integration("nextcloud")))
+legacy = dict(raw())
+legacy["integrations"] = dict(legacy["integrations"], **{"iconik-000000": {"type": "iconik"}})   # van vóór stap 5: zonder tijd
+transcribe.CONFIG_PATH.write_text(json.dumps(legacy))
+check("meerdere: een koppeling van vóór stap 5 (zonder tijd) komt eerst", settings.instances("iconik") == ["iconik-000000", first, second])
+legacy["integrations"].pop("iconik-000000")
+transcribe.CONFIG_PATH.write_text(json.dumps(legacy))
 before = json.dumps(raw())
 cfg = raw()
 cfg["auto_audio"] = True                       # een platte sleutel die later opduikt, bij twee Iconiks

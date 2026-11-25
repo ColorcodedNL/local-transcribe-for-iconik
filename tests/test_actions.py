@@ -48,7 +48,7 @@ old = [{"context": c, "title": "Local Transcribe", "url": "iconiktranscribe://tr
 fake = FakeIconik(old)
 missing = serve.missing_actions(fake)
 check("bestaande omgeving: alleen Refine transcript ontbreekt", missing == [("ASSET", "Refine transcript", "iconiktranscribe://refine")], missing)
-serve.client = lambda: fake
+serve.client = lambda *a: fake
 serve.install_actions()
 check("plaatsen: één nieuwe knop, alleen op een asset", fake.posted == [("assets/v1/custom_actions/ASSET/",
       {"context": "ASSET", "title": "Refine transcript", "type": "OPEN", "url": "iconiktranscribe://refine"})], fake.posted)
@@ -87,7 +87,7 @@ class DomainIconik(FakeIconik):
 
 serve.items.settings.note(src, serve.items.DOMAIN_KEY, None)
 fake = DomainIconik([])
-serve.client = lambda: fake
+serve.client = lambda *a: fake
 serve.install_actions()
 urls = sorted({body["url"] for _, body in fake.posted})
 check("nieuwe knoppen hebben het domein van de omgeving in de link", urls == [
@@ -135,7 +135,7 @@ import http.client, threading  # noqa: E402,E401
 from http.server import ThreadingHTTPServer  # noqa: E402
 got = []
 serve.queue_request = lambda requests: got.extend(requests)
-serve.client = lambda: fake
+serve.client = lambda *a: fake
 serve.settings.update(key="k", hf_token=None, model="m", language=None, mount=None, idle_exit=False)
 server = ThreadingHTTPServer(("127.0.0.1", 0), serve.Handler)
 threading.Thread(target=server.serve_forever, daemon=True).start()

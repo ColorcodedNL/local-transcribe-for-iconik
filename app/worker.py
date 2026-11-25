@@ -19,7 +19,8 @@ from system import computer_name  # noqa: F401  (tests vervangen hem onder deze 
 POLL_SECONDS = 60
 wake = threading.Event()   # een schakelaar in Instellingen zet hem, zodat de werker meteen kijkt
 
-machine_alias = [""]      # eigen naam voor deze Mac in Iconik (Instellingen); leeg: de computernaam
+machine_alias = [""]      # eigen naam voor deze Mac in de eerste Iconik (Instellingen); leeg: de computernaam
+_aliases = {}             # exemplaar -> eigen naam, voor een tweede en volgende Iconik
 MAX_NAME = 40
 
 
@@ -39,15 +40,30 @@ def clean_alias(name):
     return " ".join(iconik_queue.clean_name(name).split())[:MAX_NAME].strip()
 
 
-def set_machine_alias(name):
-    machine_alias[0] = clean_alias(name)
-    return machine_alias[0]
+def _first(instance):
+    found = connectors.settings.instances("iconik")
+    return instance is None or not found or instance == found[0]
 
 
-def machine_name():
-    """De naam waaronder deze Mac in de wachtrij staat: de eigen naam uit Instellingen, anders de computernaam.
-    Iedereen die het asset ziet, ziet deze naam, en in een computernaam staat vaak de naam van een persoon."""
-    return machine_alias[0] or computer_name()
+def set_machine_alias(name, instance=None):
+    """De eigen naam van deze Mac in een Iconik (zonder exemplaar: de eerste). Elke Iconik kan een eigen naam hebben:
+    hij staat in de instellingen van die koppeling."""
+    cleaned = clean_alias(name)
+    if _first(instance):
+        machine_alias[0] = cleaned
+    else:
+        _aliases[instance] = cleaned
+    return cleaned
+
+
+def alias_of(instance=None):
+    return machine_alias[0] if _first(instance) else _aliases.get(instance, "")
+
+
+def machine_name(instance=None):
+    """De naam waaronder deze Mac in de wachtrij van een Iconik staat: de eigen naam uit Instellingen, anders de
+    computernaam. Iedereen die het asset ziet, ziet deze naam, en in een computernaam staat vaak de naam van een persoon."""
+    return alias_of(instance) or computer_name()
 
 
 def job_data(job):
@@ -61,7 +77,7 @@ def report(job, log=print):
     van de connector: "requeued" (terug in de rij voor een andere Mac), "lost" (niet meer van deze Mac) of None.
     Een tekst die de connector aan de melding toevoegt, komt bij de opdracht."""
     instance = items.source(job.item)
-    result = connectors.call(instance, "report", job=job_data(job), who=machine_name()) or {}
+    result = connectors.call(instance, "report", job=job_data(job), who=machine_name(instance)) or {}
     if result.get("message") is not None:
         job.set(message=result["message"])
     return result.get("outcome")
@@ -85,7 +101,7 @@ def round_once(enabled, add_job, log=print, healthy=None, auto=None):
             on = False   # één opdracht per rondje; het volgende exemplaar komt de volgende keer aan bod
         rules = auto(instance) if (auto and on) else None
         try:
-            got = connectors.call(instance, "poll", who=machine_name(), enabled=on, auto=rules)
+            got = connectors.call(instance, "poll", who=machine_name(instance), enabled=on, auto=rules)
         except Exception as error:
             log(f"Werker: {type(error).__name__}: {str(error)[:300]}")
             continue

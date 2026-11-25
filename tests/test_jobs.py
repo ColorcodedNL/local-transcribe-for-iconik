@@ -109,7 +109,7 @@ check("geen bestand: lege lijst", len(serve.jobs) == 0)
 
 # --- terug in de rij is geen eindfout en opdrachten uit de rij krijgen hun titel
 outcome = ["requeued"]
-serve.client = lambda: types.SimpleNamespace(get=lambda path: {"title": "Titel uit Iconik"})
+serve.client = lambda *a: types.SimpleNamespace(get=lambda path: {"title": "Titel uit Iconik"})
 serve.remote.report = lambda job, log=None: outcome[0]   # de uitkomst van de connector (worker.report)
 reset()
 serve.add_job("r1", remote=2)
@@ -160,7 +160,7 @@ class FakeIconik:
         return {"title": "Titel uit Iconik"}
 
 
-serve.client = lambda: FakeIconik()
+serve.client = lambda *a: FakeIconik()
 started = time.time()
 serve.queue_request([(["los1"], ["col1"])])
 check("losse assets staan meteen in de rij, ook als de collectie nog uitgepakt wordt",
