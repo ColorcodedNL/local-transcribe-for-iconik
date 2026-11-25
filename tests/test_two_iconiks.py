@@ -1,6 +1,6 @@
 """Meerdere Iconiks op één Mac (stap 5e): twee nagemaakte Iconik-omgevingen met elk een eigen rij, opslag, naam van
-deze Mac en instellingen, en een derde koppeling naar dezelfde omgeving als de eerste (besloten 25 november: mag,
-maar wat Macs delen doet alleen de eerste).
+deze Mac en instellingen, een derde koppeling naar dezelfde omgeving als de eerste (het vangnet: wat Macs delen doet alleen de eerste) en
+het weigeren van een tweede inlog bij dezelfde omgeving (keuze A, 25 november).
 
 Draaien: uv run --no-project --with pynacl --with requests python -B tests/test_two_iconiks.py
 """
@@ -214,6 +214,75 @@ check("weghalen: 'ook van deze Mac' haalt de bestanden van B weg, die van A blij
       not (transcribe.TRANSCRIPTS_DIR / B).exists() and (transcribe.TRANSCRIPTS_DIR / A / "abcdef01.json").exists())
 check("weghalen: de stand van de rij van B is vergeten", B not in iconik_queue._lanes)
 check("weghalen: A werkt nog", serve.worker_enabled(A) and settings.get("iconik.machine_name", A) == "Montage A")
+
+# --- keuze A (25 november): een tweede inlog bij een omgeving die al gekoppeld is, wordt geweigerd ---
+class User:
+    """Alleen wie er is ingelogd, met het domein van de omgeving."""
+    def __init__(self, domain):
+        self.domain = domain
+
+    def get(self, path):
+        return {"first_name": "Test", "system_domain_id": self.domain}
+
+
+cleared = []
+real_clear = transcribe.clear_login
+transcribe.clear_login = lambda instance=None: cleared.append(instance)
+D = settings.add_integration("iconik")
+clients[D] = User(DA)
+r = serve.refuse_double(D)
+check("A: nieuwe koppeling naar de omgeving van A: geweigerd en weggehaald", r == (A, True) and D not in serve.iconiks(), (r, serve.iconiks()))
+check("A: de inlog is niet bewaard", D in cleared)
+E = settings.add_integration("iconik")
+clients[E] = User(DA)
+with serve.jobs_lock:
+    serve.jobs.add(f"{E}:abcdef09")
+r = serve.refuse_double(E)
+check("A: een gebruikte koppeling blijft staan, uitgelogd", r == (A, False) and E in serve.iconiks() and E in cleared, (r, serve.iconiks()))
+with serve.jobs_lock:
+    serve.jobs.clear()
+serve.remove_integration(E)
+F = settings.add_integration("iconik")
+clients[F] = User("ffffffff-1111-2222-3333-444444444444")
+check("A: een andere omgeving mag gewoon, en het domein is meteen bekend",
+      serve.refuse_double(F) is None and settings.noted(F, items.DOMAIN_KEY) == "ffffffff-1111-2222-3333-444444444444")
+clients[F] = None
+check("A: omgeving niet op te halen: de inlog blijft (same_environment is het vangnet)", serve.double_environment(F) is None)
+
+# Al vóór het inlogscherm: dezelfde client-ID als een andere koppeling is dezelfde omgeving.
+settings.put("iconik.client_id", "11111111-aaaa-bbbb-cccc-000000000001", A)
+H = settings.add_integration("iconik")
+r = serve.apply_settings({"iconik.client_id": " 11111111-AAAA-bbbb-cccc-000000000001"}, H)
+check("A: dezelfde client-ID als A: geweigerd bij het bewaren, met de naam van A", r["ok"] is False
+      and "iconik.client_id" in r["errors"] and "Iconik" in r["error"] and settings.stored("iconik.client_id", H) is None, r)
+check("A: een andere client-ID mag", serve.apply_settings({"iconik.client_id": "22222222-aaaa-bbbb-cccc-000000000002"}, H)["ok"])
+serve.remove_integration(H)
+
+# Over HTTP: na het inloggen terug naar Instellingen, bij de bestaande Iconik, met de reden.
+G = settings.add_integration("iconik")
+clients[G] = User(DA)
+real_finish = transcribe.finish_login
+transcribe.finish_login = lambda *a, **k: None
+serve.pending_login["s1"] = ("v", G)
+serve.pending_back["s1"] = f"/settings-window?tab=integrations&instance={G}"
+conn = http.client.HTTPConnection("127.0.0.1", srv.server_address[1])
+conn.request("GET", "/oauth/callback?code=c&state=s1")
+response = conn.getresponse()
+where = response.getheader("Location") or ""
+check("A: na het inloggen naar de bestaande Iconik, met login=double",
+      response.status == 303 and f"instance={A}" in where and "login=double" in where and f"same={A}" in where
+      and "removed=1" in where and G not in serve.iconiks(), (response.status, where))
+# En /login zelf: staat de client-ID al bij een andere koppeling, dan niet eens naar Iconik.
+J = settings.add_integration("iconik")
+settings.raw_put("iconik.client_id", "11111111-aaaa-bbbb-cccc-000000000001", J)
+conn = http.client.HTTPConnection("127.0.0.1", srv.server_address[1])
+conn.request("GET", f"/login?back=settings&instance={J}", headers={"Cookie": f"{serve.SESSION_COOKIE}={serve.SESSION}"})
+response = conn.getresponse()
+where = response.getheader("Location") or ""
+check("A: inloggen met de client-ID van A gaat niet naar Iconik maar terug naar Instellingen",
+      response.status == 303 and "login=double" in where and f"same={A}" in where and "iconik" not in where.split("?")[0], where)
+serve.remove_integration(J)
+transcribe.finish_login, transcribe.clear_login = real_finish, real_clear
 
 srv.shutdown()
 print("ALLES OK" if not fails else f"{fails} FOUT")

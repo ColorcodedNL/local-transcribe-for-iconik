@@ -163,6 +163,8 @@ const TEXT = {
     labels: "Labels in Iconik", fieldsHelp: "Wat mensen in Iconik zien bij Transcriptie en de keuzes Aangevraagd, Bezig, Klaar en Fout. Geldt voor iedereen in deze Iconik-omgeving en vraagt beheerrechten.",
     fieldsDone: "Bijgewerkt in Iconik.",
     noIntegrations: "Nog geen integraties.", addHint: "Kies + om Iconik toe te voegen.", add: "Integratie toevoegen", remove: "Integratie verwijderen",
+    doubleRemoved: n => `De omgeving waar je net inlogde is hier al gekoppeld als ${n}. De nieuwe koppeling is daarom weggehaald.`,
+    doubleKept: n => `Die Iconik-omgeving is hier al gekoppeld als ${n}, dus deze koppeling is niet ingelogd. Log in bij een andere omgeving of haal deze koppeling weg met −.`,
     sameEnv: n => `Dezelfde Iconik-omgeving als ${n}. Opdrachten op afstand, automatisch transcriberen, de knoppen en de labels in Iconik lopen via ${n}; hier staan ze daarom niet.`,
     removeTitle: n => `${n} verwijderen?`, removeHelp: "Je wordt uitgelogd en de instellingen van deze koppeling (adres, opslag, op afstand, automatisch) worden vergeten. Transcripten in Iconik blijven staan.",
     removeForget: n => `Ook weghalen wat deze Mac van ${n} bewaart`,
@@ -217,6 +219,8 @@ const TEXT = {
     labels: "Labels in Iconik", fieldsHelp: "What people see in Iconik at Transcription and the choices Requested, Busy, Done and Error. Applies to everyone in this Iconik environment and needs admin rights.",
     fieldsDone: "Updated in Iconik.",
     noIntegrations: "No integrations yet.", addHint: "Choose + to add Iconik.", add: "Add integration", remove: "Remove integration",
+    doubleRemoved: n => `The environment you just logged in to is already linked here as ${n}. The new integration has therefore been removed.`,
+    doubleKept: n => `That Iconik environment is already linked here as ${n}, so this integration is not logged in. Log in to another environment or remove this integration with −.`,
     sameEnv: n => `The same Iconik environment as ${n}. Remote jobs, auto transcribe, the buttons and the labels in Iconik go through ${n}, so they are not here.`,
     removeTitle: n => `Remove ${n}?`, removeHelp: "You are logged out and the settings of this integration (address, storage, remote, auto) are forgotten. Transcripts in Iconik stay.",
     removeForget: n => `Also remove what this Mac keeps of ${n}`,
@@ -236,6 +240,8 @@ const AUTO = ["transcription.auto_min_free_gb", "transcription.auto_max_cpu", "t
 const HDR = {"X-Local-Transcribe": "1"};
 let current = "general", data = {}, errors = {}, ui = {adjust: false, advanced: false, clearArmed: false, adding: false, fieldsMsg: "",
     loginFailed: new URLSearchParams(location.search).get("login") === "failed",
+    double: new URLSearchParams(location.search).get("login") === "double"   // inlog geweigerd: die omgeving is al gekoppeld
+      ? {same: new URLSearchParams(location.search).get("same") || "", removed: new URLSearchParams(location.search).get("removed") === "1"} : null,
     instance: new URLSearchParams(location.search).get("instance") || ""};   // de gekozen Iconik bij Integraties
 // Alles op de tab Integraties hoort bij de gekozen Iconik: ?instance= bij elk verzoek.
 const inst = (sep = "&") => ui.instance ? `${sep}instance=${encodeURIComponent(ui.instance)}` : "";
@@ -355,6 +361,10 @@ function drawIntegrations() {
 
   const status = {gebruiker: T.accAs(x.user), token: T.accToken, uitgelogd: T.accOut, geen: T.accNone}[x.account];
   let html = `<div class="ihead">${logo(x.icon, true)}<div><div class="iname">${esc(x.name)}</div><div class="state"><i class="dot ${dot}"></i>${esc(status)}</div></div></div>`;
+  if (ui.double) {
+    const other = x.instances.find(i => i.id === ui.double.same), n = other ? other.name : "Iconik";
+    html += `<div class="note" id="double">${esc(ui.double.removed ? T.doubleRemoved(n) : T.doubleKept(n))}</div>`;
+  }
   if (x.same_as) html += `<div class="note" id="sameEnv">${esc(T.sameEnv(x.same_as_name))}</div>`;
   const nameSpec = spec("iconik.name");
   const account = [row(esc(nameSpec.label), esc(nameSpec.help), control(nameSpec, v["iconik.name"]).replace("<input ", `<input placeholder="${esc(x.auto_name)}" `), "iconik.name"),
@@ -443,7 +453,7 @@ function confirmAdd() {
   const go = async () => {
     const r = await fetch("/integrations/add?name=" + encodeURIComponent($("addName").value.trim()), {method: "POST", headers: HDR}).then(r => r.json()).catch(() => ({ok: false}));
     if (!r.ok) { $("addErr").textContent = r.error || T.failed; return; }
-    ui.instance = r.id; ui.adding = false; errors = {}; ui.loginFailed = false;
+    ui.instance = r.id; ui.adding = false; errors = {}; ui.loginFailed = false; ui.double = null;
     closeSheet();
   };
   $("addConfirm").onclick = go;
@@ -512,7 +522,7 @@ document.addEventListener("click", async e => {
   else if (id === "resumeNow") { await fetch("/worker?value=resume" + inst(), {method: "POST", headers: HDR}); load(current); }
   else if (e.target.closest("[data-instance]")) {
     const pick = e.target.closest("[data-instance]").dataset.instance;
-    if (pick !== ui.instance) { ui.instance = pick; ui.fieldsMsg = ""; errors = {}; ui.loginFailed = false; load(current); }
+    if (pick !== ui.instance) { ui.instance = pick; ui.fieldsMsg = ""; errors = {}; ui.loginFailed = false; ui.double = null; load(current); }
   }
   else if (id === "addIntegration") confirmAdd();
   else if (id === "removeIntegration") confirmRemove();

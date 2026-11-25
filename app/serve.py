@@ -973,6 +973,67 @@ def buttons_removable(instance):
     return not any(items.same_environment(other) == instance for other in iconiks() if other != instance)
 
 
+def same_client(client_id, instance):
+    """Een andere Iconik-koppeling met dezelfde client-ID, of None. Een client-ID is een app-registratie in één
+    Iconik-omgeving, dus dezelfde client-ID is dezelfde omgeving. Zo weigert de app een dubbele koppeling al vóór
+    het inlogscherm; double_environment vangt na het inloggen wat hier niet te zien is (een tweede app-registratie
+    in dezelfde omgeving)."""
+    wanted = (client_id or "").strip().lower()
+    if not wanted:
+        return None
+    for other in iconiks():
+        if other != instance and (setting.get("iconik.client_id", other) or "").strip().lower() == wanted:
+            return other
+    return None
+
+
+def double_environment(instance):
+    """Een tweede koppeling naar een Iconik-omgeving die hier al gekoppeld is, mag niet (keuze A, besloten 25 november,
+    na het testen met twee koppelingen naar één omgeving). Pas na het inloggen weet de app welke omgeving het is.
+    Geeft het eerder gekoppelde exemplaar met hetzelfde domein, of None. Is de omgeving niet op te halen, dan blijft
+    de inlog staan; same_environment zorgt er dan nog voor dat de rij en de knoppen maar één keer meedoen."""
+    try:
+        user = client(instance).get("users/v1/users/current/")
+    except Exception:
+        return None
+    domain = (user or {}).get("system_domain_id")
+    if not items.valid_domain(domain):
+        return None
+    for other in iconiks():
+        if other != instance and setting.noted(other, items.DOMAIN_KEY) == domain:
+            return other
+    remember_domain(user, instance)
+    return None
+
+
+def unused(instance):
+    """Heeft deze koppeling nog niets op deze Mac: geen regels in de lijst, geen bestanden? Zo'n koppeling is net met
+    + gemaakt en kan zonder vragen weer weg."""
+    if any((job.item or "").startswith(instance + ":") for job in jobs):
+        return False
+    for root in (transcribe.TRANSCRIPTS_DIR, transcribe.WAVES_DIR, refine.DRAFTS_DIR):
+        folder = Path(root) / instance
+        if folder.is_dir() and any(folder.iterdir()):
+            return False
+    return True
+
+
+def refuse_double(instance):
+    """Na het inloggen: hoort deze koppeling bij een omgeving die al gekoppeld is, dan geen inlog bewaren. Een
+    ongebruikte koppeling gaat dan weg, een gebruikte blijft uitgelogd staan. Geeft None als alles goed is, anders
+    (het andere exemplaar, of de nieuwe koppeling weg is)."""
+    other = double_environment(instance)
+    if not other:
+        return None
+    transcribe.clear_login(instance)
+    bits(instance)["who"].clear()
+    bits(instance)["actions"].clear()
+    removed = unused(instance) and remove_integration(instance).get("ok", False)
+    print(f"[{datetime.now():%H:%M:%S}] inlog geweigerd: die Iconik-omgeving is al gekoppeld"
+          + (" (nieuwe koppeling weggehaald)" if removed else ""))
+    return other, removed
+
+
 def remove_integration(instance_id, forget=False, buttons=False):
     """Een koppeling verwijderen (de knop − bij Integraties): uitloggen en de instellingen van die koppeling
     vergeten. Niet tijdens een opdracht. Transcripten in Iconik blijven altijd staan. Met `forget` ook alles wat
@@ -1050,6 +1111,12 @@ def apply_settings(changes, instance=None):
         # zijn eigen werk aan die naam.
         errors["iconik.machine_name"] = transcribe.L("Wacht tot de lopende opdracht klaar is.",
                                                      "Wait until the running job has finished.")
+    if cleaned.get("iconik.client_id") and instance:
+        other = same_client(cleaned["iconik.client_id"], instance)
+        if other:
+            errors["iconik.client_id"] = transcribe.L(
+                f"Deze client-ID hoort bij een omgeving die hier al gekoppeld is als {iconik_name(other)}.",
+                f"This client ID belongs to an environment that is already linked here as {iconik_name(other)}.")
     if not errors and cleaned.get("iconik.iconik_language") in ("nl", "en"):
         try:
             set_labels_language(cleaned["iconik.iconik_language"], instance)
@@ -1258,6 +1325,16 @@ class Handler(BaseHTTPRequestHandler):
         transcribe.finish_login(code, verifier, instance)
         bits(instance)["who"].clear()
         bits(instance)["actions"].clear()
+        double = refuse_double(instance) if instance and len(iconiks()) > 1 else None
+        if double:
+            other, removed = double
+            if back:
+                shown = other if removed else instance
+                return self.redirect(f"/settings-window?tab=integrations&instance={shown}&login=double&same={other}"
+                                     + ("&removed=1" if removed else ""))
+            return self.reply(200, status_page(transcribe.L(
+                f"Die Iconik-omgeving is hier al gekoppeld als {iconik_name(other)}. Er is niet opnieuw ingelogd.",
+                f"That Iconik environment is already linked here as {iconik_name(other)}. Nothing was logged in.")))
         print("Ingelogd bij Iconik.")
         waiting, pending_ids[:] = list(pending_ids), []
         if waiting:
@@ -1510,6 +1587,13 @@ def _logout(h, r):
 @route("/login")
 def _login(h, r):
     instance = iconik_instance(r)
+    other = same_client(setting.get("iconik.client_id", instance), instance) if instance and len(iconiks()) > 1 else None
+    if other:   # al gekoppeld: niet eens naar het inlogscherm van Iconik
+        if r.first("back") == "settings":
+            return h.redirect(f"/settings-window?tab=integrations&instance={instance}&login=double&same={other}")
+        return h.reply(200, status_page(transcribe.L(
+            f"Die Iconik-omgeving is hier al gekoppeld als {iconik_name(other)}.",
+            f"That Iconik environment is already linked here as {iconik_name(other)}.")))
     address, state, verifier = transcribe.start_login(instance)
     pending_login.clear()
     pending_back.clear()

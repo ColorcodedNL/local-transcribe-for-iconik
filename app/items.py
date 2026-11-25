@@ -108,10 +108,11 @@ def iconik_for_domain(domain=""):
 
 
 def same_environment(instance):
-    """Het eerder gekoppelde exemplaar met dezelfde Iconik-omgeving (hetzelfde domein), of None. Twee koppelingen naar
-    één omgeving mogen (om te testen; besloten 25 november), maar wat Macs delen (de knoppen, de wachtrij) doet alleen
-    de eerste: twee koppelingen in dezelfde rij onder dezelfde Mac-naam zouden elkaars claims voor achtergebleven
-    claims aanzien."""
+    """Het eerder gekoppelde exemplaar met dezelfde Iconik-omgeving (hetzelfde domein), of None. Sinds keuze A
+    (25 november) weigert de app een tweede inlog bij dezelfde omgeving (serve.refuse_double). Dit blijft als vangnet,
+    voor als de omgeving bij het inloggen niet op te halen was: wat Macs delen (de knoppen, de wachtrij) doet dan
+    alleen de eerste, want twee koppelingen in dezelfde rij onder dezelfde Mac-naam zouden elkaars claims voor
+    achtergebleven claims aanzien."""
     domain = settings.noted(instance, DOMAIN_KEY)
     if not valid_domain(domain):
         return None

@@ -686,6 +686,39 @@ with sync_playwright() as p:
               and page.locator("#untested").count() == 0)
         page.locator("#removeCancel").click()
 
+        # 14. Keuze A (25 november): een tweede koppeling naar een omgeving die al gekoppeld is. Met dezelfde client-ID
+        # weigert de app al bij het invullen (vóór het inlogscherm van Iconik). Met een andere client-ID uit dezelfde
+        # omgeving weigert de app na het inloggen, haalt de nieuwe (nog ongebruikte) koppeling weg en zegt waarom.
+        page.locator("#addIntegration").click()
+        page.locator("#addConfirm").click()
+        page.wait_for_function("document.querySelectorAll('.item').length === 2", timeout=5000)
+        new = app_settings.instances("iconik")[-1]
+        app_settings.raw_put("iconik.host", FAKE, new)   # de nagemaakte Iconik
+        cid = page.locator("#f-iconik-client_id")
+        cid.fill(app_settings.stored("iconik.client_id", first))
+        cid.press("Enter")
+        page.locator(".err", has_text="al gekoppeld").wait_for(timeout=5000)   # tussen korte woorden staan vaste spaties
+        check("A: dezelfde client-ID als Iconik: geweigerd bij het invullen, niets bewaard, niet inloggen",
+              app_settings.stored("iconik.client_id", new) is None and page.locator("#login[disabled]").count() == 1)
+        cid.fill(sorted(CLIENT_IDS - {app_settings.stored("iconik.client_id", first)})[0])
+        cid.press("Enter")
+        page.locator("#login:not([disabled])").wait_for(timeout=5000)
+        page.locator("#login").click()
+        page.locator("#double").wait_for(timeout=10000)
+        check("A: dezelfde omgeving nog eens gekoppeld: geweigerd, de nieuwe koppeling weg, de reden bij de bestaande Iconik",
+              len(app_settings.instances("iconik")) == 1 and page.locator(".iname").inner_text() == "Iconik"
+              and "al gekoppeld als Iconik" in page.locator("#double").inner_text() and page.locator("#logout").count() == 1,
+              (app_settings.instances("iconik"), page.locator("#double").inner_text()))
+        used = app_settings.add_integration("iconik")
+        page.goto(BASE + f"/settings-window?tab=integrations&instance={used}&login=double&same={first}")
+        page.locator("#double").wait_for(timeout=5000)
+        check("A: een gebruikte koppeling blijft staan, uitgelogd, met de weg terug (−)",
+              "−" in page.locator("#double").inner_text() and page.locator("#login").count() == 1)
+        page.locator(f'.item[data-instance="{first}"]').click()
+        page.wait_for_function("!document.querySelector('#double')", timeout=5000)
+        check("A: een andere Iconik kiezen haalt de melding weg", page.locator("#double").count() == 0)
+        serve.remove_integration(used)
+
         browser.close()
     except Exception as error:
         # Een stap liep vast: zeg welke, en welke verzoeken de ontvanger weigerde.
