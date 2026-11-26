@@ -82,8 +82,53 @@ def fingerprint(path):
     return digest.hexdigest()[:KEY_LENGTH]
 
 
+AUDIO_EXTENSIONS = {".wav", ".bwf", ".aif", ".aiff", ".mp3", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".wma"}
+
+
 def is_media(path):
     return Path(path).suffix.lower() in base.MEDIA_EXTENSIONS
+
+
+def is_audio(path):
+    return Path(path).suffix.lower() in AUDIO_EXTENSIONS
+
+
+def media_in(folder, subfolders=True, audio=True, limit=100000):
+    """De video- en audiobestanden in een map (en de submappen), als paden. Verborgen bestanden en mappen,
+    macOS-pakketten (.app, .fcpbundle, ...) en de ._-bestanden van een netwerkvolume tellen niet. Zonder `audio`
+    alleen video. Een map die niet te lezen is, slaat hij over."""
+    found = []
+    folder = Path(folder)
+
+    def walk(directory):
+        try:
+            entries = sorted(os.scandir(directory), key=lambda e: e.name.lower())
+        except OSError:
+            return
+        for entry in entries:
+            if len(found) >= limit or entry.name.startswith("."):
+                continue
+            try:
+                if entry.is_dir(follow_symlinks=False):
+                    if subfolders and "." not in entry.name[1:]:
+                        walk(entry.path)
+                elif entry.is_file() and is_media(entry.name) and (audio or not is_audio(entry.name)):
+                    found.append(Path(entry.path))
+            except OSError:
+                continue
+    walk(folder)
+    return found
+
+
+def has_transcript(media):
+    """Staat er al een transcript (van wie dan ook) waar dat van dit bestand zou komen? Zonder de vingerafdruk te
+    lezen: voor een gevolgde map, die zo elke ronde snel overslaat wat al klaar is."""
+    media = Path(media)
+    try:
+        folder = directory_for(media)
+    except base.Problem:
+        return False
+    return (folder / (media.stem + SUFFIX)).exists() or (folder / (media.name + SUFFIX)).exists()
 
 
 # --- local-files.json ---
@@ -146,6 +191,34 @@ def _done(key, paths):
             entry = _entry(found, key)
             entry["pending"] = [p for p in entry["pending"] if p not in paths]
             _save(found)
+
+
+def _stamp(path):
+    st = Path(path).stat()
+    return f"{st.st_size}:{int(st.st_mtime)}"
+
+
+def skip(path):
+    """Een gevolgde map probeert dit bestand niet opnieuw (mislukt of overgeslagen), tot het verandert."""
+    try:
+        stamp = _stamp(path)
+    except OSError:
+        return
+    with _lock:
+        found = _load()
+        skipped = found.setdefault("~skip", {})   # pad -> "grootte:mtime"; ~ botst nooit met een vingerafdruk
+        if isinstance(skipped, dict):
+            skipped[str(path)] = stamp
+            _save(found)
+
+
+def skipped(path):
+    with _lock:
+        stamp = (_load().get("~skip") or {}).get(str(path))
+    try:
+        return stamp is not None and stamp == _stamp(path)
+    except OSError:
+        return False
 
 
 def forget(key):

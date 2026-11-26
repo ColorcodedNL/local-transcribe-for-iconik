@@ -27,6 +27,13 @@ for name in ("mlx", "mlx_whisper", "torch", "webview"):
 
 import transcribe, serve  # noqa: E402,E401
 
+# Nooit een echt venster van macOS of de Finder vanuit een test: de routes Map volgen…, In één map… en Toon in
+# Finder roepen deze aan, en op een Mac zou osascript het mapkiesvenster echt openen.
+asked_folder = []
+serve.system.ask_folder = lambda prompt, start=None: asked_folder.append(prompt)
+serve.system.reveal = lambda path: None
+serve.choose_files_hook = lambda: []
+
 transcribe.L = lambda nl, en: nl
 tmp = Path(tempfile.mkdtemp())
 transcribe.CONFIG_PATH = tmp / "config.json"
@@ -55,6 +62,8 @@ EXPECTED = {
     "/worker": (P, True, True, "window"), "/login-item": (P, True, True, "window"),
     "/asset/open": (P, True, True, "window"), "/actions/install": (P, True, True, "window"),
     "/log/clear": (P, True, True, "window"), "/jobs/remove": (P, True, True, "window"), "/local/add": (P, True, True, "window"),
+    "/local/choose": (P, True, True, "window"), "/local/reveal": (P, True, True, "window"), "/folders/choose": (P, True, True, "window"),
+    "/folders/watch": (P, True, True, "window"), "/files/folder": (P, True, True, "window"),
     "/integrations/remove": (P, True, True, "window"), "/integrations/add": (P, True, True, "window"), "/clear": (P, True, True, "window"),
     "/logout": (P, True, True, "window"),
     "/login": (W, True, False, "window"), "/oauth/callback": (W, False, False, "link"),
@@ -143,6 +152,7 @@ answers = {p: (ask("POST", with_asset(p)), ask("POST", with_asset(p), session=Fa
                ask("GET", with_asset(p)), ask("GET", with_asset(p), header=False)) for p in protected}
 check("beschermd: POST met sessie en header werkt", all(a[0] == 200 for a in answers.values()),
       {p: a[0] for p, a in answers.items() if a[0] != 200})
+check("mappen kiezen: de test opent geen echt venster van macOS", len(asked_folder) == 2, asked_folder)
 check("beschermd: zonder sessie 403", all(a[1] == 403 for a in answers.values()))
 check("beschermd: zonder header 403", all(a[2] == 403 for a in answers.values()))
 check("beschermd: GET met header 405, zonder header 403", all(a[3] == 405 and a[4] == 403 for a in answers.values()),

@@ -117,8 +117,11 @@ def ask_folder(prompt, start=None):
     else:
         choose, start = "choose folder with prompt (item 1 of argv)", ""
     script = f"on run argv\ntell me to activate\nreturn POSIX path of ({choose})\nend run"
-    result = subprocess.run(["osascript", "-e", script, prompt, str(start)],
-                            capture_output=True, text=True)
+    try:
+        result = subprocess.run(["osascript", "-e", script, prompt, str(start)],
+                                capture_output=True, text=True)
+    except OSError:
+        return None   # geen osascript (de tests op Linux)
     chosen = result.stdout.strip()
     return chosen.rstrip("/") if result.returncode == 0 and chosen else None
 
@@ -217,6 +220,11 @@ def volume_place(path, volumes=Path("/Volumes")):
 def keep_awake_command(pid):
     """Het commando dat de computer wakker houdt zolang proces `pid` leeft (caffeinate -w stopt vanzelf)."""
     return ["caffeinate", "-i", "-w", str(pid)]
+
+
+def reveal(path):
+    """Toont een bestand in de Finder, geselecteerd."""
+    subprocess.Popen(["open", "-R", str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def open_url(url):

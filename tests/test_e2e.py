@@ -46,6 +46,13 @@ for name in ("mlx", "mlx_whisper", "torch", "webview"):
             sys.modules[name] = types.ModuleType(name)
 
 import transcribe, serve  # noqa: E402,E401
+
+# Nooit een echt venster van macOS of de Finder vanuit een test: de routes Map volgen…, In één map… en Toon in
+# Finder roepen deze aan, en op een Mac zou osascript het mapkiesvenster echt openen.
+asked_folder = []
+serve.system.ask_folder = lambda prompt, start=None: asked_folder.append(prompt)
+serve.system.reveal = lambda path: None
+serve.choose_files_hook = lambda: []
 import settings as app_settings  # noqa: E402  (`settings` is hieronder het blok Voorkeuren op de pagina)
 from playwright.sync_api import sync_playwright  # noqa: E402
 
@@ -211,9 +218,12 @@ with sync_playwright() as p:
         check("een andere browser op deze Mac krijgt de app niet te zien", refused == 403, refused)
         page.goto(f"{BASE}/window/open?t={serve.SESSION}")
         page.wait_for_url(BASE + "/", timeout=5000)
-        connect = page.get_by_role("button", name="Verbinden met Iconik…")
+        connect = page.get_by_role("button", name="Verbind in Instellingen › Integraties")
         connect.wait_for(timeout=5000)
-        check("uitgelogd: lege lijst met Verbinden met Iconik, status rechtsboven", page.locator("#who").inner_text() == "Niet ingelogd")
+        check("uitgelogd: lege lijst als sleepzone, met een regel naar Integraties, status rechtsboven",
+              page.locator("#who").inner_text() == "Niet ingelogd"
+              and page.get_by_text("Sleep video- of audiobestanden hierheen").count() == 1
+              and page.get_by_role("button", name="Kies bestanden…").count() == 1 and page.get_by_role("button", name="Map volgen…").count() == 1)
         check("geen zijbalk en geen Voorkeuren meer in het venster", page.locator("aside, #settings, .nav").count() == 0)
         check("venstertitel zonder 'for Iconik'", page.title() == "Local Transcribe", page.title())
         connect.click()
@@ -409,8 +419,99 @@ with sync_playwright() as p:
 
         # Lijst opruimen vanuit het venster
         page.locator("#clear").click()
-        page.get_by_text("Nog geen opdrachten").wait_for(timeout=5000)
+        page.get_by_text("Sleep video- of audiobestanden hierheen").wait_for(timeout=5000)
         check("lijst opruimen vanuit het venster", not serve.jobs)
+        check("lege lijst met Iconik: de regel over Iconik in plaats van verbinden",
+              page.get_by_text("Of kies in Iconik een asset of collectie").count() == 1 and page.locator("#connect").count() == 0)
+
+        # 8b. Lokale modus (stap 6b en 6c): slepen, Kies bestanden…, een map als groep, Volgen, Toon in Finder.
+        while not serve.work.empty():
+            serve.work.get_nowait()
+        media = TMP / "Opnames"
+        for i in range(7):
+            (media / ("camera B" if i == 6 else "")).mkdir(parents=True, exist_ok=True)
+            (media / ("camera B" if i == 6 else "") / f"clip{i}.mov").write_bytes(os.urandom(3000 + i))
+        loose = TMP / "los.wav"
+        loose.write_bytes(os.urandom(2000))
+        page.evaluate("""() => { const dt = new DataTransfer(); dt.items.add(new File(["x"], "clip.mov"));
+            document.dispatchEvent(new DragEvent("dragenter", {dataTransfer: dt, bubbles: true})); }""")
+        check("slepen: de blauwe zone verschijnt boven het venster", page.locator("#drop").is_visible()
+              and page.get_by_text("Laat los om toe te voegen").is_visible())
+        page.evaluate("""() => { const dt = new DataTransfer(); dt.items.add(new File(["x"], "clip.mov"));
+            document.dispatchEvent(new DragEvent("dragleave", {dataTransfer: dt, bubbles: true})); }""")
+        check("slepen: weer weg als je wegsleept", not page.locator("#drop").is_visible())
+        page.evaluate("""() => { const dt = new DataTransfer(); dt.items.add(new File(["x"], "clip.mov"));
+            document.dispatchEvent(new DragEvent("dragenter", {dataTransfer: dt, bubbles: true}));
+            document.dispatchEvent(new DragEvent("drop", {dataTransfer: dt, bubbles: true, cancelable: true})); }""")
+        check("slepen: weg na het loslaten", not page.locator("#drop").is_visible())
+        serve.choose_files_hook = lambda: [str(loose)]
+        page.get_by_role("button", name="Kies bestanden…").click()
+        page.locator(".job", has_text="los.wav").wait_for(timeout=5000)
+        check("Kies bestanden…: het gekozen bestand in de lijst, zonder groep, met zijn map eronder",
+              page.locator(".job", has_text="los.wav").locator(".msg").inner_text().startswith(TMP.name))
+        serve.add_local([str(media)])   # zoals de app een losgelaten map doorgeeft
+        head = page.locator(".grp", has_text="Opnames")
+        head.wait_for(timeout=5000)
+        check("map: één groep met de naam en de telling", "7 bestanden: 7 wachten" in head.inner_text(), head.inner_text())
+        check("map: de eerste vijf eronder en 'toon alles'", page.locator(".job.child").count() == 5
+              and page.get_by_role("button", name="toon alles").count() == 1)
+        page.get_by_role("button", name="toon alles").click()
+        page.wait_for_function("document.querySelectorAll('.job.child').length === 7", timeout=5000)
+        check("map: een bestand in een submap toont de submap", page.locator(".job.child", has_text="clip6.mov").locator(".msg").inner_text() == "camera B")
+        head.get_by_role("button", name="Inklappen").click()
+        page.wait_for_function("document.querySelectorAll('.job.child').length === 0", timeout=5000)
+        head.get_by_role("button", name="Uitklappen").click()
+        page.wait_for_function("document.querySelectorAll('.job.child').length === 7", timeout=5000)
+        check("map: in- en uitklappen", True)
+        head.get_by_role("button", name="Volgen").click()
+        head.get_by_role("button", name="Gevolgd").wait_for(timeout=5000)
+        check("Volgen: de map wordt gevolgd, met submappen", serve.watched() == {str(media): {"subfolders": True}})
+        page.locator("#strip").get_by_text("Gevolgde mappen").wait_for(timeout=5000)
+        serve.watch_state["settling_by_folder"] = {str(media): ["vers.mov"]}
+        first = page.locator("#list > div").nth(page.locator("#list > div").evaluate_all(
+            "els => els.findIndex(e => e.classList.contains('grp')) + 1"))
+        page.get_by_text("controleert het bestand…").wait_for(timeout=5000)
+        check("nieuw gezien: bovenaan de groep, met wat de app doet", "vers.mov" in first.inner_text(), first.inner_text())
+        serve.watch_state["settling_by_folder"] = {}
+        for job in serve.jobs:
+            if job.group == str(media):
+                job.set(status="klaar")
+        (media / "clip3.mov").rename(TMP / "elders.mov")
+        serve.check_gone()
+        page.get_by_text("niet meer in de map").wait_for(timeout=5000)
+        children = page.locator(".job.child")
+        check("weggehaald: grijs en onderaan de groep", "clip3.mov" in children.nth(children.count() - 1).inner_text()
+              and "gone" in (children.nth(children.count() - 1).get_attribute("class") or ""))
+        check("weggehaald: de groep telt het", "1 weggehaald" in head.inner_text(), head.inner_text())
+        # Teruggezet zonder transcript: eerst alleen de regel "controleert", daarna één regel per bestand.
+        (TMP / "elders.mov").rename(media / "clip3.mov")
+        serve.check_gone()
+        serve.watch_state["settling_by_folder"] = {str(media): ["clip3.mov"]}
+        page.wait_for_function("[...document.querySelectorAll('.job.child')].every(e => !e.innerText.includes('clip3.mov'))", timeout=5000)
+        check("teruggezet: alleen de regel die controleert, de oude klaar-regel niet", page.locator(".newrow", has_text="clip3.mov").count() == 1)
+        check("teruggezet: de kop telt het als nieuw", "7 bestanden: 1 nieuw," in head.inner_text(), head.inner_text())
+        serve.watch_state["settling_by_folder"] = {}
+        again = serve.jobs.add(next(j.item for j in serve.jobs if j.title == "clip3.mov"), auto=True, title="clip3.mov",
+                               group=str(media), path=str(media / "clip3.mov"))
+        again.set(status="klaar")
+        page.wait_for_function("document.querySelectorAll('.newrow').length === 0", timeout=5000)
+        page.wait_for_timeout(1200)
+        check("teruggezet: één regel per bestand, de nieuwste", page.locator(".job.child", has_text="clip3.mov").count() == 1
+              and "Auto" in page.locator(".job.child", has_text="clip3.mov").inner_text())
+        check("statusstrook: Gevolgde mappen", "1 map" in page.locator("#strip").inner_text(), page.locator("#strip").inner_text())
+        revealed = []
+        serve.system.reveal = revealed.append
+        page.locator(".job", has_text="los.wav").click(button="right")
+        page.get_by_role("menuitem", name="Toon in Finder").click()
+        page.wait_for_timeout(300)
+        check("rechtsklik op een lokale regel: Toon in Finder", revealed == [str(loose)], revealed)
+        chosen = TMP / "Interviews"
+        chosen.mkdir()
+        serve.system.ask_folder = lambda prompt, start=None: str(chosen)
+        while not serve.work.empty():
+            serve.work.get_nowait()
+        for job in serve.jobs:
+            job.set(status="klaar")
 
         # 9. Het venster Instellingen: eigen pagina, vier tabs, de titel volgt de tab, de laatste tab blijft.
         titles, opened = [], []
@@ -430,6 +531,39 @@ with sync_playwright() as p:
         page.wait_for_function("document.title === 'Bestanden'", timeout=5000)
         check("Instellingen: de laatste tab blijft na opnieuw openen",
               page.get_by_role("tab", name="Bestanden").get_attribute("aria-selected") == "true")
+        # Bestanden (stap 6c): de plaats, ook alleen audio, de gevolgde mappen met + en −.
+        files = page.locator('[data-panel="files"]')
+        files.get_by_text("Gevolgde mappen").first.wait_for(timeout=5000)
+        check("Bestanden: plaats en ook alleen audio", files.get_by_label("Transcript").input_value() == "next"
+              and files.get_by_label("Ook alleen audio").is_checked())
+        check("Bestanden: de map die in de lijst gevolgd werd", files.locator("[data-pick]").count() == 1
+              and "Opnames" in files.locator("[data-pick]").inner_text())
+        files.get_by_role("button", name="Map volgen").click()
+        files.locator("[data-pick]", has_text="Interviews").wait_for(timeout=5000)
+        check("Bestanden: + volgt een gekozen map", set(serve.watched()) == {str(media), str(chosen)})
+        files.get_by_label("Ook submappen: Interviews").click()
+        for _ in range(50):   # het schuifje springt meteen om; wachten tot de app het bewaard heeft
+            if serve.watched().get(str(chosen)) == {"subfolders": False}:
+                break
+            page.wait_for_timeout(100)
+        check("Bestanden: ook submappen per map", serve.watched().get(str(chosen)) == {"subfolders": False}, serve.watched())
+        check("Bestanden: − pas als er een map gekozen is", files.get_by_role("button", name="Niet meer volgen").is_disabled())
+        files.locator("[data-pick]", has_text="Interviews").locator(".lbl").click()
+        files.get_by_role("button", name="Niet meer volgen").click()
+        files.locator("[data-pick]", has_text="Interviews").wait_for(state="detached", timeout=5000)
+        check("Bestanden: − stopt het volgen", set(serve.watched()) == {str(media)})
+        transcripts = TMP / "Transcripten"
+        transcripts.mkdir()
+        serve.system.ask_folder = lambda prompt, start=None: str(transcripts)
+        files.get_by_label("Transcript").select_option("folder")
+        files.get_by_text(str(transcripts)).wait_for(timeout=5000)
+        check("Bestanden: In één map… vraagt eerst de map", app_settings.get("files.transcript_place") == "folder"
+              and app_settings.get("files.transcript_folder") == str(transcripts))
+        serve.system.ask_folder = lambda prompt, start=None: None
+        files.get_by_label("Transcript").select_option("next")
+        page.wait_for_function("!document.body.innerText.includes('Map voor transcripten')", timeout=5000)
+        check("Bestanden: terug naar Naast de media", app_settings.get("files.transcript_place") == "next")
+        serve.set_watch(str(media), on=False)
         page.goto(BASE + "/settings-window?tab=integrations")
         page.wait_for_function("document.title === 'Integraties'", timeout=5000)
         check("Instellingen: opent op de gevraagde tab", page.locator('[data-panel="integrations"]').is_visible())

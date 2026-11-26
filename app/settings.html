@@ -112,7 +112,7 @@ button.link { all: unset; color: var(--accent-text); cursor: pointer; }
 <main>
   <section role="tabpanel" data-panel="general"></section>
   <section role="tabpanel" data-panel="transcription"></section>
-  <section role="tabpanel" data-panel="files"><p class="empty" data-t="filesSoon"></p></section>
+  <section role="tabpanel" data-panel="files"></section>
   <section role="tabpanel" data-panel="integrations"></section>
 </main>
 <div class="back" id="sheet" hidden></div>
@@ -121,8 +121,13 @@ const LANG = "__LANG__";
 const TEXT = {
   nl: {
     general: "Algemeen", transcription: "Transcriptie", files: "Bestanden", integrations: "Integraties",
-    soon: "Volgt in een volgende stap.", filesSoon: "Komt met het werken met losse bestanden.",
-    choices: {"general.app_language": {auto: "Volg macOS", nl: "Nederlands", en: "English"}, "iconik.iconik_language": {"": "Volg de app", nl: "Nederlands", en: "English"}},
+    soon: "Volgt in een volgende stap.",
+    choices: {"general.app_language": {auto: "Volg macOS", nl: "Nederlands", en: "English"}, "iconik.iconik_language": {"": "Volg de app", nl: "Nederlands", en: "English"},
+              "files.transcript_place": {next: "Naast de media", folder: "In één map…"}},
+    result: "Resultaat", transcriptFolder: "Map voor transcripten", chooseFolder: "Kies map…", noFolder: "Nog geen map gekozen.",
+    watched: "Gevolgde mappen", watchedSub: "Nieuwe bestanden in deze mappen pakt de app zelf op, alleen als deze Mac ruimte heeft (zie Transcriptie).",
+    noWatched: "Nog geen gevolgde map. Kies er een met +, of klik op Volgen bij een map in de opdrachtenlijst.",
+    subfolders: "Ook submappen", unreachable: "niet bereikbaar", addFolder: "Map volgen", removeFolder: "Niet meer volgen",
     languages: {auto: "Herken per opdracht", nl: "Nederlands", en: "English", de: "Deutsch", fr: "Français", es: "Español", it: "Italiano", sv: "Svenska"},
     untested: "niet getest",
     login: "Opstarten bij inloggen", loginHelp: "Opent de app bij het inloggen. Staan opdrachten op afstand aan, dan blijft hij in de menubalk.",
@@ -177,8 +182,13 @@ const TEXT = {
   },
   en: {
     general: "General", transcription: "Transcription", files: "Files", integrations: "Integrations",
-    soon: "Follows in a next step.", filesSoon: "Comes with working on separate files.",
-    choices: {"general.app_language": {auto: "Follow macOS", nl: "Nederlands", en: "English"}, "iconik.iconik_language": {"": "Follow the app", nl: "Nederlands", en: "English"}},
+    soon: "Follows in a next step.",
+    choices: {"general.app_language": {auto: "Follow macOS", nl: "Nederlands", en: "English"}, "iconik.iconik_language": {"": "Follow the app", nl: "Nederlands", en: "English"},
+              "files.transcript_place": {next: "Next to the media", folder: "In one folder…"}},
+    result: "Result", transcriptFolder: "Folder for transcripts", chooseFolder: "Choose folder…", noFolder: "No folder chosen yet.",
+    watched: "Watch folders", watchedSub: "The app picks up new files in these folders by itself, only when this Mac has room (see Transcription).",
+    noWatched: "No watch folder yet. Choose one with +, or click Watch folder on a folder in the job list.",
+    subfolders: "Subfolders too", unreachable: "not reachable", addFolder: "Watch folder", removeFolder: "Stop watching",
     languages: {auto: "Detect per job", nl: "Nederlands", en: "English", de: "Deutsch", fr: "Français", es: "Español", it: "Italiano", sv: "Svenska"},
     untested: "untested",
     login: "Open at login", loginHelp: "Opens the app when you log in. With remote jobs on, it stays in the menu bar.",
@@ -245,7 +255,7 @@ let current = "general", data = {}, errors = {}, ui = {adjust: false, advanced: 
     instance: new URLSearchParams(location.search).get("instance") || ""};   // de gekozen Iconik bij Integraties
 // Alles op de tab Integraties hoort bij de gekozen Iconik: ?instance= bij elk verzoek.
 const inst = (sep = "&") => ui.instance ? `${sep}instance=${encodeURIComponent(ui.instance)}` : "";
-const GROUP = {general: "general", transcription: "transcription", integrations: "iconik"};   // tab -> groep in het schema
+const GROUP = {general: "general", transcription: "transcription", files: "files", integrations: "iconik"};   // tab -> groep in het schema
 const PLUG = '<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M9 7V3M15 7V3M7 7h10v4a5 5 0 0 1-10 0V7zM12 16v5"/></svg>';
 
 const $ = id => document.getElementById(id);
@@ -318,6 +328,23 @@ function drawTranscription() {
         `<button class="btn" id="clearOriginals" ${x.originals.count ? "" : "disabled"}>${esc(ui.clearArmed ? T.clearSure : T.clear)}</button>`)], T.refineSub)
     + `<button class="fold" id="advanced" aria-expanded="${ui.advanced}"><span>${ui.advanced ? "▾" : "▸"}</span>${esc(T.advanced)}</button>`
     + (ui.advanced ? group("", advanced.filter(s => s.advanced).map(settingRow)) : "");
+}
+
+// Bestanden: waar het transcript komt, ook alleen audio, en de gevolgde mappen (+ en −, per map ook submappen).
+function drawFiles() {
+  const v = data.values, x = data.extra;
+  const result = [settingRow(spec("files.transcript_place"))];
+  if (v["files.transcript_place"] === "folder")
+    result.push(row(esc(T.transcriptFolder), v["files.transcript_folder"] ? `<code>${esc(v["files.transcript_folder"])}</code>` : esc(T.noFolder),
+                    `<button class="btn" id="chooseTranscriptFolder">${esc(T.chooseFolder)}</button>`));
+  result.push(settingRow(spec("files.audio")));
+  const rows = x.watched.map(f => `<div class="row" data-pick="${esc(f.path)}" aria-selected="${f.path === ui.folder}" style="${f.path === ui.folder ? "background:color-mix(in srgb, var(--accent) 12%, transparent)" : ""}">`
+    + `<div class="lbl">${esc(f.name)}${f.offline ? ` <span class="state">(${esc(T.unreachable)})</span>` : ""}<div class="help"><code>${esc(f.path)}</code></div></div>`
+    + `<div class="ctl"><span class="state">${esc(T.subfolders)}</span><input type="checkbox" class="switch" role="switch" data-sub="${esc(f.path)}" ${f.subfolders ? "checked" : ""} aria-label="${esc(T.subfolders)}: ${esc(f.name)}"></div></div>`);
+  const list = (rows.length ? rows.join("") : `<div class="row"><span class="state">${esc(T.noWatched)}</span></div>`)
+    + `<div class="pm"><button class="btn" id="addFolder" aria-label="${esc(T.addFolder)}">+</button>`
+    + `<button class="btn" id="removeFolder" aria-label="${esc(T.removeFolder)}" ${x.watched.some(f => f.path === ui.folder) ? "" : "disabled"}>−</button></div>`;
+  return group(T.result, result) + `<div class="gh">${esc(T.watched)}</div><div class="gsub">${esc(T.watchedSub)}</div><div class="grp" id="watchedList">${list}</div>`;
 }
 
 function workerLine(w) {
@@ -460,7 +487,7 @@ function confirmAdd() {
   $("addName").onkeydown = e => { if (e.key === "Enter") go(); if (e.key === "Escape") closeSheet(); };
 }
 
-const DRAW = {general: drawGeneral, transcription: drawTranscription, integrations: drawIntegrations};
+const DRAW = {general: drawGeneral, transcription: drawTranscription, files: drawFiles, integrations: drawIntegrations};
 
 function draw() {
   const panel = document.querySelector(`[data-panel="${current}"]`);
@@ -503,6 +530,15 @@ function valueOf(el) {
 document.addEventListener("change", e => {
   const el = e.target;
   if (el.id === "loginOn") { fetch("/login-item?value=" + (el.checked ? "on" : "off"), {method: "POST", headers: HDR}).then(() => load(current)); return; }
+  if (el.dataset && el.dataset.sub) {
+    fetch(`/folders/watch?path=${encodeURIComponent(el.dataset.sub)}&on=1&subfolders=${el.checked ? 1 : 0}`, {method: "POST", headers: HDR}).then(() => load(current));
+    return;
+  }
+  // In één map…: eerst de map kiezen; zonder keuze blijft het Naast de media.
+  if (el.dataset && el.dataset.key === "files.transcript_place" && el.value === "folder") {
+    fetch("/files/folder", {method: "POST", headers: HDR}).then(() => load(current));
+    return;
+  }
   if (el.dataset && el.dataset.key) save(el.dataset.key, valueOf(el));
 });
 document.addEventListener("keydown", e => {
@@ -527,6 +563,13 @@ document.addEventListener("click", async e => {
   else if (id === "addIntegration") confirmAdd();
   else if (id === "removeIntegration") confirmRemove();
   else if (id === "toLimits") show("transcription");
+  else if (id === "chooseTranscriptFolder") { await fetch("/files/folder", {method: "POST", headers: HDR}); load(current); }
+  else if (id === "addFolder") { await fetch("/folders/choose", {method: "POST", headers: HDR}); load(current); }
+  else if (id === "removeFolder" && ui.folder) {
+    await fetch(`/folders/watch?path=${encodeURIComponent(ui.folder)}&on=0`, {method: "POST", headers: HDR});
+    ui.folder = ""; load(current);
+  }
+  else if (e.target.closest("[data-pick]") && !e.target.closest("input")) { ui.folder = e.target.closest("[data-pick]").dataset.pick; draw(); }
   else if (e.target.closest("[data-mount]")) {
     const b = e.target.closest("[data-mount]");
     await fetch(`/mount/${b.dataset.mount}?id=${encodeURIComponent(b.dataset.id)}${inst()}`, {method: "POST", headers: HDR});

@@ -627,13 +627,26 @@ def app_state():
             "elapsed": (end - row["started"]).total_seconds() if row["started"] else None,
             "auto": row["auto"],
             "source": iconik_name(items.source(row["item"])) if several and items.is_iconik(row["item"]) else "",
+            "local": row["item"].startswith("local:"), "group": row["group"], "where": where(row),
+            "gone": bool(row["path"]) and row["path"] in gone_paths and row["status"] not in ("wachtend", "bezig"),
         })
     first = first_iconik()
     account, _ = iconik_account(first)
+    following = watched()
+    groups = {row["group"] for row in out if row["group"]} | set(following)
+    seen_now = watch_state.get("settling_by_folder") or {}
+    folders = [{"path": path, "name": Path(path).name or path, "watched": path in following,
+                "new": seen_now.get(path, []) if path in following else []} for path in sorted(groups)]
     # Alleen wat het opdrachtenvenster gebruikt; het venster Instellingen haalt zijn gegevens bij /settings-data.
     # De statusstrook toont (nog) de eerste Iconik; per Iconik komt met het venster van stap 5e-2.
     return {
-        "jobs": out, "account": account, "actions": bits(first)["actions"].get("state", "onbekend"), "lang": transcribe.app_language(),
+        "jobs": out, "folders": folders, "place": setting.get("files.transcript_place"),
+        "watch": {"count": len(following), "waiting": watch_state["waiting"], "settling": watch_state["settling"],
+                  "settling_names": watch_state["settling_names"],
+                  "ready": watch_state["ready"],
+                  "reason": watch_state["reason"], "values": watch_state["values"],
+                  "offline": [Path(p).name for p in watch_state["offline"]]},
+        "account": account, "actions": bits(first)["actions"].get("state", "onbekend"), "lang": transcribe.app_language(),
         "iconiks": [iconik_strip(instance) for instance in iconiks()],
         "update": update_view(), "mounts": mount_list(setting.get("iconik.mounts", first), first), "storage": storage_view(),
         "worker": dict(remote.state_of(first), enabled=worker_enabled(first), machine=remote.machine_name(first),
@@ -642,6 +655,21 @@ def app_state():
                        iconik_language=worker_languages(first)[1], auto_on=setting.get("iconik.auto_transcribe", first),
                        auto_audio=setting.get("iconik.auto_audio", first), awake=awake["on"]),
     }
+
+
+def where(row):
+    """De tweede regel van een lokale opdracht: de submap binnen zijn groep, of de map waar het bestand in staat.
+    Alleen namen, nooit het hele pad."""
+    if not row.get("path"):
+        return ""
+    parent = Path(row["path"]).parent
+    if row.get("group"):
+        try:
+            inside = parent.relative_to(row["group"])
+            return "" if str(inside) == "." else str(inside)
+        except ValueError:
+            pass
+    return parent.name
 
 
 def clear_finished():
@@ -688,14 +716,24 @@ def add_job(asset_id, remote=0, auto=False, source=None):
     return True
 
 
-def add_local(paths, auto=False):
-    """Lokale bestanden in de rij (slepen, Kies bestanden…, een gevolgde map). Leest van elk bestand de
-    vingerafdruk; op een netwerkvolume kost dat zo'n 60 ms per bestand, dus de route laat dit in een eigen draad
-    lopen. Een bestand dat al wacht of loopt (ook een kopie met dezelfde vingerafdruk) komt er niet twee keer in:
-    de kopie krijgt het transcript als die opdracht klaar is. Geeft {"added", "skipped"}."""
+def add_local(paths, auto=False, group=""):
+    """Lokale bestanden in de rij (slepen, Kies bestanden…, een gevolgde map). Een map wordt eenmalig uitgepakt: alle
+    video en audio erin en in de submappen (audio alleen met files.audio), als groep met die map. Leest van elk
+    bestand de vingerafdruk; op een netwerkvolume kost dat zo'n 60 ms per bestand, dus de routes laten dit in een
+    eigen draad lopen. Een bestand dat al wacht of loopt (ook een kopie met dezelfde vingerafdruk) komt er niet twee
+    keer in: de kopie krijgt het transcript als die opdracht klaar is. Geeft {"added", "skipped"}."""
     added = skipped = 0
+    found = []
     for text in dict.fromkeys(str(p) for p in paths):
         path = Path(text)
+        try:
+            if path.is_absolute() and path.is_dir():
+                found += [(media, str(path)) for media in local_files.media_in(path, True, setting.get("files.audio"))]
+                continue
+        except OSError:
+            pass
+        found.append((path, group))
+    for path, in_group in found:
         try:
             if not (path.is_absolute() and path.is_file() and local_files.is_media(path)):
                 skipped += 1
@@ -705,7 +743,7 @@ def add_local(paths, auto=False):
             print(f"Bestand niet toegevoegd ({type(error).__name__}).")
             skipped += 1
             continue
-        job = jobs.add(item, auto=auto, title=title)
+        job = jobs.add(item, auto=auto, title=title, group=in_group, path=str(path))
         if job is None:
             continue   # wacht of loopt al; de kopie staat in local-files.json en komt mee
         added += 1
@@ -714,6 +752,170 @@ def add_local(paths, auto=False):
     if added or skipped:
         print(f"Lokale bestanden: {added} toegevoegd" + (f", {skipped} overgeslagen (geen media of niet te lezen)." if skipped else "."))
     return {"added": added, "skipped": skipped}
+
+
+# --- gevolgde mappen (watch folders) ---
+#
+# Een map die de app in de gaten houdt: nieuwe video en audio erin komt vanzelf in de rij, als groep met die map,
+# één tegelijk en alleen als deze Mac ruimte heeft (dezelfde meting als automatisch transcriberen in Iconik). Een
+# bestand telt pas als het 15 seconden niet meer veranderd is (nog aan het kopiëren). Wat al een transcript naast zich
+# heeft, of eerder mislukte en sindsdien niet veranderde (local_files.skip), slaat hij over. Houdt de Mac niet
+# wakker: dat doet alleen een opdracht die loopt.
+
+WATCH_EVERY = 10          # seconden tussen twee rondes; na elke klare opdracht ook meteen een ronde
+WATCH_SETTLE = 15         # zo lang moet een bestand onveranderd zijn. Kort: een kopie die toch nog liep, mislukt op een
+                          # half bestand en komt terug zodra het bestand verandert (local_files.skip geldt dan niet meer)
+WATCH_DONE_RECHECK = 10   # een bestand met transcript pas na zoveel rondes opnieuw bekijken
+watch_wake = threading.Event()
+watch_seen = {}           # pad -> (grootte, mtime, eerst gezien)
+watch_done = {}           # pad -> ronde waarin het een transcript had
+watch_state = {"round": 0, "waiting": 0, "settling": 0, "settling_names": [], "settling_by_folder": {}, "ready": None, "reason": "", "values": {}, "offline": []}
+
+
+def watched():
+    """De gevolgde mappen: {pad: {"subfolders": bool}}, alleen wat bruikbaar is."""
+    found = setting.get("files.watched")
+    return {path: {"subfolders": bool((opts or {}).get("subfolders", True))}
+            for path, opts in found.items() if isinstance(path, str) and Path(path).is_absolute()}
+
+
+def set_watch(path, on=True, subfolders=None):
+    """Volgt een map (of niet meer). Wat er al in de lijst staat, blijft staan. Geeft {"ok"} of {"ok": False, "error"}."""
+    path = str(path or "").rstrip("/")
+    if not path or not Path(path).is_absolute() or len(Path(path).parts) < 2:
+        return {"ok": False, "error": "path"}   # leeg, relatief, of de hele schijf (/)
+    if on and not Path(path).is_dir():
+        return {"ok": False, "error": transcribe.L("Deze map is er niet (meer).", "This folder does not exist (any more).")}
+
+    def change(current):
+        if on:
+            old = current.get(path) if isinstance(current.get(path), dict) else {}
+            keep = old.get("subfolders", True) if subfolders is None else bool(subfolders)
+            current[path] = {"subfolders": keep}
+        else:
+            current.pop(path, None)
+    setting.update("files.watched", change)
+    print(f"[{datetime.now():%H:%M:%S}] map " + ("gevolgd" if on else "niet meer gevolgd"))
+    watch_wake.set()
+    return {"ok": True}
+
+
+def watch_view():
+    """De gevolgde mappen voor het venster: naam, pad, submappen en of hij nu bereikbaar is."""
+    offline = set(watch_state.get("offline") or [])
+    return [{"path": path, "name": Path(path).name or path, "subfolders": opts["subfolders"], "offline": path in offline}
+            for path, opts in sorted(watched().items(), key=lambda kv: Path(kv[0]).name.lower())]
+
+
+def _active_paths():
+    with jobs_lock:
+        return {job.path for job in jobs if job.active and job.path}
+
+
+def watch_round(now=time.time):
+    """Eén ronde langs de gevolgde mappen. Geeft het pad dat in de rij ging, of None."""
+    watch_state["round"] += 1
+    folders = watched()
+    candidates, offline, active, settling, names, by_folder = [], [], _active_paths(), 0, [], {}
+    audio = setting.get("files.audio")
+    for folder, opts in folders.items():
+        if not timed(system.mount_reachable, folder, default=False):
+            offline.append(folder)
+            continue
+        for media in local_files.media_in(folder, opts["subfolders"], audio):
+            text = str(media)
+            if text in active or watch_state["round"] - watch_done.get(text, -WATCH_DONE_RECHECK) < WATCH_DONE_RECHECK:
+                continue
+            if local_files.has_transcript(media):
+                watch_done[text] = watch_state["round"]
+                continue
+            watch_done.pop(text, None)
+            try:
+                st = media.stat()
+            except OSError:
+                continue
+            if local_files.skipped(media):
+                continue
+            seen = watch_seen.get(text)
+            if seen is None or seen[:2] != (st.st_size, st.st_mtime):
+                watch_seen[text] = (st.st_size, st.st_mtime, now())
+                settling += 1   # net gezien: de strook en de groep zeggen het meteen, opgepakt pas als het stilstaat
+                names.append(media.name)
+                by_folder.setdefault(folder, []).append(media.name)
+                continue
+            if now() - seen[2] < WATCH_SETTLE or now() - st.st_mtime < WATCH_SETTLE:
+                settling += 1
+                names.append(media.name)
+                by_folder.setdefault(folder, []).append(media.name)
+                continue
+            candidates.append((st.st_mtime, text, folder))
+    watch_state.update(waiting=len(candidates), settling=settling, settling_names=names[:3],
+                       settling_by_folder={k: v[:20] for k, v in by_folder.items()}, offline=offline)
+    if not candidates:
+        watch_state.update(ready=None, reason="", values={})
+        return None
+    if busy() or quit_after.is_set() or quit_asking.is_set():
+        watch_state.update(ready=False, reason="busy", values={})
+        return None
+    meter.start()
+    ready, reason, values = meter.check({key: setting.get(f"transcription.{key}") for key in resources.DEFAULTS})
+    watch_state.update(ready=ready, reason="" if ready else reason,
+                       values={k: round(v, 1) if isinstance(v, float) else v for k, v in values.items()})
+    if not ready:
+        return None
+    _, text, folder = max(candidates)   # nieuwste eerst, zoals automatisch transcriberen
+    add_local([text], auto=True, group=folder)
+    return text
+
+
+def timed(function, *args, default=None, seconds=10):
+    """Roept function aan met een tijdslimiet: een netwerkkoppeling die niet reageert, mag de ronde niet ophouden."""
+    box = []
+    worker_thread = threading.Thread(target=lambda: box.append(function(*args)), daemon=True)
+    worker_thread.start()
+    worker_thread.join(seconds)
+    return box[0] if box else default
+
+
+gone_paths = set()   # lokale opdrachten waarvan het bestand niet meer op zijn plek staat (check_gone)
+
+
+def _volume_there(path):
+    """Is het volume van dit pad er? Een opslag die even weg is, maakt een bestand niet "weggehaald"."""
+    parts = Path(path).parts
+    return not (len(parts) > 2 and parts[1] == "Volumes") or os.path.ismount(os.path.join("/", parts[1], parts[2]))
+
+
+def check_gone():
+    """Welke afgeronde lokale opdrachten hun bestand kwijt zijn: iemand haalde het weg of verplaatste het (een gevolgde
+    map als inbox: erin, laten transcriberen, eruit). Het venster toont die grijs, onderaan hun groep."""
+    with jobs_lock:
+        paths = {job.path for job in jobs if job.path and not job.active}
+    found = set()
+    for path in paths:
+        try:
+            if _volume_there(path) and not os.path.exists(path):
+                found.add(path)
+        except OSError:
+            continue
+    gone_paths.clear()
+    gone_paths.update(found)
+    return found
+
+
+def watch_folders():
+    """Draait altijd; doet alleen iets als er gevolgde mappen zijn. Met een gevolgde map meet de app alvast hoe druk de
+    Mac is (de meter heeft een minuut nodig voor een oordeel), zodat een nieuw bestand daar niet op hoeft te wachten."""
+    while True:
+        try:
+            if watched():
+                meter.start()
+                watch_round()
+            timed(check_gone, default=None)
+        except Exception as error:
+            print(f"Mappen volgen: {type(error).__name__}: {error}")
+        watch_wake.wait(WATCH_EVERY)
+        watch_wake.clear()
 
 
 def fill_titles(new_jobs):
@@ -982,7 +1184,12 @@ def _iconik_extra(instance=None):
             "worker": worker, "icon": integration_icon(instance)}
 
 
-SETTINGS_DATA = {"general": _general_extra, "transcription": _transcription_extra, "iconik": _iconik_extra}
+def _files_extra():
+    return {"watched": watch_view()}
+
+
+SETTINGS_DATA = {"general": _general_extra, "transcription": _transcription_extra, "files": _files_extra,
+                 "iconik": _iconik_extra}
 
 
 def add_integration(name=""):
@@ -1601,6 +1808,59 @@ def _local_add(h, r):
         return h.reply_json({"ok": False, "error": "paths"})
     threading.Thread(target=add_local, args=(paths,), daemon=True, name="toevoegen").start()
     return h.reply_json({"ok": True, "count": len(paths)})
+
+
+choose_files_hook = None  # de app zet hier het venster om bestanden te kiezen (geeft een lijst paden)
+
+
+@route("/local/choose", protected=True)
+def _local_choose(h, r):
+    # Kies bestanden…: het venster van macOS, daarna in de rij (in een draad: vingerafdrukken).
+    paths = list(choose_files_hook() or []) if choose_files_hook else []
+    if paths:
+        threading.Thread(target=add_local, args=(paths,), daemon=True, name="toevoegen").start()
+    return h.reply_json({"ok": True, "count": len(paths)})
+
+
+@route("/local/reveal", protected=True)
+def _local_reveal(h, r):
+    # Toon in Finder, voor een lokale regel.
+    try:
+        job = jobs.find(int(r.first("n")))
+    except ValueError:
+        job = None
+    if job is None or not job.path:
+        return h.reply_json({"ok": False})
+    system.reveal(job.path)
+    return _ok(h)
+
+
+@route("/folders/choose", protected=True)
+def _folders_choose(h, r):
+    # Map volgen… (lege lijst, Instellingen +): een map kiezen en volgen, met submappen.
+    chosen = system.ask_folder(transcribe.L("Kies een map om te volgen", "Choose a folder to watch"))
+    if not chosen:
+        return h.reply_json({"ok": False, "cancelled": True})
+    return h.reply_json(set_watch(chosen, True, subfolders=True))
+
+
+@route("/folders/watch", protected=True)
+def _folders_watch(h, r):
+    # ?path=&on=1|0&subfolders=1|0: de knop Volgen bij een groep, − en Ook submappen in Instellingen.
+    sub_value = r.first("subfolders")
+    return h.reply_json(set_watch(r.first("path"), r.first("on") != "0",
+                                  subfolders=None if sub_value == "" else sub_value == "1"))
+
+
+@route("/files/folder", protected=True)
+def _files_folder(h, r):
+    # In één map…: de map voor de transcripten kiezen.
+    chosen = system.ask_folder(transcribe.L("Kies de map voor de transcripten", "Choose the folder for the transcripts"),
+                               setting.get("files.transcript_folder") or None)
+    if not chosen:
+        return h.reply_json({"ok": False, "cancelled": True})
+    setting.put_many({"files.transcript_folder": chosen, "files.transcript_place": "folder"})
+    return _ok(h)
 
 
 @route("/clear", protected=True)
@@ -2261,6 +2521,8 @@ def worker():
         # Niet in een finally: daar is continue vanaf Python 3.14 een waarschuwing (PEP 765).
         if job.abandoned:
             continue   # de watchdog gaf deze opdracht al op en meldde hem terug
+        if job.path and job.status in ("fout", "overgeslagen"):
+            local_files.skip(job.path)   # een gevolgde map probeert dit bestand pas weer als het verandert
         job.set(finished=datetime.now())
         save_jobs()
         if job.remote:
@@ -2271,6 +2533,7 @@ def worker():
             request_quit()
             continue
         remote.wake.set()   # de werker kijkt meteen of er iets ligt, niet pas over een minuut
+        watch_wake.set()    # en de gevolgde mappen ook
         if work.empty():
             if auto_active():
                 # Met auto aan komt de volgende opdracht meestal binnen een minuut: de modellen niet bij
@@ -2318,6 +2581,7 @@ def start(model="mlx-community/whisper-large-v3-mlx", language=None, mount=None,
     threading.Thread(target=watchdog, daemon=True, name="waker").start()
     threading.Thread(target=keep_awake, daemon=True, name="wakker").start()
     threading.Thread(target=watch_storage, daemon=True, name="opslag").start()
+    threading.Thread(target=watch_folders, daemon=True, name="mappen").start()
     connectors.start_all(AppHost())
     for instance in iconiks():
         integration_icon(instance)   # alvast op de achtergrond, zodat het er staat als iemand Instellingen opent

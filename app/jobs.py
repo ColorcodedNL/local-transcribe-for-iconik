@@ -25,7 +25,8 @@ MAX_KEPT = 500
 VERSION = 2
 # asset_id gaat mee voor een oudere versie van de app die dezelfde supportmap leest (0.6 slaat een regel zonder
 # asset_id over en zou de lijst leeg terugschrijven); bij het lezen van versie 2 telt alleen item.
-KEPT_FIELDS = ("n", "item", "asset_id", "title", "status", "message", "duration", "result", "language", "tracks", "auto")
+KEPT_FIELDS = ("n", "item", "asset_id", "title", "status", "message", "duration", "result", "language", "tracks", "auto",
+               "group", "path")
 TIME_FIELDS = ("added", "started", "finished")
 
 lock = threading.RLock()     # één grendel: de lijst en alle velden van alle opdrachten
@@ -35,15 +36,18 @@ _save_lock = threading.Lock()
 class Job:
     """Eén regel in de lijst. `item`: waar de opdracht over gaat; `asset_id` is het asset in Iconik (leeg voor
     een item dat niet uit Iconik komt). `remote`: het nummer van de poging als de opdracht uit de rij in Iconik komt
-    (0 is een gewone opdracht). `auto`: door auto transcribe opgepakt. `local`: de fout ligt aan deze Mac.
+    (0 is een gewone opdracht). `auto`: door auto transcribe of een gevolgde map opgepakt. `local`: de fout ligt aan
+    deze Mac. `path`: het bestand van een lokale opdracht. `group`: de map die iemand sleepte of volgt, als de opdracht
+    daaruit komt (het venster toont die als groep).
     `abandoned`: de watchdog gaf de opdracht op. `prefetch`: wat het vooruit lezen voor deze opdracht klaarzet."""
 
     __slots__ = ("n", "item", "asset_id", "title", "status", "message", "added", "remote", "started", "finished", "stage",
-                 "fraction", "tracks", "duration", "result", "language", "auto", "local", "abandoned", "prefetch")
+                 "fraction", "tracks", "duration", "result", "language", "auto", "local", "abandoned", "prefetch",
+                 "group", "path")
 
     def __init__(self, n=0, item="", asset_id="", title="", status="wachtend", message="", added=None, remote=0, started=None,
                  finished=None, stage="", fraction=None, tracks=None, duration=None, result=None, language=None,
-                 auto=False, local=False, abandoned=False, prefetch=None):
+                 auto=False, local=False, abandoned=False, prefetch=None, group="", path=""):
         self.n, self.item, self.title, self.status, self.message = n, item, title, status, message
         self.asset_id = asset_id or (items.asset_id(item) if item else "")
         self.added = added or datetime.now()
@@ -51,6 +55,7 @@ class Job:
         self.tracks = list(tracks or [])
         self.duration, self.result, self.language = duration, result, language
         self.auto, self.local, self.abandoned, self.prefetch = bool(auto), bool(local), bool(abandoned), prefetch
+        self.group, self.path = str(group or ""), str(path or "")
 
     def set(self, **changes):
         """Verandert een of meer velden in één keer, onder de grendel."""
@@ -124,12 +129,13 @@ class JobList:
         with lock:
             self._items.clear()
 
-    def add(self, item, remote=0, auto=False, title=""):
+    def add(self, item, remote=0, auto=False, title="", group="", path=""):
         """Een nieuwe wachtende opdracht, of None als dit item al wacht of loopt."""
         with lock:
             if any(j.item == item and j.active for j in self._items):
                 return None
-            return self.append(Job(n=self.next_number(), item=item, remote=remote, auto=auto, title=title))
+            return self.append(Job(n=self.next_number(), item=item, remote=remote, auto=auto, title=title,
+                                   group=group, path=path))
 
     def add_failed(self, title, message):
         """Een rode regel zonder opdracht erachter (bijvoorbeeld een collectie die niet uit te pakken was)."""
@@ -181,7 +187,7 @@ class JobList:
         with lock:
             rows = []
             for job in self._items[-MAX_KEPT:]:
-                row = {key: getattr(job, key) for key in KEPT_FIELDS}
+                row = {key: getattr(job, key) for key in KEPT_FIELDS if key not in ("group", "path") or getattr(job, key)}
                 for key in TIME_FIELDS:
                     value = getattr(job, key)
                     row[key] = value.isoformat() if value else None
@@ -228,7 +234,7 @@ class JobList:
                           added=_time(row.get("added")) or saved, started=_time(row.get("started")),
                           finished=_time(row.get("finished")), tracks=row.get("tracks") or [],
                           duration=row.get("duration"), result=row.get("result"), language=row.get("language"),
-                          auto=bool(row.get("auto")))
+                          auto=bool(row.get("auto")), group=row.get("group") or "", path=row.get("path") or "")
             except (KeyError, TypeError, ValueError, AttributeError):
                 continue
             if job.active:

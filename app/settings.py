@@ -112,6 +112,15 @@ _SCHEMA = [
       choices=("next", "folder")),
     S("files.transcript_folder", "text", "", ("Map voor transcripten", "Folder for transcripts"),
       ("Alleen bij In één map.", "Only with In one folder."), max_length=1024),
+    S("files.audio", "bool", True, ("Ook alleen audio", "Audio only too"),
+      ("Losse geluidsopnames in een map die je sleept of volgt. Muziek wordt pas na het transcriberen herkend en "
+       "overgeslagen. Een los audiobestand dat je zelf sleept of kiest, gaat altijd mee.",
+       "Separate sound recordings in a folder you drop or watch. Music is only recognised and skipped after "
+       "transcribing. A single audio file you drop or choose yourself is always added.")),
+    S("files.watched", "mapping", {}, ("Gevolgde mappen", "Watch folders"),
+      ("Per map: ook submappen. Verandert via Volgen in de lijst en + en − in Instellingen.",
+       "Per folder: subfolders too. Changed through Watch folder in the list and + and − in Settings."),
+      advanced=True),
 
     # --- Refine ---
     S("refine.subtitles", "mapping", {}, ("Ondertitels", "Subtitles"),

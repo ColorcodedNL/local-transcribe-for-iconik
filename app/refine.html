@@ -320,7 +320,11 @@ const TEXT = {
     offline: "Origineel niet bereikbaar: alleen tekst. Koppel de opslag (ISG) voor beeld en geluid.",
     noSound: "niets, het origineel is niet bereikbaar", wavesOffline: "Golfvormen pas als het origineel bereikbaar is",
     waves: f => `Golfvormen uitrekenen ${Math.round(f * 100)}%`, wavesFail: "Golfvormen niet beschikbaar",
-    from: { mac: "kopie op deze Mac", iconik: "uit Iconik" }, source: (e, o) => `Bron: ${e}, ${o}`,
+    from: { mac: "kopie op deze Mac", iconik: "uit Iconik", file: "uit het bestand naast de media" }, source: (e, o) => `Bron: ${e}, ${o}`,
+    // Een lokaal bestand (lokale modus): het transcript staat naast de media, niet in Iconik.
+    local: {save: "Opslaan", saving2: "Opslaan...", saved: t => `Opgeslagen om ${t}. Het origineel staat op deze Mac.`,
+            refinedState: "Gecorrigeerd transcript", origin: name => `Origineel · ${name}`,
+            note: "Dubbelklik op tekst om te bewerken, Enter splitst · rechtsklik voor sprekers · Opslaan vervangt het transcript naast de media, het origineel blijft op deze Mac"},
     note: "Dubbelklik op tekst om te bewerken, Enter splitst · rechtsklik voor sprekers · Opslaan vervangt het transcript in Iconik, het origineel blijft op deze Mac",
     origin: name => `Origineel via opslag (ISG) · ${name}`, originOff: name => `Origineel niet bereikbaar · ${name}`,
     exPreset: "Voorkeuze",
@@ -379,7 +383,10 @@ const TEXT = {
     offline: "Original not reachable: text only. Connect the storage (ISG) for picture and sound.",
     noSound: "nothing, the original is not reachable", wavesOffline: "Waveforms once the original is reachable",
     waves: f => `Calculating waveforms ${Math.round(f * 100)}%`, wavesFail: "Waveforms not available",
-    from: { mac: "copy on this Mac", iconik: "from Iconik" }, source: (e, o) => `Source: ${e}, ${o}`,
+    from: { mac: "copy on this Mac", iconik: "from Iconik", file: "from the file next to the media" }, source: (e, o) => `Source: ${e}, ${o}`,
+    local: {save: "Save", saving2: "Saving...", saved: t => `Saved at ${t}. The original is kept on this Mac.`,
+            refinedState: "Corrected transcript", origin: name => `Original · ${name}`,
+            note: "Double-click text to edit, Enter splits · right-click for speakers · Saving replaces the transcript next to the media, the original stays on this Mac"},
     note: "Double-click text to edit, Enter splits · right-click for speakers · Saving replaces the transcript in Iconik, the original stays on this Mac",
     origin: name => `Original via storage (ISG) · ${name}`, originOff: name => `Original not reachable · ${name}`,
     exPreset: "Preset",
@@ -1575,6 +1582,7 @@ async function start() {
   try { D = await (await fetch(`/refine/view?${REF}`)).json(); }
   catch (e) { showError(String(e)); return; }
   lang = D.lang === "nl" ? "nl" : "en"; T = TEXT[lang]; document.documentElement.lang = lang;
+  if (D.item && !D.asset_id && !D.error) T = Object.assign({}, T, T.local);   // een lokaal bestand: niets over Iconik
   $("back").textContent = T.back; $("keys").textContent = T.keys; $("keys").parentElement.title = T.keys;
   $("undo").title = T.undo; $("undo").setAttribute("aria-label", T.undo); $("redo").title = T.redo; $("redo").setAttribute("aria-label", T.redo);
   $("prev").setAttribute("aria-label", T.prev); $("next").setAttribute("aria-label", T.next);

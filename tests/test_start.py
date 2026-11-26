@@ -102,7 +102,7 @@ check("start: wat nog liep is afgebroken, niet hervat", rows[2].status == "afgeb
 
 # --- de draden en de ontvanger ---
 names = {t.name for t in threading.enumerate()}
-check("draden: ontvanger, werkrij, waker, opslag en bewaren draaien", {"ontvanger", "werkrij", "waker", "opslag", "bewaren"} <= names,
+check("draden: ontvanger, werkrij, waker, opslag, bewaren en mappen draaien", {"ontvanger", "werkrij", "waker", "opslag", "bewaren", "mappen"} <= names,
       sorted(names))
 check("connectors: de lokale bron is geladen", "local" in connectors._loaded and connectors.host is not None)
 with urllib.request.urlopen(f"http://127.0.0.1:{port}/window/state", timeout=5) as response:

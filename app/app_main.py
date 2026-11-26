@@ -167,6 +167,48 @@ def choose_subtitle_file(folder):
     return str(chosen) if chosen else None
 
 
+def choose_media_files():
+    """Kies bestanden… in de opdrachtenlijst: het openvenster van macOS, meerdere tegelijk. Geeft een lijst paden."""
+    if window is None:
+        return []
+    import webview
+    kind = getattr(getattr(webview, "FileDialog", None), "OPEN", None) or getattr(webview, "OPEN_DIALOG", None)
+    pattern = ";".join("*" + ext for ext in sorted(transcribe.MEDIA_EXTENSIONS))
+    chosen = None
+    for types in ((transcribe.L("Video en audio", "Video and audio") + f" ({pattern})",), ()):   # zonder filter als het niet lukt
+        try:
+            chosen = window.create_file_dialog(kind, allow_multiple=True, file_types=types)
+            break
+        except Exception as error:
+            print(f"Bestanden kiezen lukte niet: {type(error).__name__}: {error}")
+    if not chosen:
+        return []
+    return [str(c) for c in ([chosen] if isinstance(chosen, str) else chosen)]
+
+
+def on_drop(event):
+    """Bestanden of mappen losgelaten op de opdrachtenlijst. pywebview zet het echte pad bij elk bestand
+    (pywebviewFullPath); het venster zelf ziet alleen namen."""
+    files = (((event or {}).get("dataTransfer") or {}).get("files")) or []
+    paths = [f.get("pywebviewFullPath") for f in files if isinstance(f, dict) and f.get("pywebviewFullPath")]
+    print(f"[{datetime.now():%H:%M:%S}] losgelaten op de lijst: {len(files)}, met pad: {len(paths)}")
+    if paths:
+        threading.Thread(target=serve.add_local, args=(paths,), daemon=True, name="toevoegen").start()
+
+
+def listen_for_drops():
+    """Elke keer dat de opdrachtenlijst laadt: naar het loslaten luisteren. Alleen daar, niet in Refine of
+    Instellingen. Niet stop_propagation: het venster haalt bij het loslaten zelf de blauwe zone weg."""
+    from urllib.parse import urlparse
+    from webview.dom import DOMEventHandler
+    try:
+        if urlparse(window.get_current_url() or "").path != "/":
+            return
+        window.dom.document.events.drop += DOMEventHandler(on_drop, prevent_default=True, stop_propagation=False)
+    except Exception as error:
+        print(f"Slepen op de lijst lukte niet: {type(error).__name__}: {error}")
+
+
 def local_get(path, timeout=60):
     """GET op de eigen ontvanger, zonder doorverwijzingen te volgen. Geeft (status, Location)."""
     connection = http.client.HTTPConnection("127.0.0.1", PORT, timeout=timeout)
@@ -749,6 +791,7 @@ def main():
     serve.restart_hook = restart  # na een code-update
     serve.save_hook = choose_save_path  # ondertitels bewaren uit Refine
     serve.open_hook = choose_subtitle_file  # ondertitels inladen in Refine
+    serve.choose_files_hook = choose_media_files  # Kies bestanden… in de opdrachtenlijst
     from PyObjCTools import AppHelper
     serve.quit_hook = lambda: AppHelper.callAfter(AppKit.NSApp.terminate_, None)   # "Na deze opdracht"
 
@@ -757,6 +800,7 @@ def main():
     # Het venster meldt zich met de sessie van deze start en krijgt de cookie; daarna gaat het naar de app.
     window = webview.create_window(transcribe.DISPLAY_NAME, BASE + serve.window_url(), width=980, height=620, min_size=MIN_SIZE)
     window.events.closing += on_closing
+    window.events.loaded += listen_for_drops   # slepen op de opdrachtenlijst geeft echte paden
     # Niet in privemodus: zo blijft de inlog bij Iconik in dit venster bewaard.
     threading.Thread(target=watch_settings, daemon=True).start()
     webview.start(mark_started, private_mode=False, storage_path=str(storage), localization=menu_texts())  # de functie draait zodra het venster er is

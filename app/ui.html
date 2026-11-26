@@ -106,6 +106,40 @@ button.tag.jump:hover { background: var(--accent); color: #fff; }
 .strip > div { flex: 1; min-width: 0; } .strip dt { color: var(--muted); font-size: 12px; } .strip dd { margin: 0; display: flex; align-items: center; gap: 6px; }
 
 button.go { font: inherit; padding: 4px 10px; border-radius: 5px; border: 0; background: var(--accent); color: #fff; margin-left: 6px; }
+button.btn { font: inherit; padding: 4px 11px; border-radius: 5px; border: 1px solid var(--line); background: var(--surface); color: var(--text); margin-left: 6px; }
+
+/* Lege lijst: een sleepzone die zonder Iconik werkt. */
+.zone { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 6px;
+        border: 2px dashed var(--idle); border-radius: 12px; padding: 48px 24px; min-height: 340px; color: var(--muted); }
+.zone svg { width: 40px; height: 40px; fill: none; stroke: var(--idle); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.zone .et { font-size: 15px; font-weight: 600; color: var(--text); margin: 6px 0 0; }
+.zone p { margin: 0; max-width: 52ch; }
+.zone .acts { margin-top: 10px; } .zone .acts button { margin: 0 4px; }
+.zone .iconik { font-size: 12px; margin-top: 10px; }
+.foot { text-align: center; color: var(--muted); font-size: 12px; margin-top: 14px; }
+/* Tijdens het slepen: een blauwe zone over de lijst. */
+#drop { position: fixed; left: 22px; right: 22px; top: 60px; bottom: 16px; z-index: 30; border: 2px dashed var(--accent); border-radius: 12px;
+        background: color-mix(in srgb, color-mix(in srgb, var(--window) 86%, var(--accent) 14%) 86%, transparent); display: flex; flex-direction: column; align-items: center;
+        justify-content: center; gap: 8px; text-align: center; pointer-events: none; }
+#drop svg { width: 40px; height: 40px; fill: none; stroke: var(--accent); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+#drop .et { font-size: 15px; font-weight: 600; color: var(--accent); } #drop p { margin: 0; color: var(--muted); max-width: 52ch; }
+/* Een gesleepte of gevolgde map als groep, met de bestanden eronder. */
+.grp { display: flex; gap: 10px; align-items: center; padding: 9px 8px; border-bottom: 1px solid var(--line); }
+.grp .fold { all: unset; width: 18px; text-align: center; color: var(--muted); cursor: pointer; }
+.grp > svg { width: 18px; height: 18px; flex: none; fill: none; stroke: var(--muted); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.grp .gname { flex: 1; min-width: 0; } .grp .gname b { font-weight: 600; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.grp .gname span { font-size: 12px; color: var(--muted); }
+button.eye { display: flex; align-items: center; gap: 5px; font: inherit; font-size: 12px; padding: 2px 8px; border-radius: 5px;
+             border: 1px solid var(--line); background: var(--surface); color: var(--text); cursor: pointer; }
+button.eye svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+button.eye.on { background: color-mix(in srgb, var(--accent) 12%, transparent); border-color: var(--accent); color: var(--accent); }
+.job.child { padding-left: 54px; border-bottom-color: color-mix(in srgb, var(--line) 60%, transparent); }
+.morerow { padding: 6px 8px 7px 54px; color: var(--muted); border-bottom: 1px solid var(--line); }
+.newrow { padding: 8px 8px 9px 54px; border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent); display: flex; gap: 10px; }
+.newrow b { font-weight: 550; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.newrow span { color: var(--warn); white-space: nowrap; }
+.job.gone .top, .job.gone .msg { opacity: .55; }
+.state.gone { color: var(--muted); }
 [hidden] { display: none !important; }
 </style>
 </head>
@@ -117,6 +151,8 @@ button.go { font: inherit; padding: 4px 10px; border-radius: 5px; border: 0; bac
 </div>
 <div class="menu" id="menu" role="menu" hidden></div>
 <div class="back" id="sheet" hidden></div>
+<div id="drop" hidden><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3v11M7 9l5 5 5-5M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg>
+  <div class="et" data-t="dropRelease"></div><p data-t="dropHelp"></p></div>
 <main>
   <div class="note" id="note" hidden></div>
   <div class="note" id="storageOff" hidden></div>
@@ -135,6 +171,21 @@ const TEXT = {
   nl: {
     jobs: "Opdrachten", settings: "Instellingen", clear: "Wis afgeronde",
     emptyTitle: "Nog geen opdrachten", connect: "Verbinden met Iconik…",
+    dropTitle: "Sleep video- of audiobestanden hierheen", dropText: "Het transcript komt naast de media. Open het daarna in Refine om te corrigeren of ondertitels te maken.",
+    dropTextFolder: "Het transcript komt in de map voor transcripten (Instellingen › Bestanden). Open het daarna in Refine om te corrigeren of ondertitels te maken.",
+    chooseFiles: "Kies bestanden…", watchFolder: "Map volgen…", iconikLine: "Of kies in Iconik een asset of collectie en kies Local Transcribe.",
+    connectAsk: "Werk je met Iconik?", connectLink: "Verbind in Instellingen › Integraties",
+    dropRelease: "Laat los om toe te voegen", dropHelp: "Een map komt als groep in de lijst, met alle video en audio erin en in de submappen. Met Volgen bij de map houdt de app hem daarna in de gaten.",
+    footDrop: "Sleep bestanden of een map op het venster om ze toe te voegen, of", footChoose: "kies bestanden…",
+    local: "Lokaal", follow: "Volgen", following: "Gevolgd", followTip: "Map volgen: nieuwe bestanden in deze map komen er vanzelf bij, als deze Mac ruimte heeft.",
+    followingTip: "Wordt gevolgd. Klik om te stoppen; wat er al in de lijst staat, blijft staan.", fold: "Inklappen", unfold: "Uitklappen",
+    groupCount: (n, c) => `${n} ${n === 1 ? "bestand" : "bestanden"}` + (c.length ? ": " + c.join(", ") : ""),
+    groupParts: {nieuw: n => `${n} nieuw`, klaar: n => `${n} klaar`, bezig: n => `${n} bezig`, wachtend: n => `${n} ${n === 1 ? "wacht" : "wachten"}`, fout: n => `${n} fout`, overgeslagen: n => `${n} overgeslagen`, gone: n => `${n} weggehaald`},
+    groupNone: "nog niets", groupWatched: "gevolgd: nieuwe bestanden komen er vanzelf bij", showAll: n => `en nog ${n}:`, showAllLink: "toon alles", showLess: "toon minder",
+    reveal: "Toon in Finder", existing: "bestaand transcript neergezet", gone: "niet meer in de map", checking: "controleert het bestand…",
+    stripWatch: "Gevolgde mappen", watchIdle: n => `${n} ${n === 1 ? "map" : "mappen"}, niets nieuw`, watchNew: n => `${n} nieuw`,
+    watchWait: (n, why) => `${n} nieuw, wacht: ${why}`, watchOff: names => `${names} niet bereikbaar`,
+    watchSettling: (n, names) => n === 1 ? `Nieuw: ${names[0] || "1 bestand"}. Controleert het bestand…` : `${n} nieuw. Controleert de bestanden…`,
     emptyConnect: "Opdrachten komen uit Iconik. Verbind deze Mac eerst, kies daarna in Iconik een asset of collectie en kies Local Transcribe.",
     stripRemote: "Op afstand", stripAuto: "Automatisch", stripStorage: "Opslag (ISG)", remoteOn: "Aan, wacht op aanvragen", remoteOff: "Uit",
     storageOk: "gekoppeld", storageGone: names => `${names} niet bereikbaar`, storageChecking: "Kijkt of de opslag bereikbaar is…", toIntegrations: "Opent Instellingen › Integraties",
@@ -157,7 +208,7 @@ const TEXT = {
     autoOn: "Automatisch transcriberen", autoHelp: "Transcribeert alles op de opslag (ISG) van deze Mac dat nog geen transcript heeft: nieuwste eerst, video tot een uur. Alleen als er ruimte is: op netstroom, genoeg geheugen vrij en weinig CPU en GPU in gebruik, ook als iemand op de Mac werkt. Aanvragen van collega's gaan altijd voor. Zolang dit aan staat en de Mac op netstroom is, gaat hij niet slapen (het scherm wel).",
     autoAudio: "Ook audiobestanden", autoAudioHelp: "Bijvoorbeeld losse geluidsopnames van een draaidag. Muziek wordt pas na het transcriberen herkend en overgeslagen, en kost dus rekentijd.",
     autoReady: "Klaar: pakt een asset zodra er niets is aangevraagd.", autoWait: "Wacht", autoAwake: "Deze Mac blijft wakker.", autoTag: "Auto",
-    autoWhy: {power: "op batterij", memory: v => `te weinig geheugen vrij (${v} GB)`, pressure: "geheugendruk hoog", measuring: "meet nog hoe druk de Mac is", cpu: v => `CPU ${v}% bezet`, gpu: v => `GPU ${v}% bezet`, storage: "geen opslag (ISG) gekoppeld", checking: "kijkt of de opslag (ISG) bereikbaar is", offline: "opslag (ISG) niet bereikbaar"},
+    autoWhy: {power: "op batterij", memory: v => `te weinig geheugen vrij (${v} GB)`, pressure: "geheugendruk hoog", measuring: "meet nog hoe druk de Mac is", cpu: v => `CPU ${v}% bezet`, gpu: v => `GPU ${v}% bezet`, storage: "geen opslag (ISG) gekoppeld", checking: "kijkt of de opslag (ISG) bereikbaar is", offline: "opslag (ISG) niet bereikbaar", busy: "er loopt een opdracht"},
     storageOff: names => `Opslag (ISG) niet bereikbaar: ${names}. Automatisch transcriberen pakt daar niets van op tot de opslag weer gekoppeld is.`,
     fieldsLang: "Taal van de velden in Iconik",
     fieldsHelp: "Wat mensen in Iconik zien bij Transcriptie en de keuzes Aangevraagd, Bezig, Klaar en Fout. Geldt voor iedereen in deze Iconik-omgeving en vraagt beheerrechten. Een view die het veld al bevat, houdt zijn eigen kopie: voeg het veld daar opnieuw toe.",
@@ -165,7 +216,7 @@ const TEXT = {
     workerLast: "Laatst gecontroleerd", workerPaused: "Gepauzeerd tot", resumeNow: "Nu hervatten", workerAsset: "Laatst opgepakt", workerProblem: "Probleem", workerAs: "Naam",
     modelsTitle: "Modellen", language: "Taal van de app", spoken: "Gesproken taal", spokenAuto: "Herken per asset", untested: "niet getest",
     spokenHelp: "Herkennen kijkt naar de luidste stukken van de opname. Zet de taal alleen vast als al je materiaal in één taal is. Herkennen werkt ook voor andere talen die Whisper ondersteunt (niet getest). We hebben Nederlands en Engels getest.", langAuto: "Volg macOS",
-    stages: ["Audio lezen", "Transcriberen", "Sprekers", "Naar Iconik"],
+    stages: ["Audio lezen", "Transcriberen", "Sprekers", "Naar Iconik"], stagesLocal: ["Audio lezen", "Transcriberen", "Sprekers", "Opslaan"],
     download: "Whisper-model downloaden (eenmalig, ca. 3 GB)",
     status: {wachtend: "wacht sinds", bezig: "bezig", klaar: "klaar", overgeslagen: "overgeslagen", fout: "fout", afgebroken: "afgebroken", teruggezet: "teruggezet in de rij"},
     audioLength: "Audio duurt", result: (l, s) => `${l} ${l === 1 ? "regel" : "regels"}, ${s} ${s === 1 ? "spreker" : "sprekers"}`,
@@ -188,6 +239,21 @@ const TEXT = {
   en: {
     jobs: "Jobs", settings: "Settings", clear: "Clear finished",
     emptyTitle: "No jobs yet", connect: "Connect to Iconik…",
+    dropTitle: "Drag video or audio files here", dropText: "The transcript goes next to the media. Then open it in Refine to correct it or make subtitles.",
+    dropTextFolder: "The transcript goes to the folder for transcripts (Settings › Files). Then open it in Refine to correct it or make subtitles.",
+    chooseFiles: "Choose files…", watchFolder: "Watch folder…", iconikLine: "Or pick an asset or collection in Iconik and choose Local Transcribe.",
+    connectAsk: "Working with Iconik?", connectLink: "Connect in Settings › Integrations",
+    dropRelease: "Release to add", dropHelp: "A folder goes into the list as a group, with all video and audio in it and in its subfolders. With Watch folder on the group the app keeps an eye on it afterwards.",
+    footDrop: "Drag files or a folder onto the window to add them, or", footChoose: "choose files…",
+    local: "Local", follow: "Watch folder", following: "Watch folder", followTip: "Watch folder: new files in this folder are added by themselves, when this Mac has room.",
+    followingTip: "Watched. Click to stop; what is already in the list stays.", fold: "Collapse", unfold: "Expand",
+    groupCount: (n, c) => `${n} ${n === 1 ? "file" : "files"}` + (c.length ? ": " + c.join(", ") : ""),
+    groupParts: {nieuw: n => `${n} new`, klaar: n => `${n} done`, bezig: n => `${n} running`, wachtend: n => `${n} waiting`, fout: n => `${n} failed`, overgeslagen: n => `${n} skipped`, gone: n => `${n} moved away`},
+    groupNone: "nothing yet", groupWatched: "watched: new files are added by themselves", showAll: n => `and ${n} more:`, showAllLink: "show all", showLess: "show fewer",
+    reveal: "Show in Finder", existing: "existing transcript placed", gone: "no longer in the folder", checking: "checking the file…",
+    stripWatch: "Watch folders", watchIdle: n => `${n} ${n === 1 ? "folder" : "folders"}, nothing new`, watchNew: n => `${n} new`,
+    watchWait: (n, why) => `${n} new, waiting: ${why}`, watchOff: names => `${names} not reachable`,
+    watchSettling: (n, names) => n === 1 ? `New: ${names[0] || "1 file"}. Checking the file…` : `${n} new. Checking the files…`,
     emptyConnect: "Jobs come from Iconik. Connect this Mac first, then pick an asset or collection in Iconik and choose Local Transcribe.",
     stripRemote: "Remote", stripAuto: "Automatic", stripStorage: "Storage (ISG)", remoteOn: "On, waiting for requests", remoteOff: "Off",
     storageOk: "linked", storageGone: names => `${names} not reachable`, storageChecking: "Checking whether the storage is reachable…", toIntegrations: "Opens Settings › Integrations",
@@ -210,7 +276,7 @@ const TEXT = {
     autoOn: "Transcribe automatically", autoHelp: "Transcribes everything on the storage (ISG) of this Mac that has no transcript yet: newest first, video up to an hour. Only when there is room: on mains power, enough memory free and little CPU and GPU in use, also while someone works on the Mac. Requests from colleagues always come first. While this is on and the Mac is on mains power, it does not go to sleep (the display does).",
     autoAudio: "Audio files too", autoAudioHelp: "For example separate sound recordings of a shoot. Music is only recognised and skipped after transcribing, so it does cost time.",
     autoReady: "Ready: picks up an asset whenever nothing is requested.", autoWait: "Waiting", autoAwake: "This Mac stays awake.", autoTag: "Auto",
-    autoWhy: {power: "on battery", memory: v => `not enough memory free (${v} GB)`, pressure: "memory pressure high", measuring: "still measuring how busy the Mac is", cpu: v => `CPU ${v}% in use`, gpu: v => `GPU ${v}% in use`, storage: "no storage (ISG) connected", checking: "checking whether the storage (ISG) is reachable", offline: "storage (ISG) not reachable"},
+    autoWhy: {power: "on battery", memory: v => `not enough memory free (${v} GB)`, pressure: "memory pressure high", measuring: "still measuring how busy the Mac is", cpu: v => `CPU ${v}% in use`, gpu: v => `GPU ${v}% in use`, storage: "no storage (ISG) connected", checking: "checking whether the storage (ISG) is reachable", offline: "storage (ISG) not reachable", busy: "a job is running"},
     storageOff: names => `Storage (ISG) not reachable: ${names}. Automatic transcription picks up nothing from it until the storage is connected again.`,
     fieldsLang: "Language of the fields in Iconik",
     fieldsHelp: "What people see in Iconik for Transcription and the choices Requested, In progress, Done and Failed. Applies to everyone in this Iconik environment and needs admin rights. A view that already contains the field keeps its own copy: add the field to it again.",
@@ -218,7 +284,7 @@ const TEXT = {
     workerLast: "Last checked", workerPaused: "Paused until", resumeNow: "Resume now", workerAsset: "Last picked up", workerProblem: "Problem", workerAs: "Name",
     modelsTitle: "Models", language: "App language", spoken: "Spoken language", spokenAuto: "Detect per asset", untested: "untested",
     spokenHelp: "Detection looks at the loudest parts of the recording. Only fix the language if all your footage is in one language. Detection also works for other languages Whisper supports (untested). We tested Dutch and English.", langAuto: "Follow macOS",
-    stages: ["Read audio", "Transcribe", "Speakers", "Send to Iconik"],
+    stages: ["Read audio", "Transcribe", "Speakers", "Send to Iconik"], stagesLocal: ["Read audio", "Transcribe", "Speakers", "Save"],
     download: "Downloading Whisper model (once, about 3 GB)",
     status: {wachtend: "waiting since", bezig: "running", klaar: "done", overgeslagen: "skipped", fout: "failed", afgebroken: "interrupted", teruggezet: "back in the queue"},
     audioLength: "Audio length", result: (l, s) => `${l} ${l === 1 ? "line" : "lines"}, ${s} ${s === 1 ? "speaker" : "speakers"}`,
@@ -280,7 +346,8 @@ function closeMenu() { $("menu").hidden = true; $("menu").innerHTML = ""; }
 function openMenu(job, x, y) {
   const can = removable(job), ref = job.item, asset = job.asset_id;
   const item = (id, label, on, key = "", tip = "") => `<button role="menuitem" data-act="${id}"${on ? "" : " disabled"}${tip ? ` title="${esc(tip)}"` : ""}><span>${esc(label)}</span><kbd>${key}</kbd></button>`;
-  $("menu").innerHTML = item("refine", T.openRefine, job.status === "klaar" && !!ref) + item("iconik", T.openIconik, !!asset)
+  $("menu").innerHTML = item("refine", T.openRefine, job.status === "klaar" && !!ref)
+    + (job.local ? item("finder", T.reveal, !job.gone) : item("iconik", T.openIconik, !!asset))
     + "<hr>" + item("remove", T.removeRow, can, "⌫") + item("all", T.removeAll, can && !!ref, "", T.removeAllTip);
   const m = $("menu");
   m.hidden = false;
@@ -291,6 +358,7 @@ function openMenu(job, x, y) {
     closeMenu();
     if (b.dataset.act === "refine") location.href = "/refine?item=" + encodeURIComponent(ref);
     else if (b.dataset.act === "iconik") act(openAsset(asset, ref));
+    else if (b.dataset.act === "finder") act("/local/reveal?n=" + job.n);
     else if (b.dataset.act === "remove") removeJob(job.n, false);
     else confirmAll(job);
   };
@@ -324,8 +392,19 @@ $("list").addEventListener("contextmenu", e => {
   if (jobsByN[n]) openMenu(jobsByN[n], e.clientX, e.clientY);
 });
 
+// Kies bestanden… en Map volgen… staan in de lege lijst en onder een gevulde lijst.
+document.addEventListener("click", e => {
+  if (e.target.id === "chooseFiles") { act("/local/choose").then(() => setTimeout(tick, 400)); }
+  else if (e.target.id === "watchFolder") { act("/folders/choose").then(tick); }
+});
 $("list").onclick = e => {
   if (e.target.id === "connect") { act("/window/settings?tab=integrations"); return; }
+  const fold = e.target.closest("[data-fold]");
+  if (fold) { const p = fold.dataset.fold; if (folded[p]) delete folded[p]; else folded[p] = true; store("jobs.folded", folded); tick(); return; }
+  const watch = e.target.closest("[data-watch]");
+  if (watch) { act("/folders/watch?path=" + encodeURIComponent(watch.dataset.watch) + "&on=" + (watch.dataset.on === "1" ? "0" : "1")).then(tick); return; }
+  const more = e.target.closest("[data-more]");
+  if (more) { const p = more.dataset.more; showAll[p] = !showAll[p]; tick(); return; }
   const x = e.target.closest("[data-remove]"); if (x) { removeJob(Number(x.dataset.remove), false); return; }
   const s = e.target.closest("[data-subtitles]"); if (s) { location.href = "/refine?item=" + encodeURIComponent(s.dataset.subtitles) + "&tab=subtitles"; return; }
   const r = e.target.closest("[data-refine]"); if (r) { location.href = "/refine?item=" + encodeURIComponent(r.dataset.refine); return; }
@@ -356,7 +435,7 @@ function stages(job) {
     return `<div class="stages" style="grid-template-columns:1fr"><div class="stage now${wait ? " wait" : ""}"><b>${bar}</b><span>${T.download}${pct}</span></div></div>`;
   }
   const at = STAGE_KEYS.indexOf(job.stage);
-  return '<div class="stages">' + T.stages.map((label, i) => {
+  return '<div class="stages">' + (job.local ? T.stagesLocal : T.stages).map((label, i) => {
     if (i < at) return `<div class="stage done"><b><i></i></b><span>${label}</span></div>`;
     if (i > at) return `<div class="stage"><b><i></i></b><span>${label}</span></div>`;
     if (job.fraction == null) return `<div class="stage now wait"><b><i></i></b><span>${label}</span></div>`;
@@ -365,21 +444,46 @@ function stages(job) {
 }
 
 let selected = null;   // het nummer van de geselecteerde regel
+let mixed = false;     // lokale en Iconik-opdrachten door elkaar: dan een label per regel
+const SHOWN = 5;       // zoveel bestanden van een groep, tot iemand op "toon alles" klikt
+const FOLDER = '<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
+const EYE = '<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+const stored = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key)) || fallback; } catch (e) { return fallback; } };
+const store = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {} };
+const folded = stored("jobs.folded", {}), showAll = {};
+// Een stabiele id per map, voor de elementen in de lijst.
+const gid = path => "grp-" + [...path].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7).toString(36);
+function groupHead(folder, members) {
+  const counts = {};
+  members.forEach(j => { const k = j.gone ? "gone" : j.status; counts[k] = (counts[k] || 0) + 1; });
+  counts.nieuw = (folder.new || []).length;   // wat de app nog controleert, staat er ook onder
+  const parts = ["nieuw", "bezig", "wachtend", "klaar", "fout", "overgeslagen", "gone"].filter(k => counts[k]).map(k => T.groupParts[k](counts[k]));
+  const total = members.length + counts.nieuw;
+  let line = total ? T.groupCount(total, parts) : T.groupNone;
+  if (folder.watched) line += ". " + T.groupWatched;
+  const isFolded = !!folded[folder.path];
+  return `<button class="fold" data-fold="${esc(folder.path)}" aria-expanded="${!isFolded}" aria-label="${isFolded ? T.unfold : T.fold}">${isFolded ? "▸" : "▾"}</button>${FOLDER}`
+    + `<div class="gname"><b title="${esc(folder.name)}">${esc(folder.name)}</b><span>${esc(line)}</span></div>`
+    + (mixed ? `<span class="tag">${T.local}</span>` : "")
+    + `<button class="eye${folder.watched ? " on" : ""}" data-watch="${esc(folder.path)}" data-on="${folder.watched ? 1 : 0}" aria-pressed="${!!folder.watched}" title="${esc(folder.watched ? T.followingTip : T.followTip)}">${EYE}${esc(folder.watched ? T.following : T.follow)}</button>`;
+}
 const removable = job => !["wachtend", "bezig"].includes(job.status);
 function row(job, isOpen) {
-  let state = T.status[job.status] || job.status, msg = job.message || "";
+  let state = job.gone ? T.gone : T.status[job.status] || job.status, msg = job.message || "";
   if (job.status === "bezig") msg = job.duration ? T.audioLength + " " + clock(job.duration) : "";
   else if (job.status === "klaar") {
-    if (job.result) msg = T.result(job.result.segments, job.result.speakers) + (job.language ? ", " + job.language.toUpperCase() : "");
+    if (job.result) msg = T.result(job.result.segments, job.result.speakers) + (job.language ? ", " + job.language.toUpperCase() : "")
+      + (job.result.written_only ? ", " + T.existing : "");
     if (job.elapsed && job.duration) msg += ", " + T.doneIn(clock(job.elapsed), num(job.duration / job.elapsed));
   } else if (job.status === "wachtend") state += " " + job.added;
+  if (job.local && job.where) msg = job.where + (msg ? " · " + msg : "");
   const tracks = job.tracks || [];
   const toggle = tracks.length ? `<button class="plain more" data-toggle="${job.n}" data-open="${isOpen ? 1 : 0}">${isOpen ? T.hide : T.tracks(tracks.length)}</button>` : "";
   const refine = job.status === "klaar" ? `<button class="plain more" data-refine="${esc(job.item)}">Refine</button>` : "";
   const rf = job.refine || {};
   const marks = (rf.refined ? `<span class="tag">${T.refinedTag}</span>` : "") + (rf.draft ? `<span class="tag draft">${T.draftTag}</span>` : "")
     + (rf.subtitles ? `<button class="tag jump" data-subtitles="${esc(job.item)}" title="${T.subtitlesOpen}">${T.subtitlesTag}</button>` : "");
-  let html = `<div class="top"><div class="title"${job.asset_id ? ` data-asset="${esc(job.asset_id)}" data-item="${esc(job.item || "")}" title="${T.openIconik}"` : ""}>${esc(job.title || job.asset_id)}</div>${job.source ? `<span class="tag source">${esc(job.source)}</span>` : ""}${job.auto ? `<span class="tag">${T.autoTag}</span>` : ""}${marks}${refine}${toggle}<div class="state ${job.status}">${esc(state)}<span class="el"></span></div>${job.n === selected && removable(job) ? `<button class="x" data-remove="${job.n}" aria-label="${T.removeRow}" title="${T.removeRow}">✕</button>` : ""}</div>`;
+  let html = `<div class="top"><div class="title"${job.asset_id ? ` data-asset="${esc(job.asset_id)}" data-item="${esc(job.item || "")}" title="${T.openIconik}"` : ""}>${esc(job.title || job.asset_id)}</div>${job.source ? `<span class="tag source">${esc(job.source)}</span>` : ""}${mixed && !job.group ? `<span class="tag kind">${job.local ? T.local : "Iconik"}</span>` : ""}${job.auto ? `<span class="tag">${T.autoTag}</span>` : ""}${marks}${refine}${toggle}<div class="state ${job.gone ? "gone" : job.status}">${esc(state)}<span class="el"></span></div>${job.n === selected && removable(job) ? `<button class="x" data-remove="${job.n}" aria-label="${T.removeRow}" title="${T.removeRow}">✕</button>` : ""}</div>`;
   if (msg) html += `<div class="msg ${job.status === "fout" ? "fout" : ""}">${esc(msg)}</div>`;
   if (job.status === "bezig") html += stages(job);
   if (isOpen && tracks.length) html += '<div class="tracks">' + tracks.map(t =>
@@ -462,6 +566,13 @@ function status(s) {
         : gone.length ? ["off", T.storageGone(gone.join(", "))] : ["on", `${names} ${T.storageOk}`])]);
     }
   }
+  const wf = s.watch || {};
+  if (wf.count) {
+    cells.push([T.stripWatch, ...((wf.offline || []).length ? ["off", T.watchOff(wf.offline.join(", "))]
+      : !wf.waiting && wf.settling ? ["wait", T.watchSettling(wf.settling, wf.settling_names || [])]
+      : !wf.waiting ? ["on", T.watchIdle(wf.count)]
+      : wf.ready === false ? ["wait", T.watchWait(wf.waiting, autoReason(wf))] : ["on", T.watchNew(wf.waiting)])]);
+  }
   const html = cells.map(([label, dot, text]) => `<div><dt>${esc(label)}</dt><dd><i class="dot ${dot}"></i>${esc(text)}</dd></div>`).join("");
   $("strip").hidden = !html;
   if (drawn.strip !== html) { $("strip").innerHTML = html; drawn.strip = html; }
@@ -474,30 +585,96 @@ async function tick() {
   $("summary").hidden = !s.jobs.length;
   const list = $("list"), seen = new Set();
   if (!s.jobs.length) {
-    const connect = s.account === "geen" || s.account === "uitgelogd";
-    const html = `<div class="empty"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h8M4 6h0M4 12h0M4 18h0"/></svg>`
-      + `<p class="et">${T.emptyTitle}</p><p>${connect ? T.emptyConnect : T.empty}</p>`
-      + (connect ? `<p><button class="go" id="connect">${T.connect}</button></p>` : "") + `</div>`;
+    // Leeg: een sleepzone die zonder Iconik werkt; met Iconik een regel eronder.
+    const connected = s.account !== "geen" && s.account !== "uitgelogd";
+    const html = `<div class="zone"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3v11M7 9l5 5 5-5M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg>`
+      + `<p class="et">${T.dropTitle}</p><p>${s.place === "folder" ? T.dropTextFolder : T.dropText}</p>`
+      + `<div class="acts"><button class="go" id="chooseFiles">${T.chooseFiles}</button><button class="btn" id="watchFolder">${T.watchFolder}</button></div>`
+      + `<p class="iconik">${connected ? T.iconikLine : `${T.connectAsk} <button class="plain" id="connect">${T.connectLink}</button>`}</p></div>`;
     if (drawn.empty !== html) { list.innerHTML = html; drawn.empty = html; }
+    $("foot") && $("foot").remove();
     return;
   }
   if (drawn.empty) { list.innerHTML = ""; drawn.empty = false; }
-  $("connect") && $("connect").remove();
   jobsByN = {};
-  s.jobs.forEach((job, index) => {
-    const id = "job-" + job.n, isOpen = open[job.n] ?? job.status === "bezig";
-    jobsByN[job.n] = job;
+  mixed = s.jobs.some(j => j.local) && s.jobs.some(j => !j.local && j.item);
+  // De volgorde blijft die van de lijst (nieuwste eerst); een groep staat waar zijn nieuwste bestand staat, met zijn
+  // bestanden eronder. Een gevolgde map zonder opdrachten staat bovenaan.
+  const folders = Object.fromEntries((s.folders || []).map(f => [f.path, f]));
+  const members = {}, shownFile = {};
+  // Eén regel per bestand in een groep: de nieuwste (de lijst komt nieuwste eerst binnen). Haal je een bestand uit een
+  // gevolgde map en zet je het terug, dan komt er een nieuwe regel; de oude verdwijnt. Wordt een bestand opnieuw
+  // gecontroleerd, dan staat alleen die regel er ("controleert het bestand…").
+  const checking = Object.fromEntries((s.folders || []).map(f => [f.path, new Set(f.new || [])]));
+  s.jobs.forEach(j => {
+    if (!j.group) return;
+    const key = j.group + "\n" + (j.where || "") + "\n" + j.title, seenFiles = shownFile[j.group] = shownFile[j.group] || new Set();
+    if (seenFiles.has(key)) return;
+    seenFiles.add(key);
+    if (checking[j.group] && checking[j.group].has(j.title) && !["wachtend", "bezig"].includes(j.status)) return;
+    (members[j.group] = members[j.group] || []).push(j);
+  });
+  // Binnen een groep: wat loopt, dan wat wacht, dan wat klaar is (nieuwste eerst), en onderaan wat weggehaald is. Zo
+  // staat nieuw werk bovenaan en verdwijnt het nooit achter "toon alles". De lijst komt nieuwste eerst binnen.
+  const rank = j => j.gone ? 3 : j.status === "bezig" ? 0 : j.status === "wachtend" ? 1 : 2;
+  Object.values(members).forEach(list => list.sort((a, b) => rank(a) - rank(b)));
+  const blocks = [];
+  (s.folders || []).filter(f => !members[f.path]).forEach(f => blocks.push({group: f, jobs: []}));
+  const placed = new Set(), goneLoose = [];
+  s.jobs.forEach(j => {
+    if (!j.group) { (j.gone ? goneLoose : blocks).push({job: j}); return; }
+    if (placed.has(j.group) || !members[j.group]) return;   // zonder zichtbare regels staat de groep al bovenaan
+    placed.add(j.group);
+    blocks.push({group: folders[j.group] || {path: j.group, name: j.group.split("/").pop() || j.group, watched: false}, jobs: members[j.group]});
+  });
+  blocks.push(...goneLoose);
+  let index = 0;
+  const put = (id, cls, html) => {
     seen.add(id);
     let el = $(id);
-    if (!el) { el = document.createElement("div"); el.className = "job"; el.id = id; }
+    if (!el) { el = document.createElement("div"); el.id = id; }
+    el.className = cls;
     if (list.children[index] !== el) list.insertBefore(el, list.children[index] || null);
-    const html = row(job, isOpen);
-    el.classList.toggle("sel", job.n === selected);
+    index++;
     if (drawn[id] !== html) { el.innerHTML = html; drawn[id] = html; }
+    return el;
+  };
+  const putJob = (job, child) => {
+    const id = "job-" + job.n, isOpen = open[job.n] ?? job.status === "bezig";
+    jobsByN[job.n] = job;
+    const el = put(id, "job" + (child ? " child" : "") + (job.gone ? " gone" : ""), row(job, isOpen));
+    el.classList.toggle("sel", job.n === selected);
     el.querySelector(".el").textContent = job.status === "bezig" ? " " + clock(job.elapsed || 0) : "";
-  });
+  };
+  for (const block of blocks) {
+    if (block.job) { putJob(block.job, false); continue; }
+    const id = gid(block.group.path);
+    put(id, "grp", groupHead(block.group, block.jobs));
+    if (folded[block.group.path]) continue;
+    (block.group.new || []).forEach(name => put(id + "-new-" + gid(name), "newrow", `<b>${esc(name)}</b><span>${T.checking}</span>`));
+    const all = !!showAll[block.group.path], shown = all ? block.jobs : block.jobs.slice(0, SHOWN);
+    shown.forEach(j => putJob(j, true));
+    if (block.jobs.length > SHOWN)
+      put(id + "-more", "morerow", all ? `<button class="plain" data-more="${esc(block.group.path)}">${T.showLess}</button>`
+        : `${T.showAll(block.jobs.length - SHOWN)} <button class="plain" data-more="${esc(block.group.path)}">${T.showAllLink}</button>`);
+  }
   [...list.children].forEach(el => { if (!seen.has(el.id)) { delete drawn[el.id]; el.remove(); } });
+  // Onder de lijst: hoe er meer bij komt.
+  const foot = `${T.footDrop} <button class="plain" id="chooseFiles">${T.footChoose}</button>`;
+  let f = $("foot");
+  if (!f) { f = document.createElement("div"); f.id = "foot"; f.className = "foot"; $("jobs").appendChild(f); }
+  if (drawn.foot !== foot) { f.innerHTML = foot; drawn.foot = foot; }
 }
+// Slepen: de blauwe zone zolang er bestanden boven het venster hangen. Het loslaten zelf vangt de app op (zij krijgt
+// de echte paden, dit venster alleen de namen); hier alleen de zone weg en de lijst verversen.
+let dragging = 0;
+const withFiles = e => [...((e.dataTransfer && e.dataTransfer.types) || [])].includes("Files");
+const dropZone = on => { $("drop").hidden = !on; if (!on) dragging = 0; };
+document.addEventListener("dragenter", e => { if (!withFiles(e) || !$("sheet").hidden) return; dragging++; dropZone(true); });
+document.addEventListener("dragover", e => { if (!withFiles(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = "copy"; });
+document.addEventListener("dragleave", e => { if (!withFiles(e)) return; if (--dragging <= 0) dropZone(false); });
+document.addEventListener("drop", e => { if (!withFiles(e)) return; e.preventDefault(); dropZone(false); setTimeout(tick, 400); });
+
 tick(); setInterval(tick, 1000);
 </script>
 </body>
