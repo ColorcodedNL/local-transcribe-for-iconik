@@ -108,15 +108,12 @@ def open_session(item, reload=False):
         if not reload and item in _sessions:
             return _sessions[item]
     doc, origin = _local_copy(item), "mac"
-    if doc is None and not items.is_iconik(item):
-        raise RefineError(appbase.L("Er is geen transcript van dit bestand op deze Mac.",
-                                 "There is no transcript of this file on this Mac."))
     if doc is None:
         source = items.source(item)
         if not connectors.call(source, "status").get("connected"):
             raise RefineError(appbase.L("Geen kopie op deze Mac en niet verbonden met Iconik.",
                                      "No copy on this Mac and not connected to Iconik."))
-        info = connectors.call(source, "open", key=items.asset_id(item), push=False)
+        info = connectors.call(source, "open", key=items.key(item), push=False)
         found = connectors.call(source, "read", info=info, which="refined")
         if found is not None:
             doc = tmodel.from_dict(found)
@@ -125,15 +122,18 @@ def open_session(item, reload=False):
             found = connectors.call(source, "read", info=info)
             doc = tmodel.from_dict(found) if found is not None else None
         if doc is None:
+            if not items.is_iconik(item):
+                raise RefineError(appbase.L("Er is geen transcript van dit bestand op deze Mac.",
+                                         "There is no transcript of this file on this Mac."))
             raise RefineError(appbase.L("Dit asset heeft geen transcript van Local Transcribe.",
                                      "This asset has no transcript from Local Transcribe."))
-        origin = "iconik"
+        origin = "iconik" if items.is_iconik(item) else "file"
     media = doc.source.get("media") or ""
-    if not _reachable(media) and items.is_iconik(item):
-        # Een andere Mac, een verplaatste koppeling of een opdracht van voor 2 november: via Iconik zoeken.
+    if not _reachable(media):
+        # Een andere Mac, een verplaatste koppeling of een opdracht van voor 2 november: via de bron zoeken.
         try:
             source = items.source(item)
-            info = connectors.call(source, "open", key=items.asset_id(item), push=False)
+            info = connectors.call(source, "open", key=items.key(item), push=False)
             media = (connectors.call(source, "find_media", info=info) or [""])[0]
         except Exception:
             media = ""
@@ -596,13 +596,16 @@ def _complete(doc, other):
 
 
 def _source(item):
-    """Het exemplaar waar het item vandaan komt, als het een transcript kan terugschrijven."""
-    if not items.is_iconik(item):
-        raise RefineError(appbase.L("Dit item komt niet uit Iconik.", "This item does not come from Iconik."))
+    """Het exemplaar waar het item vandaan komt (een Iconik, of local), als het een transcript kan terugschrijven."""
     source = items.source(item)
     if not connectors.can(source, "write_back") or not connectors.call(source, "status").get("connected"):
         raise RefineError(appbase.L("Niet verbonden met Iconik.", "Not connected to Iconik."))
     return source
+
+
+def _open_for_write(source, item):
+    """open() bij de bron om terug te schrijven. Weigert (Problem) een andere bron, of een bestand dat weg is."""
+    return connectors.call(source, "open", key=items.key(item), push=True, replace=True, allow_refined=True)
 
 
 def _write_json(path, data):
@@ -622,7 +625,7 @@ def save_to_iconik(item, version=""):
     if not any(seg.words or seg.text.strip() for seg in doc.segments):
         raise RefineError(appbase.L("Het transcript is leeg.", "The transcript is empty."))
     source = _source(item)
-    info = connectors.call(source, "open", key=items.asset_id(item), push=True, replace=True, allow_refined=True)   # weigert een andere bron
+    info = _open_for_write(source, item)   # weigert een andere bron
     original = _original_path(item)
     if not original.is_file():
         # Het origineel één keer bewaren: bij een tweede correctie staat het Whisper-transcript er niet meer.
@@ -656,7 +659,7 @@ def restore_original(item):
     except (OSError, ValueError, KeyError, TypeError):
         raise RefineError(appbase.L("Het origineel is niet meer op deze Mac.", "The original is no longer on this Mac."))
     source = _source(item)
-    info = connectors.call(source, "open", key=items.asset_id(item), push=True, replace=True, allow_refined=True)
+    info = _open_for_write(source, item)
     engine_info = {"type": "EXTERNAL", "name": appbase.ENGINE_NAME, "model": doc.engine.get("model") or "",
                    "version": doc.engine.get("version") or ""}
     result = connectors.call(source, "write", info=info, doc=tmodel.to_dict(doc), engine_info=engine_info, replace="all")

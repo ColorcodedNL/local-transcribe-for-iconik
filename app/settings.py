@@ -101,6 +101,18 @@ _SCHEMA = [
     S("transcription.auto_max_gpu", "number", 40.0, ("Maximale GPU-belasting (%)", "Maximum GPU load (%)"),
       flat="auto_max_gpu", minimum=0, advanced=True, section="automatic"),
 
+    # --- bestanden (lokale modus) ---
+    S("files.transcript_place", "choice", "next", ("Transcript", "Transcript"),
+      ("Naast de media: clip.mxf krijgt clip.transcript.json. In één map: alles in een map die je kiest, met de "
+       "mappenstructuur van de bron en de naam van het volume ervoor, zodat twee keer clip.mxf niet botst. Een "
+       "transcript dat er al staat en niet van deze app is, blijft staan.",
+       "Next to the media: clip.mxf gets clip.transcript.json. In one folder: everything in a folder you choose, with "
+       "the folder structure of the source and the name of the volume in front, so two files named clip.mxf never "
+       "collide. A transcript that is already there and does not come from this app is left alone."),
+      choices=("next", "folder")),
+    S("files.transcript_folder", "text", "", ("Map voor transcripten", "Folder for transcripts"),
+      ("Alleen bij In één map.", "Only with In one folder."), max_length=1024),
+
     # --- Refine ---
     S("refine.subtitles", "mapping", {}, ("Ondertitels", "Subtitles"),
       ("De regels en keuzes van de vorige keer; refine.py controleert ze.",
@@ -169,7 +181,7 @@ def _copy(value):
 # blijft daarbij als config-0.6.json naast het nieuwe staan.
 
 VERSION = 2
-GROUPS = ("general", "transcription", "refine")
+GROUPS = ("general", "transcription", "files", "refine")
 INTEGRATIONS = ()                 # groepen die een koppeling zijn; een connector meldt zich aan (register_integration)
 BACKUP_NAME = "config-0.6.json"
 

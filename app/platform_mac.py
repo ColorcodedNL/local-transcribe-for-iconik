@@ -8,6 +8,7 @@ loopt de app door.
 import ctypes
 import functools
 import os
+import plistlib
 import re
 import socket
 import subprocess
@@ -184,6 +185,31 @@ def mount_reachable(path, volumes=Path("/Volumes")):
             except OSError:
                 continue
     return False
+
+
+@functools.lru_cache(maxsize=1)
+def _boot_volume_name():
+    """De naam van de opstartschijf zoals de Finder hem toont ("Macintosh HD")."""
+    try:
+        raw = subprocess.run(["diskutil", "info", "-plist", "/"], capture_output=True, timeout=10).stdout
+        name = plistlib.loads(raw).get("VolumeName") if raw else ""
+    except Exception:
+        name = ""
+    return name or "Mac"
+
+
+def volume_place(path, volumes=Path("/Volumes")):
+    """(naam van het volume, pad binnen het volume) van een bestand. Een volume dat macOS na een verbroken
+    koppeling opnieuw koppelde als Opslag-1 heet hier gewoon Opslag (zoals find_moved_mount het ook ziet), zodat
+    dezelfde clip op dezelfde plek blijft horen. Alles buiten /Volumes ligt op de opstartschijf."""
+    path = Path(path)
+    try:
+        inner = path.relative_to(volumes)
+    except ValueError:
+        return _boot_volume_name(), Path(*path.parts[1:]) if path.is_absolute() else path
+    if not inner.parts:
+        return _boot_volume_name(), Path()
+    return re.sub(r"-\d+$", "", inner.parts[0]), Path(*inner.parts[1:])
 
 
 # --- wakker blijven, links, starten bij inloggen ---

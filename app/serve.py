@@ -39,6 +39,7 @@ import settings as setting   # de lijst met alle instellingen; `settings` hieron
 import system
 import items
 import jobs as job_list
+import local_files
 import transcribe
 import updater
 import worker as remote
@@ -685,6 +686,34 @@ def add_job(asset_id, remote=0, auto=False, source=None):
     if remote:   # opdrachten uit de rij in Iconik hebben nog geen titel: ophalen, anders staat er een asset-ID
         threading.Thread(target=fill_titles, args=([job],), daemon=True).start()
     return True
+
+
+def add_local(paths, auto=False):
+    """Lokale bestanden in de rij (slepen, Kies bestanden…, een gevolgde map). Leest van elk bestand de
+    vingerafdruk; op een netwerkvolume kost dat zo'n 60 ms per bestand, dus de route laat dit in een eigen draad
+    lopen. Een bestand dat al wacht of loopt (ook een kopie met dezelfde vingerafdruk) komt er niet twee keer in:
+    de kopie krijgt het transcript als die opdracht klaar is. Geeft {"added", "skipped"}."""
+    added = skipped = 0
+    for text in dict.fromkeys(str(p) for p in paths):
+        path = Path(text)
+        try:
+            if not (path.is_absolute() and path.is_file() and local_files.is_media(path)):
+                skipped += 1
+                continue
+            item, title = local_files.remember(path)
+        except OSError as error:
+            print(f"Bestand niet toegevoegd ({type(error).__name__}).")
+            skipped += 1
+            continue
+        job = jobs.add(item, auto=auto, title=title)
+        if job is None:
+            continue   # wacht of loopt al; de kopie staat in local-files.json en komt mee
+        added += 1
+        touch_jobs()
+        work.put(job)
+    if added or skipped:
+        print(f"Lokale bestanden: {added} toegevoegd" + (f", {skipped} overgeslagen (geen media of niet te lezen)." if skipped else "."))
+    return {"added": added, "skipped": skipped}
 
 
 def fill_titles(new_jobs):
@@ -1561,6 +1590,19 @@ def _integrations_add(h, r):
     return h.reply_json(add_integration(r.first("name") or ""))
 
 
+@route("/local/add", protected=True)
+def _local_add(h, r):
+    # {"paths": [absolute paden]} als JSON. De vingerafdrukken in een eigen draad: op een netwerkvolume duurt dat.
+    data = _json_body(h, r, 1024 * 1024, minimum=2)
+    if data is None:
+        return None
+    paths = data.get("paths") if isinstance(data, dict) else None
+    if not isinstance(paths, list) or not all(isinstance(p, str) for p in paths) or len(paths) > 5000:
+        return h.reply_json({"ok": False, "error": "paths"})
+    threading.Thread(target=add_local, args=(paths,), daemon=True, name="toevoegen").start()
+    return h.reply_json({"ok": True, "count": len(paths)})
+
+
 @route("/clear", protected=True)
 def _clear(h, r):
     clear_finished()
@@ -2182,7 +2224,7 @@ def worker():
 
         def on_info(title, seconds, job=job):
             job.set(title=title or "", duration=seconds)
-        say(f"\n===== {job.asset_id} =====")
+        say(f"\n===== {job.asset_id or job.title or job.item} =====")
         options = make_options(job)
         prepared = None
         with jobs_lock:
@@ -2197,12 +2239,13 @@ def worker():
             if prepared is not None:
                 print("Audio was al vooruit gelezen.")
         try:
-            if client(items.source(job.item)) is None:
+            if items.is_iconik(job.item) and client(items.source(job.item)) is None:
                 raise Problem(transcribe.L("Niet ingelogd bij Iconik.", "Not logged in to Iconik."))
             result = transcribe.process_asset(options, settings["hf_token"], on_info, prepared)
             job.set(title=result["title"] or "", status="klaar",
                     message=f"{result['segments']} regels, {result['speakers']} spreker(s)",
-                    result={"segments": result["segments"], "speakers": result["speakers"]})
+                    result={"segments": result["segments"], "speakers": result["speakers"],
+                            **({"written_only": True} if result.get("written_only") else {})})
         except transcribe.NeedsFolder as folder:
             job.set(status="fout", local=True,
                     message=transcribe.L(f"Het mount point van ISG {folder} is op deze Mac nog niet ingesteld.",

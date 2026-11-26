@@ -51,7 +51,11 @@ FORM = {
 }
 
 # Welke module bij welke soort hoort. Pas geladen als iemand hem nodig heeft.
-KINDS = {"iconik": "iconik"}
+KINDS = {"iconik": "iconik", "local": "local_files"}
+
+# Bronnen die bij de app zelf horen en geen koppeling zijn: ze staan niet onder integrations in config.json, hebben
+# geen exemplaar-ID en precies één "exemplaar" met hun eigen naam (local: losse bestanden op deze Mac, stap 6).
+BUILTIN = ("local",)
 
 _loaded = {}        # soort -> gestarte module
 host = None         # de gastheer van deze app (start_all zet hem)
@@ -154,6 +158,8 @@ def check_module(module):
     missing = [f for f in functions(module.CAPABILITIES) if not callable(getattr(module, f, None))]
     if missing:
         raise FormError(f"connector {module.NAME} mist {', '.join(missing)}")
+    if module.NAME in BUILTIN and module.SETTINGS:
+        raise FormError(f"connector {module.NAME}: een ingebouwde bron heeft zijn instellingen in de app zelf")
     wrong = [s.key for s in module.SETTINGS if s.group != module.NAME]
     if wrong:
         raise FormError(f"connector {module.NAME}: instellingen buiten zijn groep: {wrong}")
@@ -180,7 +186,8 @@ def load(kind):
 def install(module):
     """Neemt een connector-module op (ook voor de tests, met een nep-connector)."""
     check_module(module)
-    settings.register_integration(module.NAME)
+    if module.NAME not in BUILTIN:
+        settings.register_integration(module.NAME)
     for setting in module.SETTINGS:
         if setting.key not in settings.SCHEMA:
             settings.register(setting)
@@ -192,6 +199,8 @@ def install(module):
 
 def kind_of(instance):
     """De soort van een exemplaar, uit config.json. FormError als het exemplaar er niet is."""
+    if instance in BUILTIN:
+        return instance
     for item in settings.integrations():
         if item["id"] == instance:
             return item["type"]
@@ -237,6 +246,8 @@ def start_all(the_host=None):
     host = the_host or Host()
     for module in _loaded.values():   # al eerder geladen (bijvoorbeeld door een test of een vroege aanroep)
         module.start(host)
+    for kind in BUILTIN:
+        load(kind)
     for item in settings.integrations():
         if item["type"] in KINDS:
             load(item["type"])

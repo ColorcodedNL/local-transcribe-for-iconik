@@ -19,6 +19,8 @@ import html
 import json
 import os
 import re
+import threading
+from functools import wraps
 from pathlib import Path
 
 import transcript as tmodel
@@ -464,6 +466,44 @@ def import_layer(cue_list, transcript):
                              tracks=list(transcript.tracks), engine=dict(transcript.engine), source=dict(transcript.source))
 
 
+# sidecars.json wordt gelezen, aangepast en teruggeschreven door Refine en door de werkrij (het transcript naast de
+# media): één grendel, zodat de een de regel van de ander niet wegschrijft.
+_registry_lock = threading.RLock()
+
+
+def _locked(function):
+    @wraps(function)
+    def call(*args, **kwargs):
+        with _registry_lock:
+            return function(*args, **kwargs)
+    return call
+
+
+@_locked
+def record(path, data, registry_path):
+    """Noteert dat de app dit bestand zelf schreef, met de hash van wat erin staat (`data`, bytes). Ook voor het
+    transcript naast de media (local_files.py): sidecars.json is de ene lijst van wat de app naast de media zette."""
+    written = _registry(registry_path)
+    written[str(path)] = hashlib.sha256(data).hexdigest()
+    try:
+        registry_path = Path(registry_path)
+        registry_path.parent.mkdir(parents=True, exist_ok=True)
+        temp = registry_path.with_name(registry_path.name + ".tmp")
+        temp.write_text(json.dumps(written, ensure_ascii=False))
+        os.replace(temp, registry_path)
+    except OSError:
+        pass
+
+
+def unchanged(path, registry_path):
+    """Schreef de app dit bestand zelf, en is het sindsdien niet veranderd?"""
+    try:
+        return _registry(registry_path).get(str(path)) == hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    except OSError:
+        return False
+
+
+@_locked
 def adopt(path, registry_path):
     """Iemand koos dit bestand zelf om in te laden: vanaf nu mag de app het bijwerken, zolang het niet door
     iets anders verandert."""
@@ -479,6 +519,7 @@ def adopt(path, registry_path):
         pass
 
 
+@_locked
 def forget(paths, registry_path):
     """Haalt deze paden uit de lijst van wat de app zelf schreef. De bestanden blijven staan; de app herkent
     ze daarna alleen niet meer als de zijne (en vervangt ze dus niet zonder dat iemand dat pad kiest)."""
@@ -505,6 +546,7 @@ def _registry(path):
         return {}
 
 
+@_locked
 def write_files(layer_doc, base, choice, rules, registry_path, confirmed=()):
     """Schrijft de laag als bestand(en): base met de extensie van elk formaat (clip.mxf wordt clip.srt).
 

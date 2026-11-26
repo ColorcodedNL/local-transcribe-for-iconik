@@ -32,7 +32,8 @@ except OSError:
     pass
 KEYCHAIN_SERVICE = INTERNAL_NAME
 CONFIG_PATH = SUPPORT_DIR / "config.json"
-SIDECARS_FILE = SUPPORT_DIR / "sidecars.json"   # welke ondertitelbestanden de app zelf schreef (pad en hash)
+SIDECARS_FILE = SUPPORT_DIR / "sidecars.json"   # welke bestanden naast de media de app zelf schreef (pad en hash)
+LOCAL_INDEX = SUPPORT_DIR / "local-files.json"   # lokale bestanden: vingerafdruk -> waar het bestand staat (local_files.py)
 ENGINE_NAME = "mlx-whisper"  # hieraan herkent --replace de transcripten van dit script
 REFINED_ENGINE = "local-transcribe-refined"   # een transcript dat iemand in Refine heeft gecorrigeerd
 SAMPLE_RATE = 16000

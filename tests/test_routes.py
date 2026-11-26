@@ -54,7 +54,7 @@ EXPECTED = {
     "/update/install": (P, True, True, "window"), "/update/open": (P, True, True, "window"),
     "/worker": (P, True, True, "window"), "/login-item": (P, True, True, "window"),
     "/asset/open": (P, True, True, "window"), "/actions/install": (P, True, True, "window"),
-    "/log/clear": (P, True, True, "window"), "/jobs/remove": (P, True, True, "window"),
+    "/log/clear": (P, True, True, "window"), "/jobs/remove": (P, True, True, "window"), "/local/add": (P, True, True, "window"),
     "/integrations/remove": (P, True, True, "window"), "/integrations/add": (P, True, True, "window"), "/clear": (P, True, True, "window"),
     "/logout": (P, True, True, "window"),
     "/login": (W, True, False, "window"), "/oauth/callback": (W, False, False, "link"),

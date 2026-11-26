@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 import transcript as tmodel
 
+import base
 from base import (  # noqa: F401
     ENGINE_NAME, L, LISTENER, SAMPLE_RATE, _local, fail, load_config, memory_report, print, tell,
 )
@@ -66,8 +67,13 @@ def prepare_asset(args, on_info=None, interactive=True):
     """Alles voor de GPU: controles bij de bron (de connector van het item), het bestand vinden en de audio lezen.
     Kan vooruit draaien terwijl een andere opdracht transcribeert."""
     source = items.source(item_of(args))
-    info = connectors.call(source, "open", key=args.asset_id, push=bool(args.push), replace=bool(args.replace))
+    info = connectors.call(source, "open", key=items.key(item_of(args)), push=bool(args.push), replace=bool(args.replace))
     asset, version_id, own = info["asset"], info["version_id"], info["own"]
+    if info.get("write_existing"):
+        # Deze Mac heeft het transcript al (een kopie elders, of een nieuwe plek): alleen neerzetten.
+        if on_info:
+            on_info(asset.get("title"), None)
+        return {"asset": asset, "version_id": version_id, "own": own, "info": info, "write_existing": True}
     path = Path(connectors.call(source, "find_media", info=info, mount=args.mount,
                                 ask_mount=bool(getattr(args, "ask_mount", False)), interactive=bool(interactive))[0])
     print(f"Bestand: {path}")
@@ -107,6 +113,8 @@ def process_asset(args, hf_token, on_info=None, prepared=None):
         prepared = prepare_asset(args, on_info)
     else:
         memory_report("audio (vooruit gelezen)")
+    if prepared.get("write_existing"):
+        return write_existing(args, prepared)
     asset, version_id, own = prepared["asset"], prepared["version_id"], prepared["own"]
     samples, microphones = prepared["samples"], prepared["microphones"]
     model_path = prepared.get("model_path") or args.model  # een lokaal pad: laden raakt het netwerk niet
@@ -231,7 +239,8 @@ def process_asset(args, hf_token, on_info=None, prepared=None):
         pieces, language, L("Spreker", "Speaker"),
         engine=dict(engine_info, revision=engine.revision(args.model)),
         tracks=tmodel.tracks_from_infos(prepared.get("tracks")),
-        source={"connector": "iconik", "item": item_of(args), "asset_id": args.asset_id, "version_id": version_id,
+        source={"connector": connectors.kind_of(items.source(item_of(args))), "item": item_of(args),
+                "asset_id": args.asset_id, "version_id": version_id,
                 "title": asset.get("title") or "", "media": prepared.get("media_path") or ""})
     properties = dict(tmodel.to_iconik(doc, "", version_id)[0], engine_info=engine_info)
 
@@ -269,6 +278,24 @@ def process_asset(args, hf_token, on_info=None, prepared=None):
     save_waves(item_of(args), prepared.get("peaks"))
     return {"title": asset.get("title"), "segments": written,
             "speakers": len(numbers), "pushed": True, "language": language}
+
+
+def write_existing(args, prepared):
+    """Zet het transcript dat deze Mac al heeft bij de bron neer, zonder opnieuw te transcriberen."""
+    item = item_of(args)
+    try:
+        doc = tmodel.from_dict(json.loads(items.path(base.TRANSCRIPTS_DIR, item, ".json").read_text()))
+    except (OSError, ValueError, KeyError, TypeError):
+        fail(L("Het transcript op deze Mac is niet te lezen.", "The transcript on this Mac cannot be read."))
+    engine_info = {"name": base.REFINED_ENGINE if doc.source.get("refined") else (doc.engine.get("name") or ENGINE_NAME),
+                   "version": doc.engine.get("version") or ""}
+    tell("stage", name="schrijven")
+    result = connectors.call(items.source(item), "write", info=prepared["info"], doc=tmodel.to_dict(doc),
+                             engine_info=engine_info, from_queue=False)
+    print("Bestaand transcript neergezet, niet opnieuw getranscribeerd.")
+    title = prepared["asset"].get("title")
+    return {"title": title, "segments": result["segments"], "speakers": len(doc.speakers), "pushed": True,
+            "language": doc.language, "written_only": True}
 
 
 def release_models():

@@ -124,12 +124,12 @@ class JobList:
         with lock:
             self._items.clear()
 
-    def add(self, item, remote=0, auto=False):
+    def add(self, item, remote=0, auto=False, title=""):
         """Een nieuwe wachtende opdracht, of None als dit item al wacht of loopt."""
         with lock:
             if any(j.item == item and j.active for j in self._items):
                 return None
-            return self.append(Job(n=self.next_number(), item=item, remote=remote, auto=auto))
+            return self.append(Job(n=self.next_number(), item=item, remote=remote, auto=auto, title=title))
 
     def add_failed(self, title, message):
         """Een rode regel zonder opdracht erachter (bijvoorbeeld een collectie die niet uit te pakken was)."""
