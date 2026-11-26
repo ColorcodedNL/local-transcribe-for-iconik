@@ -569,7 +569,7 @@ with sync_playwright() as p:
         # Bestanden (stap 6c): de plaats, ook alleen audio, de gevolgde mappen met + en −.
         files = page.locator('[data-panel="files"]')
         files.get_by_text("Gevolgde mappen").first.wait_for(timeout=5000)
-        check("Bestanden: plaats en ook alleen audio", files.get_by_label("Transcript").input_value() == "next"
+        check("Bestanden: plaats en ook alleen audio", files.get_by_label("Transcript", exact=True).input_value() == "next"
               and files.get_by_label("Ook alleen audio").is_checked())
         check("Bestanden: de map die in de lijst gevolgd werd", files.locator("[data-pick]").count() == 1
               and "Opnames" in files.locator("[data-pick]").inner_text())
@@ -590,14 +590,33 @@ with sync_playwright() as p:
         transcripts = TMP / "Transcripten"
         transcripts.mkdir()
         serve.system.ask_folder = lambda prompt, start=None: str(transcripts)
-        files.get_by_label("Transcript").select_option("folder")
+        files.get_by_label("Transcript", exact=True).select_option("folder")
         files.get_by_text(str(transcripts)).wait_for(timeout=5000)
         check("Bestanden: In één map… vraagt eerst de map", app_settings.get("files.transcript_place") == "folder"
               and app_settings.get("files.transcript_folder") == str(transcripts))
         serve.system.ask_folder = lambda prompt, start=None: None
-        files.get_by_label("Transcript").select_option("next")
+        files.get_by_label("Transcript", exact=True).select_option("next")
         page.wait_for_function("!document.body.innerText.includes('Map voor transcripten')", timeout=5000)
         check("Bestanden: terug naar Naast de media", app_settings.get("files.transcript_place") == "next")
+        # Ondertitels vanzelf (stap 6e): standaard uit; aan toont formaat, regels en plaats; In één map… vraagt de map.
+        check("Bestanden: ondertitels standaard uit, zonder de rest", not files.get_by_label("Maak ondertitels bij elke transcriptie", exact=True).is_checked()
+              and files.get_by_label("Regels", exact=True).count() == 0)
+        files.get_by_label("Maak ondertitels bij elke transcriptie", exact=True).click()
+        files.get_by_label("Regels", exact=True).wait_for(timeout=5000)
+        check("Bestanden: ondertitels aan toont formaat, regels en plaats", app_settings.get("files.subtitles") is True
+              and files.get_by_label("Formaat", exact=True).input_value() == "srt" and files.get_by_label("Plaats", exact=True).input_value() == "transcript")
+        subs_folder = TMP / "Ondertitels"
+        subs_folder.mkdir()
+        serve.system.ask_folder = lambda prompt, start=None: str(subs_folder)
+        files.get_by_label("Plaats", exact=True).select_option("folder")
+        files.get_by_text(str(subs_folder)).wait_for(timeout=5000)
+        check("Bestanden: ondertitels In één map… vraagt eerst de map", app_settings.get("files.subtitle_place") == "folder"
+              and app_settings.get("files.subtitle_folder") == str(subs_folder))
+        serve.system.ask_folder = lambda prompt, start=None: None
+        files.get_by_label("Plaats", exact=True).select_option("transcript")
+        files.get_by_label("Maak ondertitels bij elke transcriptie", exact=True).click()
+        files.get_by_label("Regels", exact=True).wait_for(state="detached", timeout=5000)
+        check("Bestanden: ondertitels weer uit", app_settings.get("files.subtitles") is False)
         places = files.locator(".grp", has_text="Elders")
         check("Bestanden: de andere plek staat in de lijst", places.count() == 1 and "DCIM" in places.inner_text())
         places.get_by_role("button", name="Vergeet").click()

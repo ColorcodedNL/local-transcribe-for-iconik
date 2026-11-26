@@ -388,6 +388,26 @@ def directory_for(media):
     return root / volume / inside.parent
 
 
+def subtitle_base(media, key):
+    """Waar de automatische ondertitels komen (stap 6e), als pad zonder formaat: subtitles.write_files maakt er
+    clip.srt of clip.vtt van. De basisnaam volgt die van het transcript (clip.mxf.srt als het transcript
+    clip.mxf.transcript.json heet), zodat twee bestanden met dezelfde basisnaam ook hier niet botsen.
+    Plaats: bij het transcript (ook een andere plek uit stap 6d), naast de media, of in één map."""
+    media = Path(media)
+    target, _ = target_for(media, key)
+    stem = target.name[:-len(SUFFIX)]
+    place = settings.get("files.subtitle_place")
+    folder = settings.get("files.subtitle_folder").strip()
+    if place == "next":
+        directory = media.parent
+    elif place == "folder" and folder:
+        volume, inside = system.volume_place(media)
+        directory = Path(folder) / volume / inside.parent
+    else:   # bij het transcript; In één map zonder map valt hier ook op terug
+        directory = target.parent
+    return directory / (stem + ".ondertitel")
+
+
 def classify(path, key):
     """Wat er op een plek staat: "none", "mine" (van deze app, dit bestand), "mine-refined" (idem, gecorrigeerd
     in Refine), "other" (van deze app, een ander bestand met dezelfde basisnaam) of "foreign" (iets anders)."""

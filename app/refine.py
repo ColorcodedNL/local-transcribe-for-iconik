@@ -248,9 +248,12 @@ def load_subtitles(item):
                        "base": str(base), "names": [base.with_suffix(f".{fmt}").name for fmt in subtitles.CHOICES[target["formats"]]]}}
 
 
-def _store(item, lay, touched, rules, stamp, target, edits):
+def _store(item, lay, touched, rules, stamp, target, edits, auto=False):
+    """Bewaart de laag. auto: vanzelf gemaakt (stap 6e) en sindsdien niet aangeraakt in Refine; alleen zo'n laag
+    mag een volgende automatische ronde vervangen. Elke handeling in Refine bewaart zonder auto."""
     _write_json(_subtitles_path(item), {
         "saved_at": time.strftime("%Y-%m-%dT%H:%M:%S"), "edits": int(edits), "rules": rules, "stamp": stamp,
+        **({"auto": True} if auto else {}),
         "target": {"formats": target["formats"], "place": target["place"], "base": target["base"]},
         "touched": [bool(x) for x in touched], "transcript": tmodel.to_dict(lay)})
 
@@ -286,8 +289,8 @@ def _choose_base(item, formats, place, choose):
     return path, (first,)
 
 
-def _write_files(item, lay, target, rules, confirmed=()):
-    lay.speakers = _current_doc(item).speakers     # de namen van nu, ook als ze na het maken zijn gewijzigd
+def _write_files(item, lay, target, rules, confirmed=(), doc=None):
+    lay.speakers = (doc or _current_doc(item)).speakers     # de namen van nu, ook als ze na het maken zijn gewijzigd
     return subtitles.write_files(lay, target["base"], target["formats"], rules, appbase.SIDECARS_FILE, confirmed)
 
 
@@ -303,16 +306,57 @@ def make_subtitles(item, raw, choose):
     formats = data.get("formats") if data.get("formats") in subtitles.CHOICES else "srt"
     place = "other" if data.get("place") == "other" else "media"
     doc = _current_doc(item)
-    lay = subtitles.layer(doc, rules)
-    if not lay.segments:
+    if not subtitles.layer(doc, rules).segments:
         raise RefineError(appbase.L("Dit transcript heeft geen tekst.", "This transcript has no text."))
     base, confirmed = _choose_base(item, formats, place, choose)
     if base is None:
         return {"cancelled": True}
     _remember(rules=rules, formats=formats, place=place)
-    target = {"formats": formats, "place": place, "base": str(base)}
-    _store(item, lay, [False] * len(lay.segments), rules, _stamp(doc), target, 0)
-    return _state(item, _write_files(item, lay, target, rules, confirmed))
+    return _state(item, _make(item, doc, rules, {"formats": formats, "place": place, "base": str(base)}, confirmed))
+
+
+def _make(item, doc, rules, target, confirmed=(), auto=False):
+    """Het maken zelf, voor het maakvenster en voor de automatische ondertitels: verdelen, inpassen, de laag
+    bewaren en de bestanden schrijven. Geeft de uitkomst per bestand (subtitles.write_files)."""
+    lay = subtitles.layer(doc, rules)
+    _store(item, lay, [False] * len(lay.segments), rules, _stamp(doc), target, 0, auto=auto)
+    return _write_files(item, lay, target, rules, confirmed, doc)
+
+
+def drop_session(item):
+    """Vergeet de sessie van dit item, zodat Refine het transcript opnieuw leest (na een nieuwe transcriptie)."""
+    with _lock:
+        _sessions.pop(item, None)
+
+
+def auto_subtitles(item, base, formats, preset, media=None):
+    """Ondertitels vanzelf na een transcriptie (Instellingen › Bestanden, stap 6e), met dezelfde functie als het
+    maakvenster. Een laag die iemand in Refine maakte of aanraakte, blijft staan: die wordt alleen verouderd
+    (stale), zoals bij elke nieuwe transcriptie. Geeft {"kept": True} of {"files", "cues", "fast", "bad"}."""
+    try:
+        kept = json.loads(_subtitles_path(item).read_text())
+    except (OSError, ValueError):
+        kept = None
+    if isinstance(kept, dict) and not kept.get("auto"):
+        return {"kept": True}
+    drop_session(item)
+    doc = _local_copy(item)   # het transcript dat net is weggeschreven, niet een concept van ervoor
+    if doc is None:
+        raise RefineError(appbase.L("Er is geen transcript van dit bestand op deze Mac.",
+                                    "There is no transcript of this file on this Mac."))
+    rules = subtitles.clean_rules(subtitles.PRESETS.get(preset) or subtitles.PRESETS[subtitles.DEFAULT_PRESET])
+    if not subtitles.layer(doc, rules).segments:
+        return {"files": [], "cues": 0, "fast": 0, "bad": 0}
+    formats = formats if formats in subtitles.CHOICES else "srt"
+    place = "media" if media and Path(base).parent == Path(media).parent else "other"
+    try:
+        Path(base).parent.mkdir(parents=True, exist_ok=True)   # In één map: de mappenstructuur bestaat nog niet
+    except OSError:
+        pass   # write_files meldt het dan per bestand
+    files = _make(item, doc, rules, {"formats": formats, "place": place, "base": str(base)}, auto=True)
+    counted = next((f for f in files if "cues" in f), {})
+    return {"files": [{"name": f["name"], "state": f["state"], "detail": f["detail"]} for f in files],
+            "cues": counted.get("cues", 0), "fast": counted.get("fast", 0), "bad": counted.get("bad", 0)}
 
 
 def import_subtitles(item, raw, choose):

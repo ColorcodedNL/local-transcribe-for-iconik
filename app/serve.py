@@ -1961,12 +1961,14 @@ def _local_place_forget(h, r):
 
 @route("/files/folder", protected=True)
 def _files_folder(h, r):
-    # In één map…: de map voor de transcripten kiezen.
-    chosen = ask_folder(transcribe.L("Kies de map voor de transcripten", "Choose the folder for the transcripts"),
-                               setting.get("files.transcript_folder") or None)
+    # In één map…: de map voor de transcripten kiezen, of met ?for=subtitles die voor de ondertitels.
+    kind = "subtitle" if r.first("for") == "subtitles" else "transcript"
+    prompt = (transcribe.L("Kies de map voor de ondertitels", "Choose the folder for the subtitles") if kind == "subtitle"
+              else transcribe.L("Kies de map voor de transcripten", "Choose the folder for the transcripts"))
+    chosen = ask_folder(prompt, setting.get(f"files.{kind}_folder") or None)
     if not chosen:
         return h.reply_json({"ok": False, "cancelled": True})
-    setting.put_many({"files.transcript_folder": chosen, "files.transcript_place": "folder"})
+    setting.put_many({f"files.{kind}_folder": chosen, f"files.{kind}_place": "folder"})
     return _ok(h)
 
 
@@ -2629,6 +2631,9 @@ def worker():
         # Niet in een finally: daar is continue vanaf Python 3.14 een waarschuwing (PEP 765).
         if job.abandoned:
             continue   # de watchdog gaf deze opdracht al op en meldde hem terug
+        refine.drop_session(job.item)   # Refine leest het nieuwe transcript, niet wat het nog van ervoor had
+        if job.status == "klaar":
+            auto_subtitles(job)
         if job.path and job.status in ("fout", "overgeslagen"):
             local_files.skip(job.path)   # een gevolgde map probeert dit bestand pas weer als het verandert
         job.set(finished=datetime.now())
@@ -2649,6 +2654,34 @@ def worker():
                 threading.Thread(target=release_later, args=(activity["done"],), daemon=True).start()
             else:
                 release_models_now()
+
+
+def auto_subtitles(job):
+    """Ondertitels vanzelf na een lokale transcriptie, als dat aan staat (Instellingen › Bestanden, stap 6e). Gaat
+    het mis, dan blijft de opdracht klaar: het transcript staat er, alleen de ondertitels niet."""
+    if items.source(job.item) != local_files.NAME or not setting.get("files.subtitles"):
+        return
+    try:
+        key = items.key(job.item)
+        media = local_files.media_path(key)
+        made = refine.auto_subtitles(job.item, str(local_files.subtitle_base(media, key)),
+                                     setting.get("files.subtitle_formats"), setting.get("files.subtitle_rules"),
+                                     media=str(media))
+    except (Problem, refine.RefineError, OSError, ValueError) as error:
+        print(f"Ondertitels niet gemaakt: {error}")
+        job.set(result=dict(job.result or {}, subtitles={"error": str(error)}))
+        return
+    if made.get("kept"):
+        print("Ondertitels: in Refine gemaakt of aangepast, die blijven staan.")
+        summary = {"kept": True}
+    else:
+        files = made["files"]
+        summary = {"cues": made["cues"], "warnings": made["fast"] + made["bad"], "bad": made["bad"],
+                   "failed": [f["name"] for f in files if f["state"] == "failed"],
+                   "exists": [f["name"] for f in files if f["state"] == "kept" and f["detail"] == "exists"]}
+        print(f"Ondertitels: {made['cues']} stuks, {summary['warnings']} met een waarschuwing"
+              + "".join(f", {f['name']} {f['state']}" for f in files))
+    job.set(result=dict(job.result or {}, subtitles=summary))
 
 
 def migrate_items():

@@ -117,6 +117,30 @@ _SCHEMA = [
        "overgeslagen. Een los audiobestand dat je zelf sleept of kiest, gaat altijd mee.",
        "Separate sound recordings in a folder you drop or watch. Music is only recognised and skipped after "
        "transcribing. A single audio file you drop or choose yourself is always added.")),
+    # Ondertitels vanzelf (stap 6e): standaard uit, alleen voor lokale bestanden. Gemaakt met dezelfde functie als
+    # het maakvenster in Refine (refine.auto_subtitles); eigen regels maak je in Refine.
+    S("files.subtitles", "bool", False, ("Maak ondertitels bij elke transcriptie", "Make subtitles with every transcription"),
+      ("Gemaakt met de regels hieronder, zonder handwerk: kijk ze na in Refine. De lijst toont hoeveel waarschuwingen "
+       "er zijn. Ondertitels die je in Refine maakte of verbeterde, blijven staan.",
+       "Made with the rules below, without hand work: check them in Refine. The list shows how many warnings there "
+       "are. Subtitles you made or corrected in Refine are left alone.")),
+    S("files.subtitle_formats", "choice", "srt", ("Formaat", "Format"),
+      (".srt, .vtt of allebei. Namen van sprekers alleen in .vtt.", ".srt, .vtt or both. Speaker names only in .vtt."),
+      choices=("srt", "vtt", "both")),
+    S("files.subtitle_rules", "choice", "streaming", ("Regels", "Rules"),
+      ("Online en streaming: 42 tekens, 2 regels, 17 tekens per seconde. Televisie, teletekst: 37 tekens, 15 per "
+       "seconde. Eigen regels maak je in Refine.",
+       "Online and streaming: 42 characters, 2 lines, 17 characters per second. Television, teletext: 37 characters, "
+       "15 per second. Own rules are made in Refine."),
+      choices=("streaming", "broadcast")),
+    S("files.subtitle_place", "choice", "transcript", ("Plaats", "Place"),
+      ("Bij het transcript: clip.srt komt waar clip.transcript.json komt. In één map: met dezelfde mappenstructuur. "
+       "Een bestand dat de app niet schreef, blijft staan.",
+       "With the transcript: clip.srt goes where clip.transcript.json goes. In one folder: with the same folder "
+       "structure. A file the app did not write is left alone."),
+      choices=("transcript", "next", "folder")),
+    S("files.subtitle_folder", "text", "", ("Map voor ondertitels", "Folder for subtitles"),
+      ("Alleen bij In één map.", "Only with In one folder."), max_length=1024),
     S("files.watched", "mapping", {}, ("Gevolgde mappen", "Watch folders"),
       ("Per map: ook submappen. Verandert via Volgen in de lijst en + en − in Instellingen.",
        "Per folder: subfolders too. Changed through Watch folder in the list and + and − in Settings."),

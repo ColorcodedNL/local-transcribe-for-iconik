@@ -123,7 +123,12 @@ const TEXT = {
     general: "Algemeen", transcription: "Transcriptie", files: "Bestanden", integrations: "Integraties",
     soon: "Volgt in een volgende stap.",
     choices: {"general.app_language": {auto: "Volg macOS", nl: "Nederlands", en: "English"}, "iconik.iconik_language": {"": "Volg de app", nl: "Nederlands", en: "English"},
-              "files.transcript_place": {next: "Naast de media", folder: "In één map…"}},
+              "files.transcript_place": {next: "Naast de media", folder: "In één map…"},
+              "files.subtitle_formats": {srt: ".srt", vtt: ".vtt", both: ".srt en .vtt"},
+              "files.subtitle_rules": {streaming: "Online en streaming", broadcast: "Televisie, teletekst"},
+              "files.subtitle_place": {transcript: "Bij het transcript", next: "Naast de media", folder: "In één map…"}},
+    subtitles: "Ondertitels", subtitlesSub: "Standaard uit: ondertitels bestaan alleen als iemand ervoor kiest.",
+    subtitleFolder: "Map voor ondertitels",
     result: "Resultaat", transcriptFolder: "Map voor transcripten", chooseFolder: "Kies map…", noFolder: "Nog geen map gekozen.",
     watched: "Gevolgde mappen", watchedSub: "Nieuwe bestanden in deze mappen pakt de app zelf op, alleen als deze Mac ruimte heeft (zie Transcriptie).",
     noWatched: "Nog geen gevolgde map. Kies er een met +, of klik op Volgen bij een map in de opdrachtenlijst.",
@@ -186,7 +191,12 @@ const TEXT = {
     general: "General", transcription: "Transcription", files: "Files", integrations: "Integrations",
     soon: "Follows in a next step.",
     choices: {"general.app_language": {auto: "Follow macOS", nl: "Nederlands", en: "English"}, "iconik.iconik_language": {"": "Follow the app", nl: "Nederlands", en: "English"},
-              "files.transcript_place": {next: "Next to the media", folder: "In one folder…"}},
+              "files.transcript_place": {next: "Next to the media", folder: "In one folder…"},
+              "files.subtitle_formats": {srt: ".srt", vtt: ".vtt", both: ".srt and .vtt"},
+              "files.subtitle_rules": {streaming: "Online and streaming", broadcast: "Television, teletext"},
+              "files.subtitle_place": {transcript: "With the transcript", next: "Next to the media", folder: "In one folder…"}},
+    subtitles: "Subtitles", subtitlesSub: "Off by default: subtitles only exist when someone chooses them.",
+    subtitleFolder: "Folder for subtitles",
     result: "Result", transcriptFolder: "Folder for transcripts", chooseFolder: "Choose folder…", noFolder: "No folder chosen yet.",
     watched: "Watch folders", watchedSub: "The app picks up new files in these folders by itself, only when this Mac has room (see Transcription).",
     noWatched: "No watch folder yet. Choose one with +, or click Watch folder on a folder in the job list.",
@@ -348,9 +358,16 @@ function drawFiles() {
   const list = (rows.length ? rows.join("") : `<div class="row"><span class="state">${esc(T.noWatched)}</span></div>`)
     + `<div class="pm"><button class="btn" id="addFolder" aria-label="${esc(T.addFolder)}">+</button>`
     + `<button class="btn" id="removeFolder" aria-label="${esc(T.removeFolder)}" ${x.watched.some(f => f.path === ui.folder) ? "" : "disabled"}>−</button></div>`;
+  const subs = [settingRow(spec("files.subtitles"))];
+  if (v["files.subtitles"]) {
+    subs.push(settingRow(spec("files.subtitle_formats")), settingRow(spec("files.subtitle_rules")), settingRow(spec("files.subtitle_place")));
+    if (v["files.subtitle_place"] === "folder")
+      subs.push(row(esc(T.subtitleFolder), v["files.subtitle_folder"] ? `<code>${esc(v["files.subtitle_folder"])}</code>` : esc(T.noFolder),
+                    `<button class="btn" id="chooseSubtitleFolder">${esc(T.chooseFolder)}</button>`));
+  }
   const places = (x.elsewhere || []).map(e => row(`${esc(e.name)}<div class="help"><code>${esc(e.target)}</code></div>`, "",
     `<button class="btn" data-forget="${esc(e.scope)}">${esc(T.forget)}</button>`));
-  return group(T.result, result) + `<div class="gh">${esc(T.watched)}</div><div class="gsub">${esc(T.watchedSub)}</div><div class="grp" id="watchedList">${list}</div>`
+  return group(T.result, result) + group(T.subtitles, subs, T.subtitlesSub) + `<div class="gh">${esc(T.watched)}</div><div class="gsub">${esc(T.watchedSub)}</div><div class="grp" id="watchedList">${list}</div>`
     + (places.length ? group(T.elsewhere, places, T.elsewhereSub) : "");
 }
 
@@ -546,6 +563,10 @@ document.addEventListener("change", e => {
     fetch("/files/folder", {method: "POST", headers: HDR}).then(() => load(current));
     return;
   }
+  if (el.dataset && el.dataset.key === "files.subtitle_place" && el.value === "folder") {
+    fetch("/files/folder?for=subtitles", {method: "POST", headers: HDR}).then(() => load(current));
+    return;
+  }
   if (el.dataset && el.dataset.key) save(el.dataset.key, valueOf(el));
 });
 document.addEventListener("keydown", e => {
@@ -571,6 +592,7 @@ document.addEventListener("click", async e => {
   else if (id === "removeIntegration") confirmRemove();
   else if (id === "toLimits") show("transcription");
   else if (id === "chooseTranscriptFolder") { await fetch("/files/folder", {method: "POST", headers: HDR}); load(current); }
+  else if (id === "chooseSubtitleFolder") { await fetch("/files/folder?for=subtitles", {method: "POST", headers: HDR}); load(current); }
   else if (id === "addFolder") { await fetch("/folders/choose", {method: "POST", headers: HDR}); load(current); }
   else if (id === "removeFolder" && ui.folder) {
     await fetch(`/folders/watch?path=${encodeURIComponent(ui.folder)}&on=0`, {method: "POST", headers: HDR});
