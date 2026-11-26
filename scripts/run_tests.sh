@@ -4,7 +4,7 @@
 # Eenmalig voor de browsertest: uv run --no-project --with playwright playwright install chromium
 set -u
 cd "$(dirname "$0")/.."
-WITH=(--no-project --with pynacl --with requests --with numpy --with huggingface_hub --with playwright)
+WITH=(--no-project --with pynacl --with requests --with numpy --with huggingface_hub --with playwright --with jsonschema)
 failed=0
 # Eerst de code zelf: een naam die niet bestaat of een import die nergens heen gaat (pyflakes via ruff).
 RUFF=ruff@0.17.5

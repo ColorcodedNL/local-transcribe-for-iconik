@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:local-transcribe:format:1",
+  "title": "Local Transcribe transcript, format version 1",
+  "description": "A transcript written by Local Transcribe (clip.transcript.json next to the media). Times are whole milliseconds from the start of the media. Readers ignore fields they do not know. See docs/format/README.md for the version rule.",
+  "type": "object",
+  "required": ["format", "version", "language", "engine", "source", "speakers", "tracks", "segments"],
+  "properties": {
+    "format": {"const": "local-transcribe"},
+    "version": {"description": "Major version. A reader refuses a higher major version.", "const": 1},
+    "minor": {"description": "Minor version: only adds optional fields. Absent means 0. A reader accepts any minor version of its major version.", "type": "integer", "minimum": 0},
+    "language": {"description": "Language code as Whisper gives it (nl, en, ...), or empty when unknown.", "type": "string"},
+    "engine": {
+      "description": "What made the transcript. Informative; readers do not depend on it, except for name.",
+      "type": "object",
+      "properties": {
+        "name": {"description": "mlx-whisper for a transcription, local-transcribe-refined for a transcript corrected in Refine.", "type": "string"},
+        "type": {"type": "string"},
+        "model": {"type": "string"},
+        "revision": {"type": ["string", "null"]},
+        "version": {"type": ["string", "null"]}
+      }
+    },
+    "source": {
+      "description": "Where the transcript belongs. Next to the media: connector local, with the fingerprint and the file name of the media (never a path).",
+      "type": "object",
+      "properties": {
+        "connector": {"enum": ["local", "iconik"]},
+        "fingerprint": {"description": "sha256 over the size and the first, middle and last MiB of the media, first 32 hex characters.", "type": "string", "pattern": "^[0-9a-f]{32}$"},
+        "media": {"description": "File name of the media, without folder.", "type": "string"},
+        "title": {"type": "string"},
+        "refined": {"description": "True when someone corrected the transcript in Refine.", "type": "boolean"},
+        "asset_id": {"type": "string"},
+        "version_id": {"type": "string"}
+      },
+      "allOf": [{"if": {"properties": {"connector": {"const": "local"}}, "required": ["connector"]},
+                 "then": {"required": ["fingerprint", "media"]}}]
+    },
+    "speakers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name"],
+        "properties": {
+          "id": {"description": "Fixed within one transcript; segments refer to it.", "type": "string"},
+          "name": {"description": "What people see: \"Spreker 1\" or a name someone filled in.", "type": "string"}
+        }
+      }
+    },
+    "tracks": {
+      "description": "The audio tracks of the media as the track analysis saw them.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["number", "label", "used"],
+        "properties": {
+          "number": {"description": "1, 2, ... as ffprobe counts them, channels separately.", "type": "integer", "minimum": 1},
+          "label": {"description": "Free text for people, in the language of the app (for example timecode, silence, same signal as track 2). Not meant to be parsed.", "type": "string"},
+          "used": {"description": "Taken into the audio that was transcribed.", "type": "boolean"},
+          "db": {"description": "Average level in dB.", "type": ["number", "null"]}
+        }
+      }
+    },
+    "segments": {
+      "description": "Blocks of text of one speaker, in order of time.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["start", "end", "speaker", "words"],
+        "properties": {
+          "start": {"type": "integer", "minimum": 0},
+          "end": {"type": "integer", "minimum": 0},
+          "speaker": {"description": "An id from speakers.", "type": "string"},
+          "text": {"description": "Only when the text differs from the words joined with spaces (after a correction in Refine).", "type": "string"},
+          "words": {
+            "description": "Each word as [text, start, end, score]; score is the recognition confidence from 0 to 1.",
+            "type": "array",
+            "items": {
+              "type": "array",
+              "prefixItems": [{"type": "string"}, {"type": "integer", "minimum": 0}, {"type": "integer", "minimum": 0}, {"type": "number", "minimum": 0, "maximum": 1}],
+              "minItems": 4,
+              "maxItems": 4
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,6 +1,6 @@
 # Working on Local Transcribe for Iconik
 
-Notes for an AI coding session in this repo. The README says what the app does; `docs/RELEASING.md` is the release procedure; `docs/SBOM.md` lists what ships.
+Notes for an AI coding session in this repo. The README says what the app does; `docs/RELEASING.md` is the release procedure; `docs/SBOM.md` lists what ships; `docs/format/` is the public transcript format.
 
 ## Layout
 
@@ -26,6 +26,9 @@ Notes for an AI coding session in this repo. The README says what the app does; 
 - Code in a code update also runs on apps with an older shell. Reach for something new in `app_shell` with `getattr` and keep a fallback.
 - Every route is one entry in `ROUTES` in `serve.py` (the `@route` decorator), with its access as properties: `session` (cookie of the app's own window, or the listener key; off only for what comes from outside), `protected` (changes something: POST only, with the `X-Local-Transcribe` header) and `kind`. `/api/v1/` is reserved for a documented API. A new route also goes into the expected table in `tests/test_routes.py`. New window behaviour gets a step in `tests/test_e2e.py`, or in `tests/test_refine_window.py` for Refine.
 - Never overwrite a transcript from another source or a correction made in Refine.
+- The transcript format `local-transcribe` is a public contract (`docs/format/`: README, JSON Schema, examples). A new optional field raises `minor`, a changed or removed field raises `version`; readers ignore unknown fields and refuse a higher major version. Change the schema, the examples and `transcript.py` together; `tests/test_format.py` checks they agree, also the fingerprint code in the README.
+- Files next to the media are only removed on request (the checkbox under "Also remove from this Mac…", `local_files.remove_written`): only what `sidecars.json` says the app wrote and that did not change, and only to the Trash (`system.trash`). When the disk has no Trash (a network share over SMB), the file stays and the window offers Delete anyway…: only after a second confirmation, through a one-time token (`serve.wipe_beside`, `/local/wipe`), never a path from the window, and again only what did not change.
+- `serve.log` turns into `serve.log.1` after 2 MB or 7 days, checked at start and every hour (`serve.rotate_log`, `app_main.keep_log`); a `.1` older than 7 days is removed.
 - The line break and the warning level of a subtitle are calculated twice with the same choices: `subtitles.layout` and `subtitles.warnings` (the file and the counts) and `layoutLines` and `check` in `refine.html` (the screen). Change one, change the other; `tests/test_refine_window.py` compares them.
 - Subtitles only exist when someone makes them: + Subtitles in Refine, or the setting "Make subtitles with every transcription" in Settings › Files (off by default, local files only). Both go through `refine._make`. An automatic layer carries `auto` and is only replaced by the next automatic round while nobody touched it in Refine; any save in Refine drops `auto`. A file the app did not write, or that changed afterwards, is only replaced when someone picked that path in the save panel; the automatic path never replaces it.
 - No own machine names, paths or account names in the app, tests, messages or screenshots: use generic terms such as "opslag (ISG)".

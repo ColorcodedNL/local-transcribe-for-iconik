@@ -405,6 +405,7 @@ with sync_playwright() as p:
         menu.get_by_role("menuitem", name="Verwijder ook van deze Mac…").click()
         dialog = page.get_by_role("dialog")
         check("bevestiging zegt dat het mediabestand blijft", dialog.get_by_text("Blijft altijd staan: het mediabestand zelf").count() == 1)
+        check("bevestiging bij Iconik: geen vinkje voor naast de media", dialog.locator("#sheetBeside").count() == 0)
         serve.clear_log_hook = lambda: True
         dialog.get_by_role("button", name="Log wissen").click()
         dialog.get_by_text("Log gewist.").wait_for(timeout=5000)
@@ -509,6 +510,57 @@ with sync_playwright() as p:
         page.get_by_role("menuitem", name="Toon in Finder").click()
         page.wait_for_timeout(300)
         check("rechtsklik op een lokale regel: Toon in Finder", revealed == [str(loose)], revealed)
+        # Ook het transcript naast de media (stap 6f): een vinkje, standaard uit; naar de prullenmand.
+        import subtitles as subs_mod
+        loose_job = next(j for j in serve.jobs if j.title == "los.wav")
+        loose_job.set(status="klaar", result={"segments": 1, "speakers": 1})
+        beside = loose.parent / "los.transcript.json"
+        beside.write_text("{}")
+        subs_mod.record(beside, beside.read_bytes(), transcribe.SIDECARS_FILE)
+        trash_bin = TMP / "Prullenmand"
+        trash_bin.mkdir()
+        serve.local_files.system.trash = lambda path: os.replace(path, trash_bin / Path(path).name)
+        page.locator(".job", has_text="los.wav").get_by_text("klaar", exact=True).wait_for(timeout=5000)
+        page.locator(".job", has_text="los.wav").click(button="right")
+        page.get_by_role("menuitem", name="Verwijder ook van deze Mac…").click()
+        dialog = page.get_by_role("dialog")
+        box = dialog.get_by_label("Ook het transcript naast de media (los.transcript.json)")
+        check("ook van deze Mac, lokaal: het vinkje staat er en is uit", box.count() == 1 and not box.is_checked())
+        box.check()
+        dialog.get_by_role("button", name="Verwijder").click()
+        page.get_by_text("1 bestand naast de media naar de prullenmand.").wait_for(timeout=5000)
+        check("ook van deze Mac, lokaal: het transcript naast de media in de prullenmand, het bestand zelf blijft",
+              not beside.exists() and (trash_bin / "los.transcript.json").is_file() and loose.is_file())
+        page.locator("#note").wait_for(state="hidden", timeout=12000)
+        check("ook van deze Mac, lokaal: de melding gaat vanzelf weg", True)
+        # Geen prullenmand (een share): de melding blijft met Toch wissen…, en pas na een tweede bevestiging is het weg.
+        share_job = serve.jobs.add(loose_job.item, title="los.wav", path=str(loose))
+        share_job.set(status="klaar", result={"segments": 1, "speakers": 1})
+        beside.write_text("{}")
+        subs_mod.record(beside, beside.read_bytes(), transcribe.SIDECARS_FILE)
+        serve.local_files.system.trash = lambda path: serve.local_files.system.NO_TRASH
+        page.locator(f"#job-{share_job.n}").get_by_text("klaar", exact=True).wait_for(timeout=5000)
+        page.locator(f"#job-{share_job.n}").click(button="right")
+        page.get_by_role("menuitem", name="Verwijder ook van deze Mac…").click()
+        dialog = page.get_by_role("dialog")
+        dialog.get_by_label("Ook het transcript naast de media (los.transcript.json)").check()
+        dialog.get_by_role("button", name="Verwijder").click()
+        page.get_by_role("button", name="Toch wissen…").wait_for(timeout=5000)
+        check("geen prullenmand: blijft staan, met de reden en Toch wissen…", beside.is_file()
+              and "geen prullenmand" in page.locator("#note").inner_text())
+        page.get_by_role("button", name="Toch wissen…").click()
+        wipe = page.get_by_role("dialog")
+        check("Toch wissen: een tweede bevestiging die zegt dat het niet terug kan", "niet ongedaan" in wipe.inner_text())
+        check("Toch wissen: zegt dat alles in Iconik blijft, ook op de ISG", "alles in Iconik" in wipe.inner_text()
+              and "(ISG)" in wipe.inner_text())
+        wipe.get_by_role("button", name="Annuleer").click()
+        page.wait_for_timeout(300)
+        check("Toch wissen: Annuleer laat het staan", beside.is_file())
+        page.get_by_role("button", name="Toch wissen…").click()
+        page.get_by_role("dialog").get_by_role("button", name="Wis definitief").click()
+        page.get_by_text("1 bestand definitief gewist.").wait_for(timeout=5000)
+        check("Toch wissen: na de tweede bevestiging is het weg, het mediabestand blijft", not beside.exists() and loose.is_file())
+        page.locator("#note").wait_for(state="hidden", timeout=12000)
         # Kan niet schrijven (stap 6d): de groep wacht op een plek, met de reden en de knoppen in de kop.
         import local_files
         card = TMP / "KAART_01"

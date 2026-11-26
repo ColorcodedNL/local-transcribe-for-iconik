@@ -67,6 +67,9 @@ button.x { font: inherit; background: none; border: 0; color: var(--muted); padd
 .sheet { width: 480px; background: var(--window); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 12px 34px rgba(0,0,0,.3); padding: 20px 22px; }
 .sheet h2 { font-size: 15px; margin: 0 0 6px; overflow-wrap: anywhere; }
 .sheet .keep { margin: 12px 0 4px; padding: 9px 11px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+.sheet .beside { display: flex; gap: 8px; align-items: flex-start; margin-top: 10px; }
+.sheet .beside input { margin-top: 3px; }
+.sheet .msg.help { margin: 2px 0 0 22px; font-size: 12px; color: var(--muted); }
 .sheet .foot { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
 .sheet .btn { font: inherit; padding: 4px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--text); }
 .sheet .go.danger { background: var(--bad); }
@@ -203,6 +206,16 @@ const TEXT = {
     removeTitle: t => `„${t}” ook van deze Mac verwijderen?`,
     removeText: "De app wist wat hij zelf over dit item bewaart: de opdracht (ook andere regels van hetzelfde item), de kopie van het transcript, golfvormen, en het concept, het origineel en de ondertitellaag van Refine.",
     removeKeep: "Blijft altijd staan: het mediabestand zelf, en alles in Iconik.",
+    removeBeside: name => `Ook het transcript naast de media (${name})`,
+    removeBesideHelp: "Naar de prullenmand, alleen als de app het zelf schreef en het daarna niet veranderde. Ondertitelbestanden (.srt, .vtt) net zo. Een bestand in een gevolgde map wordt daarna niet vanzelf opnieuw gedaan.",
+    trashed: (n, kept) => (n ? `${n} bestand${n === 1 ? "" : "en"} naast de media naar de prullenmand.` : "")
+      + (kept.length ? ` Blijft staan: ${kept.map(([f, why]) => `${f} (${why})`).join(", ")}.` : ""),
+    wipeKeep: "Blijft staan: het mediabestand, en alles in Iconik. Ook als dit bestand op de opslag van Iconik (ISG) staat, gaat alleen dit bestand weg.",
+    wipeAnyway: "Toch wissen…", wipe: "Wis definitief", wipeFailed: "Wissen lukte niet.",
+    wipeTitle: names => names.length === 1 ? `„${names[0]}” definitief wissen?` : `${names.length} bestanden definitief wissen?`,
+    wipeText: "Deze schijf heeft geen prullenmand. Gewist is weg: dit kan niet ongedaan worden. Alleen wat de app zelf schreef en daarna niet veranderde.",
+    wiped: (n, kept) => (n ? `${n} bestand${n === 1 ? "" : "en"} definitief gewist.` : "")
+      + (kept.length ? ` Blijft staan: ${kept.map(([f, why]) => `${f} (${why})`).join(", ")}.` : ""),
     removeLog: "De naam kan nog in het log staan.", clearLog: "Log wissen", logCleared: "Log gewist.", cancel: "Annuleer", remove: "Verwijder", mountsTitle: "ISG Mount Points",
     change: "Kies andere map",
     updateAvail: v => `Versie ${v} van Local Transcribe for Iconik is beschikbaar.`, updateGet: "Downloaden", updateInstall: "Installeren", updateRetry: "Opnieuw proberen", updateFull: "Deze versie vraagt een nieuwe installatie.", updateBusy: v => `Versie ${v} wordt gedownload en gecontroleerd...`, updateReady: v => `Versie ${v} is geïnstalleerd. De app start opnieuw op...`, updateWaiting: v => `Versie ${v} staat klaar. De app start opnieuw op zodra de opdrachten klaar zijn.`, updateFail: e => `Updaten is mislukt: ${e}`, version: "Versie",
@@ -275,6 +288,16 @@ const TEXT = {
     removeTitle: t => `Also remove “${t}” from this Mac?`,
     removeText: "The app removes what it keeps about this item: the job (also other rows of the same item), the copy of the transcript, waveforms, and the draft, original and subtitle layer of Refine.",
     removeKeep: "Always stays: the media file itself, and everything in Iconik.",
+    removeBeside: name => `Also the transcript next to the media (${name})`,
+    removeBesideHelp: "To the Trash, only if the app wrote it itself and it did not change since. Subtitle files (.srt, .vtt) the same. A file in a watched folder is not done again by itself afterwards.",
+    trashed: (n, kept) => (n ? `${n} file${n === 1 ? "" : "s"} next to the media moved to the Trash.` : "")
+      + (kept.length ? ` Left in place: ${kept.map(([f, why]) => `${f} (${why})`).join(", ")}.` : ""),
+    wipeKeep: "Stays: the media file, and everything in Iconik. Even when this file is on Iconik's storage (ISG), only this file goes.",
+    wipeAnyway: "Delete anyway…", wipe: "Delete permanently", wipeFailed: "Deleting did not work.",
+    wipeTitle: names => names.length === 1 ? `Delete “${names[0]}” permanently?` : `Delete ${names.length} files permanently?`,
+    wipeText: "This disk has no Trash. Deleted is gone: this cannot be undone. Only what the app wrote itself and that did not change since.",
+    wiped: (n, kept) => (n ? `${n} file${n === 1 ? "" : "s"} deleted permanently.` : "")
+      + (kept.length ? ` Left in place: ${kept.map(([f, why]) => `${f} (${why})`).join(", ")}.` : ""),
     removeLog: "The name may still be in the log.", clearLog: "Clear log", logCleared: "Log cleared.", cancel: "Cancel", remove: "Remove", mountsTitle: "ISG Mount Points",
     change: "Choose another folder",
     updateAvail: v => `Version ${v} of Local Transcribe for Iconik is available.`, updateGet: "Download", updateInstall: "Install", updateRetry: "Try again", updateFull: "This version needs a full install.", updateBusy: v => `Downloading and checking version ${v}...`, updateReady: v => `Version ${v} is installed. The app is restarting...`, updateWaiting: v => `Version ${v} is ready. The app restarts when the jobs are done.`, updateFail: e => `Updating failed: ${e}`, version: "Version",
@@ -346,9 +369,21 @@ if (NOTE) { $("note").textContent = NOTE; $("note").hidden = false; }
 $("clear").onclick = () => act("/clear").then(tick);
 let jobsByN = {};
 function select(n) { selected = n; drawn = Object.fromEntries(Object.entries(drawn).filter(([k]) => !k.startsWith("job-"))); tick(); }
-async function removeJob(n, everything) {
-  const r = await fetch(`/jobs/remove?n=${n}${everything ? "&all=1" : ""}`, H).then(r => r.json()).catch(() => ({ok: false}));
+async function removeJob(n, everything, beside) {
+  const r = await fetch(`/jobs/remove?n=${n}${everything ? "&all=1" : ""}${beside ? "&beside=1" : ""}`, H).then(r => r.json()).catch(() => ({ok: false}));
   if (!r.ok && r.error) { $("note").textContent = r.error; $("note").hidden = false; }
+  if (r.ok && beside && ((r.trashed || []).length || (r.kept || []).length)) {
+    const text = T.trashed((r.trashed || []).length, r.kept || []).trim();
+    $("note").textContent = text; $("note").hidden = false;
+    if (r.wipe) {   // geen prullenmand: Toch wissen, met een tweede bevestiging; de melding blijft dan staan
+      const b = document.createElement("button");
+      b.className = "plain"; b.id = "wipeAnyway"; b.textContent = T.wipeAnyway;
+      b.onclick = () => confirmWipe(r.wipe);
+      $("note").append(" ", b);
+    } else {
+      setTimeout(() => { if ($("note").textContent === text) $("note").hidden = true; }, 8000);   // een melding, geen blijvende staat
+    }
+  }
   if (r.ok) selected = null;
   tick();
 }
@@ -375,18 +410,36 @@ function openMenu(job, x, y) {
     else confirmAll(job);
   };
 }
+function confirmWipe(offer) {
+  $("sheet").innerHTML = `<div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(T.wipeTitle(offer.names))}">
+    <h2>${esc(T.wipeTitle(offer.names))}</h2><p class="msg">${esc(T.wipeText)}</p>
+    <div class="keep"><b>${esc(T.wipeKeep)}</b></div>
+    <div class="foot"><button class="btn" id="sheetCancel">${esc(T.cancel)}</button><button class="go danger" id="sheetWipe">${esc(T.wipe)}</button></div></div>`;
+  $("sheet").hidden = false;
+  $("sheetCancel").focus();
+  $("sheetCancel").onclick = closeSheet;
+  $("sheetWipe").onclick = async () => {
+    closeSheet();
+    const r = await fetch("/local/wipe?token=" + encodeURIComponent(offer.token), H).then(r => r.json()).catch(() => ({ok: false}));
+    const text = r.ok ? T.wiped((r.wiped || []).length, r.kept || []).trim() : (r.error || T.wipeFailed);
+    $("note").textContent = text; $("note").hidden = false;
+    setTimeout(() => { if ($("note").textContent === text) $("note").hidden = true; }, 8000);
+  };
+}
 function closeSheet() { $("sheet").hidden = true; $("sheet").innerHTML = ""; }
 function confirmAll(job) {
   $("sheet").innerHTML = `<div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(T.removeTitle(job.title || job.asset_id))}">
     <h2>${esc(T.removeTitle(job.title || job.asset_id))}</h2><p class="msg">${esc(T.removeText)}</p>
     <div class="keep"><b>${esc(T.removeKeep)}</b></div>
+    ${job.local ? `<label class="beside"><input type="checkbox" id="sheetBeside"><span>${esc(T.removeBeside((job.title || "").replace(/\.[^.]*$/, "") + ".transcript.json"))}</span></label>
+    <p class="msg help">${esc(T.removeBesideHelp)}</p>` : ""}
     <p class="msg">${esc(T.removeLog)} <button class="plain" id="clearLog">${esc(T.clearLog)}</button></p>
     <div class="foot"><button class="btn" id="sheetCancel">${esc(T.cancel)}</button><button class="go danger" id="sheetRemove">${esc(T.remove)}</button></div></div>`;
   $("sheet").hidden = false;
   $("sheetCancel").focus();
   $("sheetCancel").onclick = closeSheet;
   $("clearLog").onclick = async e => { const r = await act("/log/clear").then(r => r.json()).catch(() => ({})); if (r.ok) e.target.replaceWith(T.logCleared); };
-  $("sheetRemove").onclick = () => { closeSheet(); removeJob(job.n, true); };
+  $("sheetRemove").onclick = () => { const beside = !!($("sheetBeside") && $("sheetBeside").checked); closeSheet(); removeJob(job.n, true, beside); };
 }
 document.addEventListener("click", e => { if (!e.target.closest("#menu")) closeMenu(); });
 document.addEventListener("keydown", e => {

@@ -756,19 +756,22 @@ def clear_originals():
 
 # --- alles van één item van deze Mac ---
 
+def subtitle_paths(item):
+    """De ondertitelbestanden van de laag van dit item (.srt en .vtt naast elkaar), of leeg."""
+    try:
+        target = json.loads(_subtitles_path(item).read_text()).get("target") or {}
+        base = Path(target["base"]) if target.get("base") else None
+    except (OSError, ValueError, AttributeError, TypeError):
+        base = None
+    return [base.with_suffix(f".{fmt}") for fmt in ("srt", "vtt")] if base is not None else []
+
+
 def forget_item(item):
     """Alles wat de app op deze Mac over dit item bewaart weg ("Verwijder ook van deze Mac"): de kopie van het
     transcript, de golfvormen, het concept, het origineel en de ondertitellaag van Refine, en de paden van de
     ondertitelbestanden in sidecars.json. Nooit Iconik, nooit de media en nooit bestanden naast de media.
     Geeft de namen van wat weg is."""
-    gone = []
-    try:   # eerst de paden uit de ondertitellaag, want die gaat zo weg
-        target = json.loads(_subtitles_path(item).read_text()).get("target") or {}
-        base = Path(target["base"]) if target.get("base") else None
-    except (OSError, ValueError, AttributeError, TypeError):
-        base = None
-    if base is not None:
-        gone += subtitles.forget([base.with_suffix(f".{fmt}") for fmt in ("srt", "vtt")], appbase.SIDECARS_FILE)
+    gone = subtitles.forget(subtitle_paths(item), appbase.SIDECARS_FILE)   # eerst, want de laag gaat zo weg
     for path in (items.path(appbase.TRANSCRIPTS_DIR, item, ".json"), _waves_path(item), _media_info_path(item),
                  _draft_path(item), _original_path(item), _subtitles_path(item)):
         try:

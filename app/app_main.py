@@ -11,6 +11,7 @@ import http.client
 import os
 import sys
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -57,13 +58,28 @@ def clear_log():
         return False
 
 
+def reopen_log():
+    log = open(LOGDIR / "serve.log", "a", buffering=1)
+    os.dup2(log.fileno(), 1)
+    os.dup2(log.fileno(), 2)
+
+
+def keep_log():
+    """Elk uur kijken of het log te groot of te oud is (serve.rotate_log), niet alleen bij het starten: de app
+    draait soms weken achter elkaar."""
+    while True:
+        time.sleep(3600)
+        if serve.rotate_log(LOGDIR / "serve.log"):
+            reopen_log()
+            print(f"===== log begonnen {datetime.now():%Y-%m-%d %H:%M:%S} =====")
+
+
 def log_start():
     """Kopregel in het log. Pas als vaststaat dat dit exemplaar de app wordt: een tweede start (een klik
     in Iconik terwijl de app al draait) schreef hem anders midden in de regels van een lopende opdracht."""
-    if serve.rotate_log(LOGDIR / "serve.log"):   # te groot geworden: het oude is nu serve.log.1
-        log = open(LOGDIR / "serve.log", "a", buffering=1)
-        os.dup2(log.fileno(), 1)
-        os.dup2(log.fileno(), 2)
+    if serve.rotate_log(LOGDIR / "serve.log"):   # te groot of te oud: het oude is nu serve.log.1
+        reopen_log()
+    threading.Thread(target=keep_log, name="log", daemon=True).start()
     code = f"code-update {CODE_VERSION}" if CODE_VERSION else "code uit de bundel"
     cache = "MallocLargeCache=" + os.environ.get("MallocLargeCache", "standaard")   # uit LSEnvironment in Info.plist
     print(f"\n===== app gestart {datetime.now():%Y-%m-%d %H:%M:%S} vanaf {RES.parent.parent} ({code}, {cache}) =====")

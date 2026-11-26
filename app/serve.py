@@ -394,14 +394,30 @@ def valid_asset_id(asset_id):
     return bool(ASSET_ID_RE.fullmatch(asset_id or ""))
 
 
-def rotate_log(path, limit=5 * 1024 * 1024):
-    """Een log boven de grens wordt <naam>.1 (een vorige .1 verdwijnt); daarna begint een leeg log. Geeft True
-    als dat gebeurd is: wie het log open heeft, moet het dan opnieuw openen. Het log groeide anders eindeloos,
-    met de titels van alle assets erin."""
+LOG_LIMIT = 2 * 1024 * 1024    # een grote archiefronde schrijft tientallen MB
+LOG_DAYS = 7                   # bestandsnamen staan er zo hooguit twee weken in (log en .1)
+
+
+def rotate_log(path, limit=LOG_LIMIT, days=LOG_DAYS, now=None, born=None):
+    """Een log boven de grens, of dat langer dan `days` loopt, wordt <naam>.1 (een vorige .1 verdwijnt); daarna
+    begint een leeg log. Een .1 ouder dan `days` gaat weg. Geeft True als het log zelf verplaatst is: wie het open
+    heeft, moet het dan opnieuw openen. Bij het starten en elk uur (app_main.keep_log). Gemeten 26 november: 120 KB
+    in 12 dagen, dus de tijd is de grens die telt, niet de grootte. `born`: wanneer dit log begon (tests);
+    anders de aanmaaktijd van het bestand."""
+    now = time.time() if now is None else now
+    old = path.with_name(path.name + ".1")
     try:
-        if path.stat().st_size <= limit:
+        if now - old.stat().st_mtime > days * 86400:
+            old.unlink()
+    except OSError:
+        pass
+    try:
+        info = path.stat()
+        if born is None:
+            born = getattr(info, "st_birthtime", info.st_mtime)
+        if info.st_size == 0 or (info.st_size <= limit and now - born <= days * 86400):
             return False
-        os.replace(path, path.with_name(path.name + ".1"))
+        os.replace(path, old)
         return True
     except OSError:
         return False
@@ -677,18 +693,53 @@ def clear_finished():
     save_jobs()
 
 
-def remove_jobs(number, everything=False):
+wipe_offers = {}      # kenmerk -> (paden, tijd): wat Toch wissen mag wissen (stap 6f)
+wipe_lock = threading.Lock()
+WIPE_SECONDS = 600
+
+
+def wipe_beside(token):
+    """Toch wissen: de bestanden van één eerdere vraag, één keer, binnen tien minuten. Het venster stuurt alleen het
+    kenmerk, nooit een pad."""
+    with wipe_lock:
+        offer = wipe_offers.pop(token or "", None)
+    if offer is None or time.time() - offer[1] > WIPE_SECONDS:
+        return {"ok": False, "error": transcribe.L("Dat kan niet meer: kies opnieuw Verwijder ook van deze Mac.",
+                                                   "That is no longer possible: choose Also remove from this Mac again.")}
+    result = local_files.wipe(offer[0])
+    print(f"[{datetime.now():%H:%M:%S}] naast de media definitief gewist: {len(result['wiped'])}"
+          + "".join(f", {name} blijft staan ({why})" for name, why in result["kept"]))
+    return {"ok": True, **result}
+
+
+def remove_jobs(number, everything=False, sidecars=False):
     """Eén regel uit de lijst halen (✕, ⌫ of rechtsklik). Met everything ook de andere afgeronde regels van
-    hetzelfde item en alles wat de app daarvan op deze Mac bewaart (refine.forget_item). Een opdracht die wacht
-    of loopt blijft staan. Geeft {"ok", "removed": aantal regels, "files": wat er van de Mac weg is}."""
+    hetzelfde item en alles wat de app daarvan op deze Mac bewaart (refine.forget_item). Met sidecars (stap 6f, een
+    lokaal bestand) ook het transcript en de ondertitels naast de media, naar de prullenmand
+    (local_files.remove_written). Een opdracht die wacht of loopt blijft staan.
+    Geeft {"ok", "removed": aantal regels, "files": wat er van de Mac weg is, "trashed", "kept"}."""
     gone, item, error = jobs.remove(number, everything)
     if error:
         return {"ok": False, "error": error}
     save_jobs()
+    beside = {"trashed": [], "kept": []}
+    if everything and sidecars and item and items.source(item) == local_files.NAME:
+        beside = local_files.remove_written(items.key(item), refine.subtitle_paths(item))
+        paths = beside.pop("wipe")
+        if paths:   # geen prullenmand: het venster biedt Toch wissen, met dit kenmerk in plaats van de paden
+            token = secrets.token_hex(12)
+            with wipe_lock:
+                for old in [t for t, (_, at) in wipe_offers.items() if time.time() - at > WIPE_SECONDS]:
+                    wipe_offers.pop(old)
+                wipe_offers[token] = (paths, time.time())
+            beside["wipe"] = {"token": token, "names": [Path(p).name for p in paths]}
+        if beside["trashed"] or beside["kept"]:
+            print(f"[{datetime.now():%H:%M:%S}] naast de media: {len(beside['trashed'])} naar de prullenmand"
+                  + "".join(f", {name} blijft staan ({why})" for name, why in beside["kept"]))
     files = refine.forget_item(item) if everything and item else []
     if files:
         print(f"[{datetime.now():%H:%M:%S}] van deze Mac verwijderd: {len(files)} bestand(en) van één item")
-    return {"ok": True, "removed": len(gone), "files": files}
+    return {"ok": True, "removed": len(gone), "files": files, **beside}
 
 
 def add_failed(title, message):
@@ -1861,7 +1912,13 @@ def _jobs_remove(h, r):
         number = int(r.first("n"))
     except ValueError:
         return h.reply_json({"ok": False, "error": "n"})
-    return h.reply_json(remove_jobs(number, everything=r.first("all") == "1"))
+    return h.reply_json(remove_jobs(number, everything=r.first("all") == "1", sidecars=r.first("beside") == "1"))
+
+
+@route("/local/wipe", protected=True)
+def _local_wipe(h, r):
+    # Toch wissen: na een tweede bevestiging, alleen met het kenmerk van remove_jobs.
+    return h.reply_json(wipe_beside(r.first("token")))
 
 
 @route("/integrations/remove", protected=True)

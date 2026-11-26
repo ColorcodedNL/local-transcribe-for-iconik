@@ -8,6 +8,7 @@ Vraagt ffmpeg en ffprobe op het pad (voor Refine).
 import argparse
 import json
 import os
+import time
 import subprocess
 import sys
 import tempfile
@@ -332,6 +333,80 @@ check("toevoegen: de kopie wacht wel op zijn transcript", str(third) in local_fi
 job = serve.jobs.find(serve.jobs.next_number() - 1)
 check("toevoegen: de opdracht heeft het item en de bestandsnaam", job.item == f"local:{other_key}" and job.title == "ander.mov"
       and job.asset_id == "" and serve.work.qsize() == before + 1)
+
+# --- Ook het transcript naast de media weghalen (stap 6f): alleen eigen, onveranderd, naar de prullenmand ---
+import subtitles  # noqa: E402
+
+gone_dir = tmp / "weg"
+gone_dir.mkdir()
+bin_ = tmp / "prullenmand"
+bin_.mkdir()
+refused = set()
+
+
+def fake_trash(path):
+    if Path(path).name in refused:
+        return local_files.system.NO_TRASH
+    os.replace(path, bin_ / Path(path).name)
+
+
+local_files.system.trash = fake_trash
+clip = gone_dir / "weg.mov"
+clip.write_bytes(os.urandom(3500))
+clip_key = local_files.fingerprint(clip)
+local_files.remember(clip)
+ours = gone_dir / "weg.transcript.json"
+ours.write_text("{}")
+subtitles.record(ours, ours.read_bytes(), base.SIDECARS_FILE)
+srt, vtt, odd = gone_dir / "weg.srt", gone_dir / "weg.vtt", gone_dir / "weg.mov.transcript.json"
+srt.write_text("1"); subtitles.record(srt, srt.read_bytes(), base.SIDECARS_FILE)
+vtt.write_text("WEBVTT"); subtitles.record(vtt, vtt.read_bytes(), base.SIDECARS_FILE)
+vtt.write_text("WEBVTT veranderd")
+odd.write_text("{}")   # niet door de app geschreven
+result = local_files.remove_written(clip_key, [srt, vtt])
+check("naast de media: eigen en onveranderd gaat naar de prullenmand", sorted(result["trashed"]) == ["weg.srt", "weg.transcript.json"]
+      and (bin_ / "weg.transcript.json").is_file() and not ours.exists(), result)
+check("naast de media: veranderd of niet van de app blijft staan", vtt.is_file() and odd.is_file()
+      and sorted(n for n, _ in result["kept"]) == ["weg.mov.transcript.json", "weg.vtt"], result)
+check("naast de media: wat weg is, staat niet meer in sidecars.json", not subtitles.unchanged(bin_ / "weg.srt", base.SIDECARS_FILE)
+      and str(srt) not in json.loads(base.SIDECARS_FILE.read_text()))
+check("naast de media: het mediabestand blijft altijd staan", clip.is_file())
+ours.write_text("{}")
+subtitles.record(ours, ours.read_bytes(), base.SIDECARS_FILE)
+refused.add("weg.transcript.json")
+result = local_files.remove_written(clip_key)
+check("naast de media: lukt de prullenmand niet, dan blijft het staan (nooit definitief)", ours.is_file()
+      and result["kept"][0][0] == "weg.transcript.json" and "geen prullenmand" in result["kept"][0][1]
+      and "haal het zelf weg" in result["kept"][0][1] and subtitles.unchanged(ours, base.SIDECARS_FILE), result)
+settings.put("files.watched", {str(gone_dir): {"subfolders": True}})
+refused.clear()
+local_files.remove_written(clip_key)
+check("naast de media: in een gevolgde map wordt hij daarna niet vanzelf opnieuw gedaan", local_files.skipped(clip))
+settings.put("files.watched", {})
+
+# --- Toch wissen (geen prullenmand): definitief, alleen met het kenmerk, één keer, alleen onveranderd ---
+ours.write_text("{}")
+subtitles.record(ours, ours.read_bytes(), base.SIDECARS_FILE)
+refused.add("weg.transcript.json")
+result = local_files.remove_written(clip_key)
+check("geen prullenmand: de paden komen terug voor Toch wissen", result["wipe"] == [str(ours)] and ours.is_file(), result)
+token = "kenmerk-1"
+serve.wipe_offers[token] = (result["wipe"], time.time())
+done = serve.wipe_beside(token)
+check("Toch wissen: definitief weg en niet meer in sidecars.json", done["ok"] and done["wiped"] == ["weg.transcript.json"]
+      and not ours.exists() and str(ours) not in json.loads(base.SIDECARS_FILE.read_text()), done)
+check("Toch wissen: hetzelfde kenmerk werkt maar één keer", serve.wipe_beside(token)["ok"] is False)
+check("Toch wissen: zonder geldig kenmerk niets", serve.wipe_beside("")["ok"] is False and serve.wipe_beside(None)["ok"] is False)
+ours.write_text("{}")
+subtitles.record(ours, ours.read_bytes(), base.SIDECARS_FILE)
+ours.write_text('{"iemand": "veranderde het"}')
+serve.wipe_offers["kenmerk-2"] = ([str(ours)], time.time())
+done = serve.wipe_beside("kenmerk-2")
+check("Toch wissen: wat daarna veranderde, blijft staan", ours.is_file() and done["kept"][0][0] == "weg.transcript.json", done)
+serve.wipe_offers["kenmerk-3"] = ([str(ours)], time.time() - serve.WIPE_SECONDS - 1)
+check("Toch wissen: na tien minuten niet meer", serve.wipe_beside("kenmerk-3")["ok"] is False and ours.is_file())
+check("Toch wissen: de route krijgt alleen een kenmerk, nooit een pad", 'r.first("token")' in Path("app/serve.py").read_text()
+      and "/local/wipe?token=" in Path("app/ui.html").read_text())
 
 print("ALLES OK" if not fails else f"{fails} FOUT")
 sys.exit(1 if fails else 0)

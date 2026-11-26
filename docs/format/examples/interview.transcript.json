@@ -1,0 +1,118 @@
+{
+ "format": "local-transcribe",
+ "version": 1,
+ "language": "nl",
+ "engine": {
+  "type": "EXTERNAL",
+  "name": "mlx-whisper",
+  "model": "mlx-community/whisper-large-v3-mlx",
+  "revision": "49e6aa286ad60c14352c404340ded53710378a11",
+  "version": "0.4.1"
+ },
+ "source": {
+  "connector": "local",
+  "fingerprint": "3f2a9c0d41e87b6a5c1d0e9f8a7b6c5d",
+  "media": "interview.mov",
+  "title": "interview.mov"
+ },
+ "speakers": [
+  {
+   "id": "1",
+   "name": "Spreker 1"
+  },
+  {
+   "id": "2",
+   "name": "Interviewer"
+  }
+ ],
+ "tracks": [
+  {
+   "number": 1,
+   "label": "zender",
+   "used": true,
+   "db": -23.4
+  },
+  {
+   "number": 2,
+   "label": "zelfde signaal als spoor 1",
+   "used": false,
+   "db": -23.6
+  },
+  {
+   "number": 3,
+   "label": "tijdcode",
+   "used": false,
+   "db": -12.0
+  }
+ ],
+ "segments": [
+  {
+   "start": 1200,
+   "end": 3480,
+   "speaker": "2",
+   "words": [
+    [
+     "Hoe",
+     1200,
+     1420,
+     0.98
+    ],
+    [
+     "begon",
+     1420,
+     1800,
+     0.97
+    ],
+    [
+     "het?",
+     1800,
+     2240,
+     0.95
+    ]
+   ]
+  },
+  {
+   "start": 3900,
+   "end": 7350,
+   "speaker": "1",
+   "words": [
+    [
+     "Met",
+     3900,
+     4120,
+     0.99
+    ],
+    [
+     "een",
+     4120,
+     4260,
+     0.99
+    ],
+    [
+     "oude",
+     4260,
+     4600,
+     0.96
+    ],
+    [
+     "camera",
+     4600,
+     5150,
+     0.93
+    ],
+    [
+     "op",
+     5150,
+     5300,
+     0.97
+    ],
+    [
+     "zolder.",
+     5300,
+     5900,
+     0.91
+    ]
+   ]
+  }
+ ]
+}

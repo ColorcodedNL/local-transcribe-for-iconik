@@ -223,6 +223,64 @@ def skipped(path):
         return False
 
 
+def remove_written(key, others=()):
+    """Ook het transcript naast de media weghalen (stap 6f, het vinkje bij Ook van deze Mac verwijderen): voor elke
+    plek waar de app dit bestand zag het transcript, plus `others` (de ondertitelbestanden van Refine of de
+    automatische ronde). Alleen wat de app zelf schreef en sindsdien niet veranderde (de hash in sidecars.json), en
+    alleen naar de prullenmand: lukt dat niet, dan blijft het staan. Een bestand in een gevolgde map wordt daarna niet
+    vanzelf opnieuw gedaan. Geeft {"trashed": [namen], "kept": [[naam, reden]], "wipe": [paden]}: wipe zijn de
+    bestanden die alleen bleven staan omdat de schijf geen prullenmand heeft (de knop Toch wissen, wipe())."""
+    candidates = []
+    for text in known(key).get("paths") or []:
+        media = Path(text)
+        directory = directory_for(media)
+        candidates += [directory / (media.stem + SUFFIX), directory / (media.name + SUFFIX)]
+    candidates += [Path(p) for p in others]
+    trashed, kept, no_trash = [], [], []
+    for path in dict.fromkeys(candidates):
+        if not path.is_file():
+            continue
+        if not subtitles.unchanged(path, base.SIDECARS_FILE):
+            kept.append([path.name, L("niet door de app geschreven, of daarna veranderd", "not written by the app, or changed since")])
+            continue
+        reason = system.trash(path)
+        if reason == system.NO_TRASH:
+            no_trash.append(str(path))
+            reason = L("deze schijf heeft geen prullenmand, haal het zelf weg als het niet meer nodig is",
+                       "this disk has no Trash, remove it yourself if it is no longer needed")
+        if reason:
+            kept.append([path.name, reason])
+            continue
+        subtitles.forget([path], base.SIDECARS_FILE)
+        trashed.append(path.name)
+    for text in known(key).get("paths") or []:
+        if scope_of(text) in settings.get("files.watched"):
+            skip(text)
+    return {"trashed": trashed, "kept": kept, "wipe": no_trash}
+
+
+def wipe(paths):
+    """Toch wissen (stap 6f): definitief, voor bestanden die naar de prullenmand moesten op een schijf zonder. Pas na
+    een tweede bevestiging in het venster, en opnieuw alleen wat de app schreef en sindsdien niet veranderde.
+    Geeft {"wiped": [namen], "kept": [[naam, reden]]}."""
+    wiped, kept = [], []
+    for text in paths:
+        path = Path(text)
+        if not path.is_file():
+            continue
+        if not subtitles.unchanged(path, base.SIDECARS_FILE):
+            kept.append([path.name, L("daarna veranderd", "changed since")])
+            continue
+        try:
+            path.unlink()
+        except OSError as error:
+            kept.append([path.name, error.strerror or str(error)])
+            continue
+        subtitles.forget([path], base.SIDECARS_FILE)
+        wiped.append(path.name)
+    return {"wiped": wiped, "kept": kept}
+
+
 def forget(key):
     """Haalt een vingerafdruk uit local-files.json (Ook van deze Mac weghalen). True als hij er was."""
     with _lock:

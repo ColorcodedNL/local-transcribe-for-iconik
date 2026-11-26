@@ -62,7 +62,7 @@ EXPECTED = {
     "/worker": (P, True, True, "window"), "/login-item": (P, True, True, "window"),
     "/asset/open": (P, True, True, "window"), "/actions/install": (P, True, True, "window"),
     "/log/clear": (P, True, True, "window"), "/jobs/remove": (P, True, True, "window"), "/local/add": (P, True, True, "window"),
-    "/local/choose": (P, True, True, "window"), "/local/reveal": (P, True, True, "window"), "/folders/choose": (P, True, True, "window"),
+    "/local/choose": (P, True, True, "window"), "/local/reveal": (P, True, True, "window"), "/local/wipe": (P, True, True, "window"), "/folders/choose": (P, True, True, "window"),
     "/folders/watch": (P, True, True, "window"), "/files/folder": (P, True, True, "window"),
     "/local/place/choose": (P, True, True, "window"), "/local/place/cancel": (P, True, True, "window"),
     "/local/place/forget": (P, True, True, "window"),

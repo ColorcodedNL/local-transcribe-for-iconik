@@ -13,7 +13,7 @@ _current = importlib.import_module(IMPLEMENTATIONS.get(sys.platform, "platform_m
 NAMES = ["NAME", "support_dir", "logs_dir", "process_footprint",
          "PRESSURE_NORMAL", "on_mains_power", "memory", "CpuTicks", "gpu_percent",
          "ask_folder", "find_moved_mount", "mount_reachable", "volume_place",
-         "keep_awake_command", "open_url", "reveal", "login_item_on", "set_login_item", "computer_name"]
+         "keep_awake_command", "open_url", "reveal", "trash", "NO_TRASH", "login_item_on", "set_login_item", "computer_name"]
 
 NAME = _current.NAME
 support_dir, logs_dir = _current.support_dir, _current.logs_dir
@@ -23,5 +23,6 @@ CpuTicks, gpu_percent = _current.CpuTicks, _current.gpu_percent
 ask_folder, find_moved_mount, mount_reachable = _current.ask_folder, _current.find_moved_mount, _current.mount_reachable
 volume_place = _current.volume_place
 keep_awake_command, open_url, reveal = _current.keep_awake_command, _current.open_url, _current.reveal
+trash, NO_TRASH = _current.trash, _current.NO_TRASH
 login_item_on, set_login_item = _current.login_item_on, _current.set_login_item
 computer_name = _current.computer_name

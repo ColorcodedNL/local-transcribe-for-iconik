@@ -227,6 +227,26 @@ def reveal(path):
     subprocess.Popen(["open", "-R", str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+NO_TRASH = "no-trash"   # wat trash geeft voor een schijf zonder prullenmand; de tekst maakt local_files
+
+
+def trash(path):
+    """Zet een bestand in de prullenmand (stap 6f). Geeft None, of waarom het niet lukte; het bestand blijft dan
+    staan. Niet elke schijf heeft een prullenmand: een netwerkschijf over SMB niet (gezien 26 november, NSFeatureUnsupportedError,
+    met een Engelse tekst van macOS). Dan nooit alsnog definitief wissen."""
+    try:
+        from Foundation import NSURL, NSFileManager
+    except ImportError:
+        return NO_TRASH
+    ok, _, error = NSFileManager.defaultManager().trashItemAtURL_resultingItemURL_error_(
+        NSURL.fileURLWithPath_(str(path)), None, None)
+    if ok:
+        return None
+    if error is not None and error.code() == 3328:   # NSFeatureUnsupportedError: dit volume heeft geen prullenmand
+        return NO_TRASH
+    return str(error.localizedDescription()) if error is not None else "?"
+
+
 def open_url(url):
     """Opent een link in de gewone browser, niet in het venster van de app."""
     subprocess.Popen(["open", url])

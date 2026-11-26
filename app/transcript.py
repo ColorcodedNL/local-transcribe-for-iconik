@@ -7,7 +7,8 @@ komen er andere bij, zoals een bestand naast de media. De editor (Refine) leest 
 Tijden zijn overal hele milliseconden vanaf het begin van de media, ook van de woorden (in Iconik zijn
 woordtijden relatief aan het segment; de omzetting regelt dat). Alleen de standaardbibliotheek.
 
-Bestandsformaat: JSON met "format": "local-transcribe" en "version": 1 (zie to_dict / from_dict).
+Bestandsformaat: JSON met "format": "local-transcribe" en "version": 1 (zie to_dict / from_dict). Openbaar
+beschreven in docs/format/ (uitleg, JSON Schema, voorbeelden); verander die mee, tests/test_format.py controleert het.
 """
 from dataclasses import dataclass, field
 

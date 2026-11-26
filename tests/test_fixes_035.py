@@ -339,6 +339,23 @@ check("log boven de grens wordt .1", serve.rotate_log(log, limit=100) is True an
 log.write_text("z" * 200)
 check("een vorige .1 wordt vervangen", serve.rotate_log(log, limit=100) is True and (tmp / "serve.log.1").read_text() == "z" * 200)
 check("geen log: niets te doen", serve.rotate_log(tmp / "bestaat-niet.log") is False)
+# Stap 6f: ook op leeftijd, en een oude .1 gaat weg.
+import os  # noqa: E402
+import time as _time  # noqa: E402
+now = _time.time()
+(tmp / "serve.log.1").unlink(missing_ok=True)
+log.write_text("jong")
+check("log: jonger dan een week en klein blijft staan", serve.rotate_log(log, now=now, born=now - 6 * 86400) is False and log.exists())
+check("log: ouder dan een week wordt .1, ook als hij klein is", serve.rotate_log(log, now=now, born=now - 8 * 86400) is True
+      and (tmp / "serve.log.1").read_text() == "jong")
+log.write_text("")
+check("log: een leeg log blijft staan", serve.rotate_log(log, now=now, born=now - 30 * 86400) is False)
+os.utime(tmp / "serve.log.1", (now - 8 * 86400, now - 8 * 86400))
+serve.rotate_log(log, now=now, born=now)
+check("log: een .1 ouder dan een week gaat weg", not (tmp / "serve.log.1").exists())
+check("log: de grens is 2 MB en een week", serve.LOG_LIMIT == 2 * 1024 * 1024 and serve.LOG_DAYS == 7)
+check("log: ook elk uur, niet alleen bij het starten", "def keep_log" in Path("app/app_main.py").read_text()
+      and "target=keep_log" in Path("app/app_main.py").read_text())
 
 import re as _re
 project = _re.search(r'^version = "([^"]+)"', Path("pyproject.toml").read_text(), _re.M).group(1)
