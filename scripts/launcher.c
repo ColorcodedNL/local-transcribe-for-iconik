@@ -1,4 +1,4 @@
-// Hoofdprogramma van Local Transcribe for Iconik (Contents/MacOS).
+// Hoofdprogramma van Local Transcribe (Contents/MacOS).
 // Laadt de meegeleverde Python in dit proces en start Resources/app/main.py, zodat
 // Dock en Activity Monitor de naam en het icoon van de app tonen in plaats van python3.12.
 #include <dlfcn.h>

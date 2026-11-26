@@ -1,4 +1,4 @@
-# Working on Local Transcribe for Iconik
+# Working on Local Transcribe
 
 Notes for an AI coding session in this repo. The README says what the app does; `docs/RELEASING.md` is the release procedure; `docs/SBOM.md` lists what ships; `docs/format/` is the public transcript format.
 
@@ -26,6 +26,7 @@ Notes for an AI coding session in this repo. The README says what the app does; 
 - Code in a code update also runs on apps with an older shell. Reach for something new in `app_shell` with `getattr` and keep a fallback.
 - Every route is one entry in `ROUTES` in `serve.py` (the `@route` decorator), with its access as properties: `session` (cookie of the app's own window, or the listener key; off only for what comes from outside), `protected` (changes something: POST only, with the `X-Local-Transcribe` header) and `kind`. `/api/v1/` is reserved for a documented API. A new route also goes into the expected table in `tests/test_routes.py`. New window behaviour gets a step in `tests/test_e2e.py`, or in `tests/test_refine_window.py` for Refine.
 - Never overwrite a transcript from another source or a correction made in Refine.
+- Two names: what people see is `DISPLAY_NAME` ("Local Transcribe": the window, the bundle, the dmg); `INTERNAL_NAME` ("Local Transcribe for Iconik") names Application Support, Logs and the keychain and never changes. Names in the customer's Iconik (the `iconiktranscribe://` link type, the queue fields and view, the bundle ID) are keys and never follow the app name. `tests/test_names.py` checks the build scripts against this.
 - The transcript format `local-transcribe` is a public contract (`docs/format/`: README, JSON Schema, examples). A new optional field raises `minor`, a changed or removed field raises `version`; readers ignore unknown fields and refuse a higher major version. Change the schema, the examples and `transcript.py` together; `tests/test_format.py` checks they agree, also the fingerprint code in the README.
 - Files next to the media are only removed on request (the checkbox under "Also remove from this Mac…", `local_files.remove_written`): only what `sidecars.json` says the app wrote and that did not change, and only to the Trash (`system.trash`). When the disk has no Trash (a network share over SMB), the file stays and the window offers Delete anyway…: only after a second confirmation, through a one-time token (`serve.wipe_beside`, `/local/wipe`), never a path from the window, and again only what did not change.
 - `serve.log` turns into `serve.log.1` after 2 MB or 7 days, checked at start and every hour (`serve.rotate_log`, `app_main.keep_log`); a `.1` older than 7 days is removed.
@@ -40,7 +41,7 @@ Notes for an AI coding session in this repo. The README says what the app does; 
 
 - All: `bash scripts/run_tests.sh` (needs `uv`; the browser test needs Chromium once: `uv run --no-project --with playwright playwright install chromium`, or `LT_CHROMIUM=/path/to/chrome`).
 - One: `uv run --no-project --with pynacl --with requests --with numpy --with huggingface_hub python -B tests/test_worker.py`
-- The tests replace MLX, torch and the keychain, so they run on Linux too. What they cannot show: the real window (WebKit), the menu bar, the build scripts and a real job. Those need a build on a Mac: `bash scripts/build_bundle.sh && open "build/Local Transcribe for Iconik.app"`, log in `~/Library/Logs/Local Transcribe for Iconik/serve.log`.
+- The tests replace MLX, torch and the keychain, so they run on Linux too. What they cannot show: the real window (WebKit), the menu bar, the build scripts and a real job. Those need a build on a Mac: `bash scripts/build_bundle.sh && open "build/Local Transcribe.app"`, log in `~/Library/Logs/Local Transcribe for Iconik/serve.log`.
 
 ## Working through a remote session
 

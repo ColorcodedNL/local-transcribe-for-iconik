@@ -29,13 +29,7 @@ BASE = f"http://localhost:{PORT}"
 
 def prepare():
     """Mappen, zoekpad en log, voordat er iets anders geladen wordt."""
-    try:
-        old = SUPPORT.with_name("Iconik Transcribe")  # naam tot oktober 2026
-        if old.is_dir() and not SUPPORT.exists():
-            old.rename(SUPPORT)
-    except OSError:
-        pass
-    SUPPORT.mkdir(parents=True, exist_ok=True)
+    SUPPORT.mkdir(parents=True, exist_ok=True)   # de verhuizing van "Iconik Transcribe" (vóór 0.2.0) is weg sinds stap 6g
     LOGDIR.mkdir(parents=True, exist_ok=True)
     os.environ["PATH"] = f"{RES / 'bin'}:/usr/bin:/bin:/usr/sbin:/sbin"
     os.chdir(SUPPORT)
@@ -669,6 +663,44 @@ def fix_app_menu():
         print(f"About: {error}")
 
 
+OLD_BUNDLE = "Local Transcribe for Iconik.app"   # de naam van de bundel tot stap 6g
+OLD_BUNDLE_KEPT = SUPPORT / "old-app-kept"       # iemand zei Laat staan: niet elke start opnieuw vragen
+
+
+def offer_old_bundle():
+    """Na de nieuwe naam (stap 6g) staat de oude app nog naast de nieuwe (in Programma's na het slepen uit de dmg).
+    Eén keer vragen of hij naar de prullenmand mag; instellingen en inlog staan los van de app en blijven."""
+    here = serve.bundle_path()
+    if here is None:
+        return
+    old = here.with_name(OLD_BUNDLE)
+    if old == here or not old.is_dir() or OLD_BUNDLE_KEPT.exists():
+        return
+    import AppKit
+    alert = AppKit.NSAlert.alloc().init()
+    alert.setMessageText_(transcribe.L("De oude versie staat er nog", "The old version is still there"))
+    alert.setInformativeText_(transcribe.L(
+        f"{OLD_BUNDLE} staat nog in {old.parent.name}. De app heet nu {transcribe.DISPLAY_NAME}. De oude versie naar de "
+        "prullenmand? Je instellingen, je inlog en je transcripten blijven: die staan los van de app.",
+        f"{OLD_BUNDLE} is still in {old.parent.name}. The app is now called {transcribe.DISPLAY_NAME}. Move the old "
+        "version to the Trash? Your settings, your login and your transcripts stay: they are kept apart from the app."))
+    alert.addButtonWithTitle_(transcribe.L("Naar de prullenmand", "Move to Trash"))
+    alert.addButtonWithTitle_(transcribe.L("Laat staan", "Keep it"))
+    AppKit.NSApp.activateIgnoringOtherApps_(True)
+    if alert.runModal() != AppKit.NSAlertFirstButtonReturn:
+        OLD_BUNDLE_KEPT.touch()
+        print("Oude app: blijft staan op verzoek.")
+        return
+    reason = serve.system.trash(old)
+    print(f"Oude app naar de prullenmand: {'gelukt' if not reason else reason}")
+    if reason:
+        alert = AppKit.NSAlert.alloc().init()
+        alert.setMessageText_(transcribe.L("Dat lukte niet", "That did not work"))
+        alert.setInformativeText_(transcribe.L(f"Sleep {OLD_BUNDLE} zelf naar de prullenmand.",
+                                               f"Drag {OLD_BUNDLE} to the Trash yourself."))
+        alert.runModal()
+
+
 def mark_started():
     global hidden
     try:
@@ -683,6 +715,13 @@ def mark_started():
     serve.storage_hook = on_storage   # pas nu: het venster en de hoofdlus zijn er
     while serve.storage_pending:
         on_storage(*serve.storage_pending.pop(0))
+    if serve.login_item_on():   # het pad naar de app bijwerken: na de nieuwe naam (stap 6g) wees het naar de oude bundel
+        serve.set_login_item(True)
+    try:
+        from PyObjCTools import AppHelper
+        AppHelper.callAfter(offer_old_bundle)
+    except Exception as error:
+        print(f"Oude app: {error}")
     if serve.LOGIN_MARKER.exists():  # gestart door inloggen: met opdrachten op afstand aan meteen naar de menubalk
         serve.LOGIN_MARKER.unlink(missing_ok=True)
         if serve.worker_enabled() and window is not None:

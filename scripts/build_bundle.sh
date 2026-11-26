@@ -3,7 +3,7 @@
 # Vereist: build/python met alle packages (zie stappen in de note).
 set -e
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
-OUT="$HERE/build/Local Transcribe for Iconik.app"
+OUT="$HERE/build/Local Transcribe.app"   # tot stap 6g: Local Transcribe for Iconik.app
 PLIST="$OUT/Contents/Info.plist"
 RES="$OUT/Contents/Resources"
 
@@ -26,8 +26,8 @@ cat > "$PLIST" <<INFO
 <dict>
   <key>CFBundleExecutable</key><string>LocalTranscribe</string>
   <key>CFBundleIdentifier</key><string>nl.colorcoded.local-transcribe</string>
-  <key>CFBundleName</key><string>Local Transcribe for Iconik</string>
-  <key>CFBundleDisplayName</key><string>Local Transcribe for Iconik</string>
+  <key>CFBundleName</key><string>Local Transcribe</string>
+  <key>CFBundleDisplayName</key><string>Local Transcribe</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleIconFile</key><string>LocalTranscribe</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
@@ -41,7 +41,7 @@ cat > "$PLIST" <<INFO
   <key>CFBundleURLTypes</key>
   <array>
     <dict>
-      <key>CFBundleURLName</key><string>Local Transcribe for Iconik</string>
+      <key>CFBundleURLName</key><string>Local Transcribe</string>
       <key>CFBundleURLSchemes</key><array><string>iconiktranscribe</string></array>
     </dict>
   </array>
@@ -111,7 +111,7 @@ sed -i '' "s|$HOME|/Users/build|g" "$PYLIB"/python3.12/_sysconfigdata*.py
 find "$RES" -type d -name __pycache__ -prune -exec rm -rf {} +
 
 # Bytecode vooraf maken, zodat de eerste start niet traag is en de bundel na ondertekenen niet meer verandert
-INSTALLED_RES="/Applications/Local Transcribe for Iconik.app/Contents/Resources"
+INSTALLED_RES="/Applications/Local Transcribe.app/Contents/Resources"
 # -B: de Python die dit draait, schrijft zelf geen bytecode voor wat hij daarbij laadt (die kreeg anders het
 # echte pad van de bouwmap, en compileall sloeg die bestanden daarna over). -f: alles opnieuw, wat er ook staat.
 "$RES/python/bin/python3.12" -B -m compileall -q -f -j 0 -s "$RES" -p "$INSTALLED_RES" "$RES/python/lib" "$RES/app" || true

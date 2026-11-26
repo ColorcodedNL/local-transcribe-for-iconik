@@ -14,7 +14,7 @@ from pathlib import Path
 import requests
 
 from base import (  # noqa: F401
-    KEYCHAIN_SERVICE, L, MEDIA_EXTENSIONS, NeedsFolder, OLD_APP_NAME, Problem, SIDECAR_EXTENSIONS, fail, load_config, print, update_config,
+    KEYCHAIN_SERVICE, L, MEDIA_EXTENSIONS, NeedsFolder, Problem, SIDECAR_EXTENSIONS, fail, load_config, print, update_config,
 )
 import keychain
 import settings
@@ -93,8 +93,6 @@ def _move_legacy(instance):
     """Verhuist de inlog van vóór stap 5 naar dit exemplaar. Geeft de inlog (tekst) of None."""
     import keyring
     raw = keyring.get_password(KEYCHAIN_SERVICE, LEGACY_ACCOUNT)
-    if not raw:
-        raw = keyring.get_password(OLD_APP_NAME, LEGACY_ACCOUNT)   # nog van voor de naamswijziging
     if raw:
         keychain.put(instance, LOGIN, raw)
         print("Inlog bij Iconik verhuisd naar een eigen item per koppeling.")
@@ -106,12 +104,11 @@ def _move_legacy(instance):
 def _delete_legacy():
     """Haalt de oude items weg (als ze er nog zijn). Een weigering van macOS alleen in het log."""
     import keyring
-    for service in (KEYCHAIN_SERVICE, OLD_APP_NAME):
-        try:
-            keyring.delete_password(service, LEGACY_ACCOUNT)
-        except Exception as error:
-            if type(error).__name__ != "PasswordDeleteError":   # stond er niet: goed
-                print(f"Oude inlog weghalen uit de sleutelhanger lukte niet ({type(error).__name__}); bij uitloggen opnieuw.")
+    try:
+        keyring.delete_password(KEYCHAIN_SERVICE, LEGACY_ACCOUNT)
+    except Exception as error:
+        if type(error).__name__ != "PasswordDeleteError":   # stond er niet: goed
+            print(f"Oude inlog weghalen uit de sleutelhanger lukte niet ({type(error).__name__}); bij uitloggen opnieuw.")
 
 
 # Bij het opstarten vragen het venster en de achtergrondtaak tegelijk om de inlog; keychain.py laat de tweede op de

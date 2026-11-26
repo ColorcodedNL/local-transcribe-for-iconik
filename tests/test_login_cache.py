@@ -53,7 +53,7 @@ def check(name, cond, detail=""):
 
 SERVICE = transcribe.KEYCHAIN_SERVICE
 OLD = (SERVICE, "login")                        # het item van vóór stap 5
-OLDER = (transcribe.OLD_APP_NAME, "login")      # nog van voor de naamswijziging
+OLDER = ("Iconik Transcribe", "login")          # de naam van vóór 0.2.0: sinds stap 6g niet meer verhuisd
 
 
 def fresh_config():
@@ -87,8 +87,9 @@ check("daarna uit het geheugen: geen enkele keer de sleutelhanger", reads == [],
 
 inst = fresh_config()
 store[OLDER] = json.dumps(login("NOG-OUDER"))
-check("verhuizen: ook van de oude app-naam", transcribe.load_login()["access_token"] == "NOG-OUDER"
-      and OLDER not in store and (SERVICE, f"{inst}:login") in store)
+check("de app-naam van vóór 0.2.0 wordt niet meer verhuisd en niet aangeraakt (stap 6g)", transcribe.load_login() is None
+      and OLDER in store and OLDER not in reads)
+del store[OLDER]
 
 inst = fresh_config()
 check("niets om te verhuizen: geen inlog", transcribe.load_login() is None and transcribe.has_login() is False)

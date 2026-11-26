@@ -27,7 +27,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(Path.home() / ("Library/Caches" if sys.platform == "darwin" else ".cache") / "ms-playwright"))
 TMP = Path(tempfile.mkdtemp(prefix="lt-e2e-"))
 os.environ["HOME"] = str(TMP)
-FAKE_RES = TMP / "Local Transcribe for Iconik.app" / "Contents" / "Resources"
+FAKE_RES = TMP / "Local Transcribe.app" / "Contents" / "Resources"
 FAKE_RES.mkdir(parents=True)
 os.environ["LOCALTRANSCRIBE_RES"] = str(FAKE_RES)   # dan toont het venster ook "opstarten bij inloggen"
 

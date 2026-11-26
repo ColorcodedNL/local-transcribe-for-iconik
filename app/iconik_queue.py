@@ -25,8 +25,6 @@ VIEW = "Local Transcribe"
 # zijn de labels, in de taal die is gekozen (Voorkeuren, of door een beheerder in Iconik zelf).
 REQUESTED, BUSY, DONE, FAILED = "requested", "in_progress", "done", "failed"
 STATUSES = (REQUESTED, BUSY, DONE, FAILED)
-LEGACY = {"aangevraagd": REQUESTED, "bezig": BUSY, "klaar": DONE, "fout": FAILED}   # waarden tot 0.3.1
-LEGACY_VALUE = {new: old for old, new in LEGACY.items()}
 LABELS = {
     "nl": {FIELD: "Transcriptie", INFO: "Transcriptie, details",
            REQUESTED: "Aangevraagd", BUSY: "Bezig", DONE: "Klaar", FAILED: "Fout"},
@@ -68,11 +66,6 @@ def set_language(code):
 def tr(dutch, english):
     """Tekst voor het detailveld, in de taal van de app. Het terugleren herkent beide talen."""
     return dutch if language[0] == "nl" else english
-
-
-def norm(status):
-    """Statuswaarde van een oudere versie (aangevraagd, bezig, ...) naar de huidige."""
-    return LEGACY.get(status, status)
 
 
 class WorkerError(Exception):
@@ -268,7 +261,7 @@ class Queue:
 
     def setup(self, create=False, language="nl"):
         """Zoekt de view. Met `create` worden ontbrekende velden en de view aangemaakt (dat vraagt
-        beheerrechten in Iconik). Een veld met de Nederlandse waarden van 0.3.1 wordt omgezet."""
+        beheerrechten in Iconik). Een veld zonder de huidige waarden (zoals dat van 0.3.1) krijgt ze erbij."""
         labels = LABELS.get(language, LABELS["nl"])
         view = self._view()
         if create:
@@ -338,14 +331,12 @@ class Queue:
         return [asset_id for asset_id, _ in sorted(found.items(), key=lambda kv: kv[1], reverse=True)][:limit]
 
     def find(self, status, limit=5):
-        """Assets met deze status, ook met de Nederlandse waarde van 0.3.1."""
-        ids = []
-        for value in (status, LEGACY_VALUE[status]):
-            body = {"doc_types": ["assets"], "query": "",
-                    "filter": {"operator": "AND", "terms": [{"name": f"metadata.{FIELD}", "value": value}]}}
-            result = self.iconik.post(f"search/v1/search/?per_page={limit}", body)
-            ids += [o["id"] for o in result.get("objects", []) if o.get("id") and o["id"] not in ids]
-        return ids[:limit]
+        """Assets met deze status. De Nederlandse waarden van 0.3.1 (aangevraagd, bezig, ...) worden sinds stap 6g
+        niet meer gezocht: elke Mac van 0.3.2 of later zette het veld om."""
+        body = {"doc_types": ["assets"], "query": "",
+                "filter": {"operator": "AND", "terms": [{"name": f"metadata.{FIELD}", "value": status}]}}
+        result = self.iconik.post(f"search/v1/search/?per_page={limit}", body)
+        return [o["id"] for o in result.get("objects", []) if o.get("id")][:limit]
 
     def read(self, asset_id):
         """(status, details, wanneer de status gezet is). Een asset waarvan in deze view nog nooit iets is
@@ -362,7 +353,7 @@ class Queue:
             items = (values.get(name) or {}).get("field_values") or []
             return items[0].get("value") if items else None
         since = (values.get(FIELD) or {}).get("date_created")  # wanneer Iconik de status zette
-        return norm(first(FIELD)), first(INFO) or "", since
+        return first(FIELD), first(INFO) or "", since
 
     def write(self, asset_id, status=None, info=None):
         """`status` None laat de status staan, CLEAR maakt hem leeg."""

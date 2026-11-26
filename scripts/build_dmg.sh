@@ -1,12 +1,12 @@
 #!/bin/bash
-# Maakt dist/Local Transcribe for Iconik.dmg: de app, een snelkoppeling naar Programma's
+# Maakt dist/Local Transcribe.dmg: de app, een snelkoppeling naar Programma's
 # en de handleidingen (NL en EN). Draai eerst build_bundle.sh.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 # Eerst alle tests, ook de browsertest. Alleen bij nood overslaan met SKIP_TESTS=1.
 [ "${SKIP_TESTS:-}" = 1 ] || bash scripts/run_tests.sh || { echo "Niet gebouwd: tests mislukt"; exit 1; }
 
-NAME="Local Transcribe for Iconik"
+NAME="Local Transcribe"   # tot stap 6g: Local Transcribe for Iconik
 APP="build/$NAME.app"
 STAGE="build/dmg-stage"
 OUT="dist/$NAME.dmg"

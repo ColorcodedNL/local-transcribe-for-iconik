@@ -396,12 +396,9 @@ worker.Queue(stubborn).setup(create=True)
 check("  en een tweede keer opstarten schrijft niets meer", len(stubborn.puts) == before)
 
 fake, queue = ready()
-fake.values = {"oud": {worker.FIELD: "aangevraagd"}, "nieuw": {worker.FIELD: worker.REQUESTED}, "klaar": {worker.FIELD: "klaar"}}
-check("zoeken vindt ook de waarde van 0.3.1", sorted(queue.find(worker.REQUESTED)) == ["nieuw", "oud"])
-check("lezen zet de oude waarde om", queue.read("oud")[0] == worker.REQUESTED and queue.read("klaar")[0] == worker.DONE)
-check("claimen van een oude aanvraag schrijft de nieuwe waarde", queue.claim("oud", "testmac", sleep=nap) == 1
-      and fake.values["oud"][worker.FIELD] == worker.BUSY)
-fake.values["oud2"] = {worker.FIELD: "bezig", worker.INFO: "Bezig op oldmac sinds 10:00 (cccccc)"}
+fake.values = {"oud": {worker.FIELD: "aangevraagd"}, "nieuw": {worker.FIELD: worker.REQUESTED}}
+check("de Nederlandse waarden van 0.3.1 worden niet meer gezocht (stap 6g)", queue.find(worker.REQUESTED) == ["nieuw"])
+fake.values["oud2"] = {worker.FIELD: worker.BUSY, worker.INFO: "Bezig op oldmac sinds 10:00 (cccccc)"}
 fake.dates["oud2"] = (datetime.now(timezone.utc) - timedelta(hours=4)).isoformat()
 check("een oude bezig-regel van 4 uur gaat terug", "oud2" in queue.release_stale("testmac")
       and fake.values["oud2"][worker.FIELD] == worker.REQUESTED)

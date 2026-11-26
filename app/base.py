@@ -21,15 +21,8 @@ os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
 # Twee namen: de interne naam verandert nooit (support-map, logs, keychain), de weergavenaam mag later anders
 # worden zonder dat er gegevens of een inlog hoeven te verhuizen.
 INTERNAL_NAME = "Local Transcribe for Iconik"
-DISPLAY_NAME = "Local Transcribe"   # venster, meldingen, User-Agent; de bundelnaam volgt pas met een dmg
-OLD_APP_NAME = "Iconik Transcribe"  # de naam tot oktober 2026; voorkeuren en inlog verhuizen mee
-SUPPORT_DIR = system.support_dir(INTERNAL_NAME)
-try:
-    _old_dir = SUPPORT_DIR.with_name(OLD_APP_NAME)
-    if _old_dir.is_dir() and not SUPPORT_DIR.exists():
-        _old_dir.rename(SUPPORT_DIR)
-except OSError:
-    pass
+DISPLAY_NAME = "Local Transcribe"   # venster, meldingen, User-Agent, en sinds stap 6g ook de bundel (Local Transcribe.app)
+SUPPORT_DIR = system.support_dir(INTERNAL_NAME)   # de verhuizing van "Iconik Transcribe" (vóór 0.2.0) is weg sinds stap 6g
 KEYCHAIN_SERVICE = INTERNAL_NAME
 CONFIG_PATH = SUPPORT_DIR / "config.json"
 SIDECARS_FILE = SUPPORT_DIR / "sidecars.json"   # welke bestanden naast de media de app zelf schreef (pad en hash)

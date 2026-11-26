@@ -28,7 +28,7 @@ model = transcribe.ensure_model("mlx-community/whisper-large-v3-mlx")
 language, _ = transcribe.detect_language(samples, model)
 import mlx_whisper  # noqa: E402
 result = mlx_whisper.transcribe(samples, path_or_hf_repo=model, language=language, word_timestamps=True, verbose=None)
-for folder in (Path("/Applications/Local Transcribe for Iconik.app/Contents/Resources/models/speaker-diarization-community-1"),):
+for folder in (Path("/Applications/Local Transcribe.app/Contents/Resources/models/speaker-diarization-community-1"),):
     if (folder / "config.yaml").is_file():
         transcribe.LOCAL_SPEAKER_MODEL = folder
 turns = transcribe.diarize(samples, None, None)

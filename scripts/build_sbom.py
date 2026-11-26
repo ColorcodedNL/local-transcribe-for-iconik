@@ -6,7 +6,7 @@ the bundled Python with the OpenSSL and Expat linked into it, FFmpeg and the
 bundled speaker model. Writes dist/sbom-<version>.cdx.json for the release page,
 where scanners such as Grype or Dependency-Track can read it.
 
-    python3 scripts/build_sbom.py [path/to/Local Transcribe for Iconik.app]
+    python3 scripts/build_sbom.py [path/to/Local Transcribe.app]
 
 Standard library only, so it runs with any Python 3.8 or later.
 """
@@ -20,7 +20,7 @@ import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-APP = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "build" / "Local Transcribe for Iconik.app"
+APP = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "build" / "Local Transcribe.app"
 RES = APP / "Contents" / "Resources"
 REPO = "ColorcodedNL/local-transcribe-for-iconik"
 
@@ -139,7 +139,7 @@ def main():
             "component": {
                 "type": "application",
                 "bom-ref": app_ref,
-                "name": "Local Transcribe for Iconik",
+                "name": "Local Transcribe",
                 "version": version,
                 "purl": app_ref,
                 "licenses": [{"expression": "MIT"}],
