@@ -96,9 +96,7 @@ Everything in this section is only needed when you use [Iconik](https://www.icon
 
 With Iconik the app writes its transcripts back as native Iconik transcriptions, through the Iconik transcription API, with speakers and word timing, like any other transcript in Iconik. Two Custom Actions start it from Iconik: **Local Transcribe** (assets, collections, selections) and **Refine transcript** (assets). The app reads the file from the Iconik storage mounted on the Mac; nothing is downloaded from Iconik.
 
-![The Local Transcribe and Refine transcript buttons in the Iconik asset menu](docs/images/iconik-menu.jpg)
-
-![The transcript in Iconik, with speakers and the uncertain words underlined](docs/images/iconik-transcript.jpg)
+![The Local Transcribe and Refine transcript buttons in the Iconik asset menu, next to the transcript with speakers and the uncertain words underlined](docs/images/iconik-menu.jpg)
 
 ### Iconik: requirements
 
