@@ -211,10 +211,72 @@ serve.system.mount_reachable = lambda path: False
 serve.watch_round(now)
 check("onbereikbaar: de strook noemt de map", serve.app_state()["watch"]["offline"] == ["Opnames"])
 
+# --- kan niet schrijven (stap 6d) ---
+serve.system.mount_reachable = lambda path: True
+card = tmp / "kaart"
+for name in ("a.mov", "b.mov"):
+    make(card / "DCIM" / name)
+real_can_write = local_files.can_write
+locked = [str(card)]
+local_files.can_write = lambda directory: "readonly" if any(str(directory).startswith(p) for p in locked) else None
+drain()
+result = serve.add_local([str(card)])
+stuck = [j for j in serve.jobs if j.group == str(card)]
+check("vooraf: de bestanden staan in de lijst, wachtend op een plek, niet in de rij",
+      result["added"] == 2 and all(j.status == serve.PLACE for j in stuck) and serve.work.empty(), [j.status for j in stuck])
+check("vooraf: met de reden", "alleen-lezen" in stuck[0].message, stuck[0].message)
+check("vooraf: nog eens slepen geeft geen tweede regel", serve.add_local([str(card)]) == {"added": 0, "skipped": 0})
+serve.set_watch(str(card))
+for media in local_files.media_in(card):
+    os.utime(media, (old_time, old_time))
+serve.watch_round(now)
+clock[0] += 30
+check("vooraf: een gevolgde map voegt ze ook niet opnieuw toe", serve.watch_round(now) is None and serve.watch_state["waiting"] == 0)
+serve.set_watch(str(card), on=False)
+check("venster: telt mee als niet afgerond", all(j["status"] == "plek" for j in serve.app_state()["jobs"] if j["group"] == str(card)))
+check("bereik: zonder /Volumes en zonder gevolgde map is het de map van het bestand",
+      local_files.scope_of(card / "DCIM" / "a.mov") == str(card / "DCIM"))
+elsewhere = tmp / "Transcripten elders"
+asked = []
+serve.system.ask_folder = lambda prompt, start=None: asked.append(prompt) or str(elsewhere)
+result = serve.choose_place(stuck[0].n)
+check("kies een andere plek: onthouden voor het bereik", result["ok"] and local_files.elsewhere() == {str(card / "DCIM"): str(elsewhere / "DCIM")}, result)
+check("kies een andere plek: de opdrachten gaan de rij in", all(j.status == "wachtend" for j in stuck) and serve.work.qsize() == 2)
+check("kies een andere plek: daarheen, met de naam van de map ervoor", local_files.directory_for(card / "DCIM" / "a.mov") == elsewhere / "DCIM")
+drain()
+check("vergeet: de plek is weg", serve.forget_place(str(card / "DCIM"))["ok"] and local_files.elsewhere() == {})
+serve.system.ask_folder = lambda prompt, start=None: str(card)
+locked_can_write = local_files.can_write
+local_files.can_write = lambda directory: "denied" if Path(directory) == card / "DCIM" else None
+stuck = [j for j in serve.jobs if j.group == str(card)]
+for job in stuck:
+    job.set(status=serve.PLACE)
+result = serve.choose_place(stuck[0].n)
+check("de map erboven gekozen: een eigen map ernaast, de schrijftest op die map",
+      result["ok"] and local_files.elsewhere() == {str(card / "DCIM"): str(card / "DCIM transcripten")}
+      and local_files.directory_for(card / "DCIM" / "a.mov") == card / "DCIM transcripten", (result, local_files.elsewhere()))
+drain()
+serve.forget_place(str(card / "DCIM"))
+local_files.can_write = locked_can_write
+make(card / "DCIM" / "c.mov")
+local_files.can_write = lambda directory: "denied" if str(card) in str(directory) or "ook op slot" in str(directory) else None
+serve.add_local([str(card / "DCIM" / "c.mov")])
+c_job = max(serve.jobs, key=lambda j: j.n)
+check("geen rechten: wacht op een plek, met die reden", c_job.status == serve.PLACE and "schrijfrechten" in c_job.message, c_job.message)
+serve.system.ask_folder = lambda prompt, start=None: str(tmp / "ook op slot")
+refused = serve.choose_place(c_job.n)
+check("een plek die ook niet kan: geweigerd met de reden, niets onthouden", "ook niet" in refused.get("error", "")
+      and local_files.elsewhere() == {} and c_job.status == serve.PLACE, refused)
+check("annuleer: de wachtende uit de lijst", serve.cancel_place(c_job.n)["ok"] and not any(j.n == c_job.n for j in serve.jobs))
+local_files.can_write = real_can_write
+serve.system.mount_reachable = lambda path: False   # terug zoals in het stuk over onbereikbaar
+serve.watch_round(now)
+
 # --- Instellingen › Bestanden ---
 data = serve.settings_data("files")
-check("instellingen: de tab kent de plaats, audio en de gevolgde mappen",
-      {s["key"] for s in data["settings"]} >= {"files.transcript_place", "files.transcript_folder", "files.audio", "files.watched"}
+check("instellingen: de tab kent de plaats, audio, de gevolgde mappen en de andere plekken",
+      {s["key"] for s in data["settings"]} >= {"files.transcript_place", "files.transcript_folder", "files.audio", "files.watched",
+                                               "files.elsewhere"} and data["extra"]["elsewhere"] == []
       and data["extra"]["watched"][0]["name"] == "Opnames" and data["extra"]["watched"][0]["offline"])
 
 print("ALLES OK" if not fails else f"{fails} FOUT")

@@ -140,6 +140,10 @@ button.eye.on { background: color-mix(in srgb, var(--accent) 12%, transparent); 
 .newrow span { color: var(--warn); white-space: nowrap; }
 .job.gone .top, .job.gone .msg { opacity: .55; }
 .state.gone { color: var(--muted); }
+.state.plek { color: var(--warn); }
+.place { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.place .why { color: var(--warn); flex: 1; min-width: 0; }
+.place button { margin-left: 0; }
 [hidden] { display: none !important; }
 </style>
 </head>
@@ -182,6 +186,7 @@ const TEXT = {
     groupCount: (n, c) => `${n} ${n === 1 ? "bestand" : "bestanden"}` + (c.length ? ": " + c.join(", ") : ""),
     groupParts: {nieuw: n => `${n} nieuw`, klaar: n => `${n} klaar`, bezig: n => `${n} bezig`, wachtend: n => `${n} ${n === 1 ? "wacht" : "wachten"}`, fout: n => `${n} fout`, overgeslagen: n => `${n} overgeslagen`, gone: n => `${n} weggehaald`},
     groupNone: "nog niets", groupWatched: "gevolgd: nieuwe bestanden komen er vanzelf bij", showAll: n => `en nog ${n}:`, showAllLink: "toon alles", showLess: "toon minder",
+    choosePlace: "Kies een andere plek…", cancelPlace: "Annuleer", placeParts: n => `${n} ${n === 1 ? "wacht" : "wachten"} op een plek`,
     reveal: "Toon in Finder", existing: "bestaand transcript neergezet", gone: "niet meer in de map", checking: "controleert het bestand…",
     stripWatch: "Gevolgde mappen", watchIdle: n => `${n} ${n === 1 ? "map" : "mappen"}, niets nieuw`, watchNew: n => `${n} nieuw`,
     watchWait: (n, why) => `${n} nieuw, wacht: ${why}`, watchOff: names => `${names} niet bereikbaar`,
@@ -218,7 +223,7 @@ const TEXT = {
     spokenHelp: "Herkennen kijkt naar de luidste stukken van de opname. Zet de taal alleen vast als al je materiaal in één taal is. Herkennen werkt ook voor andere talen die Whisper ondersteunt (niet getest). We hebben Nederlands en Engels getest.", langAuto: "Volg macOS",
     stages: ["Audio lezen", "Transcriberen", "Sprekers", "Naar Iconik"], stagesLocal: ["Audio lezen", "Transcriberen", "Sprekers", "Opslaan"],
     download: "Whisper-model downloaden (eenmalig, ca. 3 GB)",
-    status: {wachtend: "wacht sinds", bezig: "bezig", klaar: "klaar", overgeslagen: "overgeslagen", fout: "fout", afgebroken: "afgebroken", teruggezet: "teruggezet in de rij"},
+    status: {wachtend: "wacht sinds", bezig: "bezig", klaar: "klaar", overgeslagen: "overgeslagen", fout: "fout", afgebroken: "afgebroken", teruggezet: "teruggezet in de rij", plek: "wacht op een plek"},
     audioLength: "Audio duurt", result: (l, s) => `${l} ${l === 1 ? "regel" : "regels"}, ${s} ${s === 1 ? "spreker" : "sprekers"}`,
     doneIn: (t, x) => `klaar in ${t} (${x} keer realtime)`, hide: "Verberg sporen", tracks: n => `${n} ${n === 1 ? "spoor" : "sporen"}`,
     ignored: "genegeerd", done: "Afgerond", of: "van", audioDone: "Audio getranscribeerd", skipped: "Overgeslagen of fout",
@@ -250,6 +255,7 @@ const TEXT = {
     groupCount: (n, c) => `${n} ${n === 1 ? "file" : "files"}` + (c.length ? ": " + c.join(", ") : ""),
     groupParts: {nieuw: n => `${n} new`, klaar: n => `${n} done`, bezig: n => `${n} running`, wachtend: n => `${n} waiting`, fout: n => `${n} failed`, overgeslagen: n => `${n} skipped`, gone: n => `${n} moved away`},
     groupNone: "nothing yet", groupWatched: "watched: new files are added by themselves", showAll: n => `and ${n} more:`, showAllLink: "show all", showLess: "show fewer",
+    choosePlace: "Choose another place…", cancelPlace: "Cancel", placeParts: n => `${n} waiting for a place`,
     reveal: "Show in Finder", existing: "existing transcript placed", gone: "no longer in the folder", checking: "checking the file…",
     stripWatch: "Watch folders", watchIdle: n => `${n} ${n === 1 ? "folder" : "folders"}, nothing new`, watchNew: n => `${n} new`,
     watchWait: (n, why) => `${n} new, waiting: ${why}`, watchOff: names => `${names} not reachable`,
@@ -286,7 +292,7 @@ const TEXT = {
     spokenHelp: "Detection looks at the loudest parts of the recording. Only fix the language if all your footage is in one language. Detection also works for other languages Whisper supports (untested). We tested Dutch and English.", langAuto: "Follow macOS",
     stages: ["Read audio", "Transcribe", "Speakers", "Send to Iconik"], stagesLocal: ["Read audio", "Transcribe", "Speakers", "Save"],
     download: "Downloading Whisper model (once, about 3 GB)",
-    status: {wachtend: "waiting since", bezig: "running", klaar: "done", overgeslagen: "skipped", fout: "failed", afgebroken: "interrupted", teruggezet: "back in the queue"},
+    status: {wachtend: "waiting since", bezig: "running", klaar: "done", overgeslagen: "skipped", fout: "failed", afgebroken: "interrupted", teruggezet: "back in the queue", plek: "waiting for a place"},
     audioLength: "Audio length", result: (l, s) => `${l} ${l === 1 ? "line" : "lines"}, ${s} ${s === 1 ? "speaker" : "speakers"}`,
     doneIn: (t, x) => `done in ${t} (${x}x realtime)`, hide: "Hide tracks", tracks: n => `${n} ${n === 1 ? "track" : "tracks"}`,
     ignored: "ignored", done: "Finished", of: "of", audioDone: "Audio transcribed", skipped: "Skipped or failed",
@@ -403,6 +409,12 @@ $("list").onclick = e => {
   if (fold) { const p = fold.dataset.fold; if (folded[p]) delete folded[p]; else folded[p] = true; store("jobs.folded", folded); tick(); return; }
   const watch = e.target.closest("[data-watch]");
   if (watch) { act("/folders/watch?path=" + encodeURIComponent(watch.dataset.watch) + "&on=" + (watch.dataset.on === "1" ? "0" : "1")).then(tick); return; }
+  const place = e.target.closest("[data-place]");
+  if (place) { const n = place.dataset.place; act("/local/place/choose?n=" + n).then(r => r.json()).then(r => {
+    if (!r.ok && r.error) placeError[n] = r.error; else delete placeError[n];
+    drawn = Object.fromEntries(Object.entries(drawn).filter(([k]) => !k.startsWith("grp-") && !k.startsWith("job-"))); tick(); }); return; }
+  const cancel = e.target.closest("[data-place-cancel]");
+  if (cancel) { act("/local/place/cancel?n=" + cancel.dataset.placeCancel).then(tick); return; }
   const more = e.target.closest("[data-more]");
   if (more) { const p = more.dataset.more; showAll[p] = !showAll[p]; tick(); return; }
   const x = e.target.closest("[data-remove]"); if (x) { removeJob(Number(x.dataset.remove), false); return; }
@@ -453,17 +465,23 @@ const store = (key, value) => { try { localStorage.setItem(key, JSON.stringify(v
 const folded = stored("jobs.folded", {}), showAll = {};
 // Een stabiele id per map, voor de elementen in de lijst.
 const gid = path => "grp-" + [...path].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7).toString(36);
+// Kan hier niet schrijven: kies een andere plek (geldt voor de hele kaart, het volume of de gevolgde map) of annuleer.
+const placeError = {};   // per opdracht: waarom de gekozen plek niet kon; staat bij de groep, niet bovenaan het venster
+const placeButtons = n => `<button class="go" data-place="${n}">${T.choosePlace}</button><button class="btn" data-place-cancel="${n}">${T.cancelPlace}</button>`;
 function groupHead(folder, members) {
   const counts = {};
   members.forEach(j => { const k = j.gone ? "gone" : j.status; counts[k] = (counts[k] || 0) + 1; });
   counts.nieuw = (folder.new || []).length;   // wat de app nog controleert, staat er ook onder
-  const parts = ["nieuw", "bezig", "wachtend", "klaar", "fout", "overgeslagen", "gone"].filter(k => counts[k]).map(k => T.groupParts[k](counts[k]));
+  const parts = ["nieuw", "plek", "bezig", "wachtend", "klaar", "fout", "overgeslagen", "gone"].filter(k => counts[k])
+    .map(k => k === "plek" ? T.placeParts(counts[k]) : T.groupParts[k](counts[k]));
   const total = members.length + counts.nieuw;
   let line = total ? T.groupCount(total, parts) : T.groupNone;
   if (folder.watched) line += ". " + T.groupWatched;
   const isFolded = !!folded[folder.path];
+  const stuck = members.find(j => j.status === "plek");
+  const place = stuck ? `<div class="place"><span class="why">${esc(placeError[stuck.n] || stuck.message)}</span>${placeButtons(stuck.n)}</div>` : "";
   return `<button class="fold" data-fold="${esc(folder.path)}" aria-expanded="${!isFolded}" aria-label="${isFolded ? T.unfold : T.fold}">${isFolded ? "▸" : "▾"}</button>${FOLDER}`
-    + `<div class="gname"><b title="${esc(folder.name)}">${esc(folder.name)}</b><span>${esc(line)}</span></div>`
+    + `<div class="gname"><b title="${esc(folder.name)}">${esc(folder.name)}</b><span>${esc(line)}</span>${place}</div>`
     + (mixed ? `<span class="tag">${T.local}</span>` : "")
     + `<button class="eye${folder.watched ? " on" : ""}" data-watch="${esc(folder.path)}" data-on="${folder.watched ? 1 : 0}" aria-pressed="${!!folder.watched}" title="${esc(folder.watched ? T.followingTip : T.followTip)}">${EYE}${esc(folder.watched ? T.following : T.follow)}</button>`;
 }
@@ -484,7 +502,9 @@ function row(job, isOpen) {
   const marks = (rf.refined ? `<span class="tag">${T.refinedTag}</span>` : "") + (rf.draft ? `<span class="tag draft">${T.draftTag}</span>` : "")
     + (rf.subtitles ? `<button class="tag jump" data-subtitles="${esc(job.item)}" title="${T.subtitlesOpen}">${T.subtitlesTag}</button>` : "");
   let html = `<div class="top"><div class="title"${job.asset_id ? ` data-asset="${esc(job.asset_id)}" data-item="${esc(job.item || "")}" title="${T.openIconik}"` : ""}>${esc(job.title || job.asset_id)}</div>${job.source ? `<span class="tag source">${esc(job.source)}</span>` : ""}${mixed && !job.group ? `<span class="tag kind">${job.local ? T.local : "Iconik"}</span>` : ""}${job.auto ? `<span class="tag">${T.autoTag}</span>` : ""}${marks}${refine}${toggle}<div class="state ${job.gone ? "gone" : job.status}">${esc(state)}<span class="el"></span></div>${job.n === selected && removable(job) ? `<button class="x" data-remove="${job.n}" aria-label="${T.removeRow}" title="${T.removeRow}">✕</button>` : ""}</div>`;
-  if (msg) html += `<div class="msg ${job.status === "fout" ? "fout" : ""}">${esc(msg)}</div>`;
+  if (job.status === "plek" && !job.group) html += `<div class="place"><span class="why">${esc(placeError[job.n] || job.message)}</span>${placeButtons(job.n)}</div>`;
+  else if (job.status === "plek") html += `<div class="msg">${esc(job.where || "")}</div>`;
+  else if (msg) html += `<div class="msg ${job.status === "fout" ? "fout" : ""}">${esc(msg)}</div>`;
   if (job.status === "bezig") html += stages(job);
   if (isOpen && tracks.length) html += '<div class="tracks">' + tracks.map(t =>
     `<div class="nr">${t.n}</div>${wave(t)}<div class="what ${t.used ? "on" : ""}">${esc(note(t.note))}${t.used ? "" : ", " + T.ignored}, ${num(t.db)} dB</div>`).join("") + "</div>";
@@ -493,7 +513,7 @@ function row(job, isOpen) {
 
 function summary(all) {
   const jobs = all.filter(j => !["afgebroken", "teruggezet"].includes(j.status));   // telt niet mee in de cijfers
-  const done = jobs.filter(j => !["wachtend", "bezig"].includes(j.status));
+  const done = jobs.filter(j => !["wachtend", "bezig", "plek"].includes(j.status));
   const good = jobs.filter(j => j.status === "klaar" && j.elapsed && j.duration);
   const audio = good.reduce((a, j) => a + j.duration, 0), spent = good.reduce((a, j) => a + j.elapsed, 0);
   const share = jobs.length ? done.length / jobs.length : 0;
@@ -616,7 +636,7 @@ async function tick() {
   });
   // Binnen een groep: wat loopt, dan wat wacht, dan wat klaar is (nieuwste eerst), en onderaan wat weggehaald is. Zo
   // staat nieuw werk bovenaan en verdwijnt het nooit achter "toon alles". De lijst komt nieuwste eerst binnen.
-  const rank = j => j.gone ? 3 : j.status === "bezig" ? 0 : j.status === "wachtend" ? 1 : 2;
+  const rank = j => j.gone ? 3 : j.status === "bezig" ? 0 : ["wachtend", "plek"].includes(j.status) ? 1 : 2;
   Object.values(members).forEach(list => list.sort((a, b) => rank(a) - rank(b)));
   const blocks = [];
   (s.folders || []).filter(f => !members[f.path]).forEach(f => blocks.push({group: f, jobs: []}));
@@ -667,11 +687,16 @@ async function tick() {
 }
 // Slepen: de blauwe zone zolang er bestanden boven het venster hangen. Het loslaten zelf vangt de app op (zij krijgt
 // de echte paden, dit venster alleen de namen); hier alleen de zone weg en de lijst verversen.
-let dragging = 0;
+// Niet alleen op dragleave en drop vertrouwen: wordt een schijf tijdens het slepen uitgeworpen, dan komt geen van beide
+// (gezien 26 november, de zone bleef staan). Zolang er boven het venster gesleept wordt, komt er steeds dragover; blijft
+// dat een halve seconde uit, dan is het slepen voorbij.
+let dragging = 0, lastOver = 0;
 const withFiles = e => [...((e.dataTransfer && e.dataTransfer.types) || [])].includes("Files");
-const dropZone = on => { $("drop").hidden = !on; if (!on) dragging = 0; };
+const dropZone = on => { $("drop").hidden = !on; if (!on) dragging = 0; else lastOver = Date.now(); };
 document.addEventListener("dragenter", e => { if (!withFiles(e) || !$("sheet").hidden) return; dragging++; dropZone(true); });
-document.addEventListener("dragover", e => { if (!withFiles(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = "copy"; });
+document.addEventListener("dragover", e => { if (!withFiles(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = "copy"; lastOver = Date.now(); });
+setInterval(() => { if (!$("drop").hidden && Date.now() - lastOver > 500) dropZone(false); }, 200);
+["dragend", "mousedown", "keydown", "blur"].forEach(kind => window.addEventListener(kind, () => { if (!$("drop").hidden) dropZone(false); }));
 document.addEventListener("dragleave", e => { if (!withFiles(e)) return; if (--dragging <= 0) dropZone(false); });
 document.addEventListener("drop", e => { if (!withFiles(e)) return; e.preventDefault(); dropZone(false); setTimeout(tick, 400); });
 

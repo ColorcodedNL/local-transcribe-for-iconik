@@ -27,9 +27,11 @@ Wat de app nooit doet: een transcript overschrijven dat niet van deze app is (ee
 niet te lezen is), of zonder Refine een correctie uit Refine. Wat hij schreef, staat met een hash in sidecars.json.
 Het bestand naast de media heeft alleen de bestandsnaam van de media, geen pad: het kan gedeeld worden.
 """
+import errno
 import hashlib
 import json
 import os
+import secrets
 import threading
 import time
 from pathlib import Path
@@ -274,6 +276,82 @@ def media_path(key):
 
 # --- waar het transcript komt ---
 
+def scope_of(media):
+    """Waar een gekozen andere plek voor geldt (stap 6d): de gevolgde map waar het bestand in staat, anders het volume
+    onder /Volumes (een kaart, een schijf, de opslag), anders de map van het bestand zelf. Nooit de hele opstartschijf:
+    dan gingen ook alle andere bestanden daarheen."""
+    media = Path(media)
+    inside = [Path(p) for p in settings.get("files.watched") if isinstance(p, str)]
+    inside = [p for p in inside if p in media.parents]
+    if inside:
+        return str(max(inside, key=lambda p: len(p.parts)))
+    parts = media.parts
+    if len(parts) > 3 and parts[1] == "Volumes":
+        return str(Path(*parts[:3]))
+    return str(media.parent)
+
+
+def elsewhere():
+    """De gekozen andere plekken: {bereik: map}."""
+    found = settings.get("files.elsewhere")
+    return {k: v for k, v in found.items() if isinstance(k, str) and isinstance(v, str) and v}
+
+
+def _elsewhere_root(media):
+    """(bereik, map) als er voor dit bestand een andere plek gekozen is, anders None. Het langste bereik telt."""
+    media, chosen = Path(media), elsewhere()
+    found = [scope for scope in chosen if Path(scope) in media.parents]
+    if not found:
+        return None
+    scope = max(found, key=lambda s: len(Path(s).parts))
+    return scope, chosen[scope]
+
+
+WRITE_REASONS = {"readonly": ("alleen-lezen (een vergrendelde kaart of een alleen-lezen schijf)",
+                              "read-only (a locked card or a read-only disk)"),
+                 "denied": ("geen schrijfrechten", "no permission to write")}
+
+
+def reason_of(error):
+    """De reden achter een schrijffout, als sleutel: readonly, denied of de tekst van het systeem."""
+    if getattr(error, "errno", None) == errno.EROFS:
+        return "readonly"
+    if getattr(error, "errno", None) in (errno.EACCES, errno.EPERM):
+        return "denied"
+    return getattr(error, "strerror", None) or type(error).__name__
+
+
+def reason_text(reason):
+    return L(*WRITE_REASONS[reason]) if reason in WRITE_REASONS else reason
+
+
+def can_write(directory):
+    """Kan de app in deze map schrijven? None als het kan, anders de reden (reason_of). Probeert het echt, met een
+    verborgen proefbestand dat meteen weer weggaat: gemeten 26 november gaven een alleen-lezen schijf EROFS en een map
+    zonder rechten EACCES; bij een netwerkshare zegt os.access niet altijd de waarheid."""
+    directory = Path(directory)
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+    except OSError as error:
+        return reason_of(error)
+    probe = directory / f".lt-schrijftest-{secrets.token_hex(4)}"
+    try:
+        probe.write_bytes(b"")
+    except OSError as error:
+        return reason_of(error)
+    try:
+        probe.unlink()
+    except OSError:
+        pass
+    return None
+
+
+def cannot_write_here(reason):
+    """De melding (Problem, place) als er niet geschreven kan worden: de opdracht wacht op een andere plek."""
+    base.fail(L(f"Kan hier niet schrijven: {reason_text(reason)}.", f"Cannot write here: {reason_text(reason)}."),
+              place=True)
+
+
 def _folder():
     """De map voor In één map, of None voor naast de media."""
     if settings.get("files.transcript_place") != "folder":
@@ -285,9 +363,24 @@ def _folder():
     return Path(folder)
 
 
+def place_root(scope, chosen):
+    """De map die een gekozen andere plek voor een bereik wordt: daarin een map met de naam van het bereik. Valt die
+    samen met het bereik zelf (iemand koos de map erboven), ligt hij erin of het bereik erin, dan een eigen map ernaast:
+    "<naam> transcripten". Gezien 26 november: Bureaublad kiezen voor Bureaublad/GEEN_RECHTEN gaf de map zelf terug."""
+    scope, chosen = Path(scope), Path(chosen)
+    root = chosen / scope.name
+    if root == scope or scope in root.parents or root in scope.parents:
+        root = chosen / (scope.name + L(" transcripten", " transcripts"))
+    return root
+
+
 def directory_for(media):
     """De map waar het transcript van dit bestand komt."""
     media = Path(media)
+    chosen = _elsewhere_root(media)
+    if chosen is not None:   # een andere plek, gekozen omdat het hier niet kon (stap 6d)
+        scope, root = chosen
+        return Path(root) / media.parent.relative_to(scope)
     root = _folder()
     if root is None:
         return media.parent
@@ -358,6 +451,10 @@ def open(instance, key, push=True, replace=True, allow_refined=False):
                     "put the original back in Refine first if you want to transcribe again."), skip=True)
     if state == "mine" and push and not replace:
         base.fail(L("Dit bestand heeft al een transcript van deze app.", "This file already has a transcript from this app."))
+    if push:
+        problem = can_write(target.parent)
+        if problem:
+            cannot_write_here(problem)   # vooraf: niet eerst een half uur transcriberen
     cached = items.path(base.TRANSCRIPTS_DIR, item, ".json").is_file()
     return {"connector": NAME, "key": key, "item": item, "asset_id": "", "version_id": "", "title": title,
             "asset": {"title": title}, "media": str(media), "target": str(target), "state": state,
@@ -404,11 +501,9 @@ def _write_one(target, data):
 
 
 def cannot_write(error, target):
-    """De melding als het transcript niet weggeschreven kon worden (alleen-lezen opslag, geen rechten)."""
-    base.fail(L(f"Het transcript kon niet worden weggeschreven bij {Path(target).parent.name}: "
-                f"{error.strerror or type(error).__name__}.",
-                f"The transcript could not be written to {Path(target).parent.name}: "
-                f"{error.strerror or type(error).__name__}."))
+    """Tijdens het werk ging schrijven mis (de rechten veranderden, de kaart ging op slot): de opdracht wacht op een
+    andere plek. Het transcript staat dan al op deze Mac (pipeline), dus een plek kiezen schrijft het alleen nog weg."""
+    cannot_write_here(reason_of(error))
 
 
 def write(instance, info, doc, engine_info, from_queue=False, replace="own"):

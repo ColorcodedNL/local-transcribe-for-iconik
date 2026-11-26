@@ -121,6 +121,12 @@ _SCHEMA = [
       ("Per map: ook submappen. Verandert via Volgen in de lijst en + en − in Instellingen.",
        "Per folder: subfolders too. Changed through Watch folder in the list and + and − in Settings."),
       advanced=True),
+    S("files.elsewhere", "mapping", {}, ("Andere plekken", "Other places"),
+      ("Per kaart, volume of gevolgde map waar de app niet kon schrijven: de map die iemand daarvoor koos. "
+       "Verandert via Kies een andere plek… in de lijst en Vergeet in Instellingen.",
+       "Per card, volume or watch folder where the app could not write: the folder someone chose for it. "
+       "Changed through Choose another place… in the list and Forget in Settings."),
+      advanced=True),
 
     # --- Refine ---
     S("refine.subtitles", "mapping", {}, ("Ondertitels", "Subtitles"),

@@ -131,13 +131,16 @@ class Problem(Exception):
     """Een fout die we de gebruiker in gewone woorden kunnen melden."""
 
 
-def fail(message, skip=False, local=False):
+def fail(message, skip=False, local=False, place=False):
     """`skip`: het asset is overgeslagen om een gewone reden, er is niets misgegaan.
     `local`: het ligt aan deze Mac (opslag niet gemount, geen inlog, geen internet) en niet aan
-    het asset. Een werker zet zo'n asset dan terug in de rij voor een andere Mac."""
+    het asset. Een werker zet zo'n asset dan terug in de rij voor een andere Mac.
+    `place`: het transcript kon niet worden weggeschreven (alleen-lezen, geen rechten); de opdracht wacht op een
+    andere plek (lokale modus, stap 6d)."""
     problem = Problem(message)
     problem.skip = skip
     problem.local = local
+    problem.place = place
     raise problem
 
 

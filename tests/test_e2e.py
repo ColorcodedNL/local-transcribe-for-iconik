@@ -444,6 +444,10 @@ with sync_playwright() as p:
             document.dispatchEvent(new DragEvent("dragenter", {dataTransfer: dt, bubbles: true}));
             document.dispatchEvent(new DragEvent("drop", {dataTransfer: dt, bubbles: true, cancelable: true})); }""")
         check("slepen: weg na het loslaten", not page.locator("#drop").is_visible())
+        page.evaluate("""() => { const dt = new DataTransfer(); dt.items.add(new File(["x"], "clip.mov"));
+            document.dispatchEvent(new DragEvent("dragenter", {dataTransfer: dt, bubbles: true})); }""")
+        page.wait_for_timeout(900)   # geen dragover en geen drop meer, zoals bij een schijf die tijdens het slepen verdwijnt
+        check("slepen: blijft niet hangen als het slepen zomaar ophoudt", not page.locator("#drop").is_visible())
         serve.choose_files_hook = lambda: [str(loose)]
         page.get_by_role("button", name="Kies bestanden…").click()
         page.locator(".job", has_text="los.wav").wait_for(timeout=5000)
@@ -505,6 +509,37 @@ with sync_playwright() as p:
         page.get_by_role("menuitem", name="Toon in Finder").click()
         page.wait_for_timeout(300)
         check("rechtsklik op een lokale regel: Toon in Finder", revealed == [str(loose)], revealed)
+        # Kan niet schrijven (stap 6d): de groep wacht op een plek, met de reden en de knoppen in de kop.
+        import local_files
+        card = TMP / "KAART_01"
+        for name in ("k1.mov", "k2.mov"):
+            (card / "DCIM").mkdir(parents=True, exist_ok=True)
+            (card / "DCIM" / name).write_bytes(os.urandom(2500))
+        real_can_write = local_files.can_write
+        local_files.can_write = lambda directory: "readonly" if str(card) in str(directory) else None
+        serve.add_local([str(card)])
+        card_head = page.locator(".grp", has_text="KAART_01")
+        card_head.get_by_role("button", name="Kies een andere plek…").wait_for(timeout=5000)
+        check("kan niet schrijven: de groep zegt waarom en dat er twee wachten", "alleen-lezen" in card_head.inner_text()
+              and "2 wachten op een plek" in card_head.inner_text(), card_head.inner_text())
+        check("kan niet schrijven: de bestanden wachten op een plek", page.locator(".job.child", has_text="k1.mov").locator(".state").inner_text()
+              == "wacht op een plek")
+        serve.system.ask_folder = lambda prompt, start=None: str(card / "ook hier")
+        card_head.get_by_role("button", name="Kies een andere plek…").click()
+        card_head.get_by_text("Daar kan ook niet geschreven worden").wait_for(timeout=5000)
+        check("een plek die ook niet kan: de melding staat bij de groep", page.locator("#note").is_hidden())
+        elsewhere = TMP / "Elders"
+        serve.system.ask_folder = lambda prompt, start=None: str(elsewhere)
+        card_head.get_by_role("button", name="Kies een andere plek…").click()
+        page.wait_for_function("!document.body.innerText.includes('Kies een andere plek…')", timeout=5000)
+        check("Kies een andere plek…: onthouden en de bestanden in de rij",
+              local_files.elsewhere() == {str(card / "DCIM"): str(elsewhere / "DCIM")}
+              and all(j.status == "wachtend" for j in serve.jobs if j.group == str(card)))
+        local_files.can_write = real_can_write
+        while not serve.work.empty():
+            serve.work.get_nowait()
+        for job in serve.jobs:
+            job.set(status="klaar")
         chosen = TMP / "Interviews"
         chosen.mkdir()
         serve.system.ask_folder = lambda prompt, start=None: str(chosen)
@@ -563,6 +598,11 @@ with sync_playwright() as p:
         files.get_by_label("Transcript").select_option("next")
         page.wait_for_function("!document.body.innerText.includes('Map voor transcripten')", timeout=5000)
         check("Bestanden: terug naar Naast de media", app_settings.get("files.transcript_place") == "next")
+        places = files.locator(".grp", has_text="Elders")
+        check("Bestanden: de andere plek staat in de lijst", places.count() == 1 and "DCIM" in places.inner_text())
+        places.get_by_role("button", name="Vergeet").click()
+        page.wait_for_function("!document.body.innerText.includes('Andere plekken')", timeout=5000)
+        check("Bestanden: Vergeet haalt de plek weg", local_files.elsewhere() == {})
         serve.set_watch(str(media), on=False)
         page.goto(BASE + "/settings-window?tab=integrations")
         page.wait_for_function("document.title === 'Integraties'", timeout=5000)

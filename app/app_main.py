@@ -186,6 +186,37 @@ def choose_media_files():
     return [str(c) for c in ([chosen] if isinstance(chosen, str) else chosen)]
 
 
+def choose_folder(prompt, start=None):
+    """Een map kiezen met het open-venster van macOS, in deze app (geen osascript: dat kost seconden). Met de vraag
+    bovenin, zodat duidelijk is waarvoor. Wordt aangeroepen vanuit een draad van de ontvanger; het venster draait op de
+    hoofddraad. Geeft het pad of None."""
+    import AppKit
+    from PyObjCTools import AppHelper
+    done, box = threading.Event(), []
+
+    def run():
+        try:
+            panel = AppKit.NSOpenPanel.openPanel()
+            panel.setCanChooseDirectories_(True)
+            panel.setCanChooseFiles_(False)
+            panel.setAllowsMultipleSelection_(False)
+            panel.setCanCreateDirectories_(True)
+            panel.setMessage_(prompt)
+            panel.setPrompt_(transcribe.L("Kies", "Choose"))
+            if start and Path(start).is_dir():
+                panel.setDirectoryURL_(AppKit.NSURL.fileURLWithPath_(str(start)))
+            AppKit.NSApp.activateIgnoringOtherApps_(True)
+            if panel.runModal() == AppKit.NSModalResponseOK and panel.URL() is not None:
+                box.append(str(panel.URL().path()))
+        except Exception as error:
+            print(f"Map kiezen lukte niet: {type(error).__name__}: {error}")
+        finally:
+            done.set()
+    AppHelper.callAfter(run)
+    done.wait()
+    return box[0] if box else None
+
+
 def on_drop(event):
     """Bestanden of mappen losgelaten op de opdrachtenlijst. pywebview zet het echte pad bij elk bestand
     (pywebviewFullPath); het venster zelf ziet alleen namen."""
@@ -792,6 +823,7 @@ def main():
     serve.save_hook = choose_save_path  # ondertitels bewaren uit Refine
     serve.open_hook = choose_subtitle_file  # ondertitels inladen in Refine
     serve.choose_files_hook = choose_media_files  # Kies bestanden… in de opdrachtenlijst
+    serve.folder_hook = choose_folder  # Map volgen…, Kies een andere plek…, In één map…
     from PyObjCTools import AppHelper
     serve.quit_hook = lambda: AppHelper.callAfter(AppKit.NSApp.terminate_, None)   # "Na deze opdracht"
 

@@ -128,6 +128,8 @@ const TEXT = {
     watched: "Gevolgde mappen", watchedSub: "Nieuwe bestanden in deze mappen pakt de app zelf op, alleen als deze Mac ruimte heeft (zie Transcriptie).",
     noWatched: "Nog geen gevolgde map. Kies er een met +, of klik op Volgen bij een map in de opdrachtenlijst.",
     subfolders: "Ook submappen", unreachable: "niet bereikbaar", addFolder: "Map volgen", removeFolder: "Niet meer volgen",
+    elsewhere: "Andere plekken", elsewhereSub: "Waar de app niet kon schrijven (een vergrendelde kaart, een map zonder rechten), komen de transcripten in de map die je koos. Vergeet je een plek, dan vraagt de app het de volgende keer weer; wat er al staat, blijft staan.",
+    forget: "Vergeet",
     languages: {auto: "Herken per opdracht", nl: "Nederlands", en: "English", de: "Deutsch", fr: "Français", es: "Español", it: "Italiano", sv: "Svenska"},
     untested: "niet getest",
     login: "Opstarten bij inloggen", loginHelp: "Opent de app bij het inloggen. Staan opdrachten op afstand aan, dan blijft hij in de menubalk.",
@@ -189,6 +191,8 @@ const TEXT = {
     watched: "Watch folders", watchedSub: "The app picks up new files in these folders by itself, only when this Mac has room (see Transcription).",
     noWatched: "No watch folder yet. Choose one with +, or click Watch folder on a folder in the job list.",
     subfolders: "Subfolders too", unreachable: "not reachable", addFolder: "Watch folder", removeFolder: "Stop watching",
+    elsewhere: "Other places", elsewhereSub: "Where the app could not write (a locked card, a folder without permission), the transcripts go to the folder you chose. Forget a place and the app asks again next time; what is already there stays.",
+    forget: "Forget",
     languages: {auto: "Detect per job", nl: "Nederlands", en: "English", de: "Deutsch", fr: "Français", es: "Español", it: "Italiano", sv: "Svenska"},
     untested: "untested",
     login: "Open at login", loginHelp: "Opens the app when you log in. With remote jobs on, it stays in the menu bar.",
@@ -344,7 +348,10 @@ function drawFiles() {
   const list = (rows.length ? rows.join("") : `<div class="row"><span class="state">${esc(T.noWatched)}</span></div>`)
     + `<div class="pm"><button class="btn" id="addFolder" aria-label="${esc(T.addFolder)}">+</button>`
     + `<button class="btn" id="removeFolder" aria-label="${esc(T.removeFolder)}" ${x.watched.some(f => f.path === ui.folder) ? "" : "disabled"}>−</button></div>`;
-  return group(T.result, result) + `<div class="gh">${esc(T.watched)}</div><div class="gsub">${esc(T.watchedSub)}</div><div class="grp" id="watchedList">${list}</div>`;
+  const places = (x.elsewhere || []).map(e => row(`${esc(e.name)}<div class="help"><code>${esc(e.target)}</code></div>`, "",
+    `<button class="btn" data-forget="${esc(e.scope)}">${esc(T.forget)}</button>`));
+  return group(T.result, result) + `<div class="gh">${esc(T.watched)}</div><div class="gsub">${esc(T.watchedSub)}</div><div class="grp" id="watchedList">${list}</div>`
+    + (places.length ? group(T.elsewhere, places, T.elsewhereSub) : "");
 }
 
 function workerLine(w) {
@@ -568,6 +575,10 @@ document.addEventListener("click", async e => {
   else if (id === "removeFolder" && ui.folder) {
     await fetch(`/folders/watch?path=${encodeURIComponent(ui.folder)}&on=0`, {method: "POST", headers: HDR});
     ui.folder = ""; load(current);
+  }
+  else if (e.target.closest("[data-forget]")) {
+    await fetch("/local/place/forget?scope=" + encodeURIComponent(e.target.closest("[data-forget]").dataset.forget), {method: "POST", headers: HDR});
+    load(current);
   }
   else if (e.target.closest("[data-pick]") && !e.target.closest("input")) { ui.folder = e.target.closest("[data-pick]").dataset.pick; draw(); }
   else if (e.target.closest("[data-mount]")) {

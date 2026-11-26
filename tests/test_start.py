@@ -75,6 +75,8 @@ ran = []
 def fake_process(args, hf_token, on_info=None, prepared=None):
     source = items.source(args.item)
     info = connectors.call(source, "open", key=items.key(args.item), push=True, replace=True)
+    if info["title"] == "slot.mov":   # alsof de kaart tijdens het werk op slot ging
+        transcribe.fail("Kan hier niet schrijven: alleen-lezen.", place=True)
     doc = model.Transcript(language="nl", speakers=[model.Speaker("1", "Spreker 1")],
                            segments=[model.Segment(0, 900, "1", [model.Word("Hallo", 0, 900, 0.9)])],
                            engine={"name": "mlx-whisper"}, source={"item": args.item, "media": info["media"]})
@@ -125,6 +127,18 @@ saved = json.loads((support / "jobs.json").read_text())
 check("lokaal: jobs.json versie 2 met het lokale item", saved.get("version") == 2
       and any(r["item"] == job.item and r["item"].startswith("local:") and r["asset_id"] == "" for r in saved["jobs"]))
 check("lokaal: geen Iconik-inlog nodig", "Iconik" not in job.message, job.message)
+
+# --- kan tijdens het werk niet schrijven (stap 6d): wacht op een plek, geen fout, niet opnieuw geprobeerd ---
+locked = media.parent / "slot.mov"
+locked.write_bytes(os.urandom(5000))
+serve.add_local([str(locked)])
+job = max(serve.jobs, key=lambda j: j.n)
+deadline = time.time() + 20
+while job.status in ("wachtend", "bezig") and time.time() < deadline:
+    time.sleep(0.1)
+check("tijdens het werk: wacht op een plek, met de reden", job.status == serve.PLACE and "alleen-lezen" in job.message, (job.status, job.message))
+import local_files  # noqa: E402
+check("tijdens het werk: niet op de lijst van mislukt (een plek kiezen probeert het weer)", not local_files.skipped(locked))
 
 server.shutdown()
 print("ALLES OK" if not fails else f"{fails} FOUT")

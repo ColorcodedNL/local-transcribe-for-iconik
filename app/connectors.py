@@ -24,7 +24,8 @@ Alles wat Macs met elkaar delen (knoppen, een wachtrij) gebruikt het domein van 
 exemplaar-ID: dat maakt elke Mac zelf.
 
 Een fout die de gebruiker moet zien, is base.Problem (met skip=True als de opdracht overgeslagen wordt in plaats
-van mislukt). Over een pijp wordt dat een foutbericht met dezelfde tekst en hetzelfde skip.
+van mislukt, place=True als het transcript niet weggeschreven kon worden en de opdracht op een andere plek wacht).
+Over een pijp wordt dat een foutbericht met dezelfde tekst, skip en place.
 """
 import importlib
 import json

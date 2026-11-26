@@ -269,8 +269,16 @@ def process_asset(args, hf_token, on_info=None, prepared=None):
     tell("stage", name="schrijven")
     info = prepared.get("info") or {"asset_id": args.asset_id, "version_id": version_id,
                                     "title": asset.get("title") or "", "own": own}
-    result = connectors.call(items.source(item_of(args)), "write", info=info, doc=tmodel.to_dict(doc),
-                             engine_info=engine_info, from_queue=bool(getattr(args, "from_queue", False)))
+    try:
+        result = connectors.call(items.source(item_of(args)), "write", info=info, doc=tmodel.to_dict(doc),
+                                 engine_info=engine_info, from_queue=bool(getattr(args, "from_queue", False)))
+    except base.Problem as problem:
+        if getattr(problem, "place", False):
+            # Kon niet schrijven (alleen-lezen, geen rechten): het transcript op deze Mac bewaren, zodat een andere
+            # plek kiezen het alleen nog wegschrijft, zonder opnieuw te transcriberen (stap 6d).
+            save_transcript(doc, item_of(args))
+            save_waves(item_of(args), prepared.get("peaks"))
+        raise
     transcription_id, written = result["id"], result["segments"]
     print(f"\nKlaar. Transcript {transcription_id} staat op het asset.")
     doc.source["transcription_id"] = transcription_id

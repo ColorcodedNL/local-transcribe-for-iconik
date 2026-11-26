@@ -716,6 +716,15 @@ def add_job(asset_id, remote=0, auto=False, source=None):
     return True
 
 
+PLACE = "plek"   # status: kan hier niet schrijven, wacht tot iemand een andere plek kiest (stap 6d)
+
+
+def waiting_for_place(path):
+    """Staat er voor dit bestand al een opdracht die op een plek wacht?"""
+    with jobs_lock:
+        return any(job.path == str(path) and job.status == PLACE for job in jobs)
+
+
 def add_local(paths, auto=False, group=""):
     """Lokale bestanden in de rij (slepen, Kies bestanden…, een gevolgde map). Een map wordt eenmalig uitgepakt: alle
     video en audio erin en in de submappen (audio alleen met files.audio), als groep met die map. Leest van elk
@@ -723,7 +732,7 @@ def add_local(paths, auto=False, group=""):
     eigen draad lopen. Een bestand dat al wacht of loopt (ook een kopie met dezelfde vingerafdruk) komt er niet twee
     keer in: de kopie krijgt het transcript als die opdracht klaar is. Geeft {"added", "skipped"}."""
     added = skipped = 0
-    found = []
+    found, writable = [], {}   # writable: per map de uitkomst van de schrijftest, één keer per map
     for text in dict.fromkeys(str(p) for p in paths):
         path = Path(text)
         try:
@@ -743,11 +752,25 @@ def add_local(paths, auto=False, group=""):
             print(f"Bestand niet toegevoegd ({type(error).__name__}).")
             skipped += 1
             continue
+        if waiting_for_place(path):
+            continue   # wacht al op een plek
+        try:
+            folder = local_files.directory_for(path)
+        except Problem:
+            folder = None   # In één map zonder map: de opdracht zegt het zelf
+        if folder is not None and str(folder) not in writable:
+            writable[str(folder)] = local_files.can_write(folder)
+        problem = writable.get(str(folder)) if folder is not None else None
         job = jobs.add(item, auto=auto, title=title, group=in_group, path=str(path))
         if job is None:
             continue   # wacht of loopt al; de kopie staat in local-files.json en komt mee
         added += 1
         touch_jobs()
+        if problem:
+            # Vooraf gezien: hier kan niet geschreven worden. Niets transcriberen tot iemand een plek kiest.
+            job.set(status=PLACE, message=transcribe.L(f"Kan hier niet schrijven: {local_files.reason_text(problem)}.",
+                                                       f"Cannot write here: {local_files.reason_text(problem)}."))
+            continue
         work.put(job)
     if added or skipped:
         print(f"Lokale bestanden: {added} toegevoegd" + (f", {skipped} overgeslagen (geen media of niet te lezen)." if skipped else "."))
@@ -808,8 +831,9 @@ def watch_view():
 
 
 def _active_paths():
+    """Bestanden waar een opdracht voor wacht, loopt of op een plek wacht: een gevolgde map voegt ze niet opnieuw toe."""
     with jobs_lock:
-        return {job.path for job in jobs if job.active and job.path}
+        return {job.path for job in jobs if job.path and (job.active or job.status == PLACE)}
 
 
 def watch_round(now=time.time):
@@ -1185,7 +1209,60 @@ def _iconik_extra(instance=None):
 
 
 def _files_extra():
-    return {"watched": watch_view()}
+    return {"watched": watch_view(),
+            "elsewhere": [{"scope": scope, "name": Path(scope).name or scope, "target": target}
+                          for scope, target in sorted(local_files.elsewhere().items())]}
+
+
+def place_jobs(scope):
+    """De opdrachten die op een plek wachten binnen dit bereik."""
+    with jobs_lock:
+        return [job for job in jobs if job.status == PLACE and job.path and Path(scope) in Path(job.path).parents]
+
+
+def choose_place(number):
+    """Kies een andere plek… bij een opdracht (of de groep waar hij in staat) die hier niet kan schrijven. De keuze geldt
+    voor het hele bereik (de gevolgde map, het volume, of de map) en wordt onthouden. Daarna gaan de wachtende
+    opdrachten de rij in; een transcript dat deze Mac al heeft, wordt alleen weggeschreven."""
+    job = jobs.find(number)
+    if job is None or not job.path:
+        return {"ok": False}
+    scope = local_files.scope_of(job.path)
+    chosen = ask_folder(transcribe.L(f"Kies waar de transcripten van {Path(scope).name} komen",
+                                            f"Choose where the transcripts of {Path(scope).name} go"))
+    if not chosen:
+        return {"ok": False, "cancelled": True}
+    root = local_files.place_root(scope, chosen)
+    problem = local_files.can_write(root)   # op de map waar het transcript echt komt, niet op de gekozen map
+    if problem:
+        return {"ok": False, "error": transcribe.L(f"Daar kan ook niet geschreven worden: {local_files.reason_text(problem)}.",
+                                                    f"Cannot write there either: {local_files.reason_text(problem)}.")}
+    setting.update("files.elsewhere", lambda current: current.__setitem__(scope, str(root)))
+    print(f"[{datetime.now():%H:%M:%S}] andere plek gekozen voor een bereik")
+    for waiting in place_jobs(scope):
+        waiting.set(status="wachtend", message="")
+        work.put(waiting)
+    touch_jobs()
+    return {"ok": True}
+
+
+def cancel_place(number):
+    """Annuleer: de opdrachten in dit bereik die op een plek wachten, gaan uit de lijst."""
+    job = jobs.find(number)
+    if job is None or not job.path:
+        return {"ok": False}
+    gone = 0
+    for waiting in place_jobs(local_files.scope_of(job.path)):
+        removed, _, _ = jobs.remove(waiting.n)
+        gone += len(removed)
+    save_jobs()
+    return {"ok": True, "removed": gone}
+
+
+def forget_place(scope):
+    """Vergeet een gekozen andere plek (Instellingen › Bestanden). Wat er al geschreven is, blijft staan."""
+    setting.update("files.elsewhere", lambda current: current.pop(scope, None))
+    return {"ok": True}
 
 
 SETTINGS_DATA = {"general": _general_extra, "transcription": _transcription_extra, "files": _files_extra,
@@ -1811,6 +1888,15 @@ def _local_add(h, r):
 
 
 choose_files_hook = None  # de app zet hier het venster om bestanden te kiezen (geeft een lijst paden)
+folder_hook = None        # idem: een map kiezen (prompt, begin), het open-venster van de app zelf; None bij annuleren
+
+
+def ask_folder(prompt, start=None):
+    """Een map laten kiezen. In de app met zijn eigen open-venster (meteen, met de vraag erin); zonder app (de terminal,
+    tests) via system.ask_folder. Dat laatste deed er in de app seconden over (gezien 26 november)."""
+    if folder_hook is not None:
+        return folder_hook(prompt, start)
+    return system.ask_folder(prompt, start)
 
 
 @route("/local/choose", protected=True)
@@ -1838,7 +1924,7 @@ def _local_reveal(h, r):
 @route("/folders/choose", protected=True)
 def _folders_choose(h, r):
     # Map volgen… (lege lijst, Instellingen +): een map kiezen en volgen, met submappen.
-    chosen = system.ask_folder(transcribe.L("Kies een map om te volgen", "Choose a folder to watch"))
+    chosen = ask_folder(transcribe.L("Kies een map om te volgen", "Choose a folder to watch"))
     if not chosen:
         return h.reply_json({"ok": False, "cancelled": True})
     return h.reply_json(set_watch(chosen, True, subfolders=True))
@@ -1852,10 +1938,31 @@ def _folders_watch(h, r):
                                   subfolders=None if sub_value == "" else sub_value == "1"))
 
 
+@route("/local/place/choose", protected=True)
+def _local_place_choose(h, r):
+    try:
+        return h.reply_json(choose_place(int(r.first("n"))))
+    except ValueError:
+        return h.reply_json({"ok": False})
+
+
+@route("/local/place/cancel", protected=True)
+def _local_place_cancel(h, r):
+    try:
+        return h.reply_json(cancel_place(int(r.first("n"))))
+    except ValueError:
+        return h.reply_json({"ok": False})
+
+
+@route("/local/place/forget", protected=True)
+def _local_place_forget(h, r):
+    return h.reply_json(forget_place(r.first("scope")))
+
+
 @route("/files/folder", protected=True)
 def _files_folder(h, r):
     # In één map…: de map voor de transcripten kiezen.
-    chosen = system.ask_folder(transcribe.L("Kies de map voor de transcripten", "Choose the folder for the transcripts"),
+    chosen = ask_folder(transcribe.L("Kies de map voor de transcripten", "Choose the folder for the transcripts"),
                                setting.get("files.transcript_folder") or None)
     if not chosen:
         return h.reply_json({"ok": False, "cancelled": True})
@@ -2513,7 +2620,8 @@ def worker():
             print(f"FOUT: {job.message}")
         except Problem as problem:
             skipped = getattr(problem, "skip", False)
-            job.set(local=getattr(problem, "local", False), status="overgeslagen" if skipped else "fout", message=str(problem))
+            status = PLACE if getattr(problem, "place", False) else "overgeslagen" if skipped else "fout"
+            job.set(local=getattr(problem, "local", False), status=status, message=str(problem))
             print(f"{job.status.upper()}: {problem}")
         except Exception as error:  # de rij moet blijven lopen
             job.set(status="fout", message=f"{type(error).__name__}: {error}")

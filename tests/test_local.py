@@ -245,6 +245,72 @@ error = raises(lambda: connectors.call("local", "open", key=film_key))
 check("weg: overgeslagen met de reden", error is not None and error.skip and "niet (meer) te vinden" in str(error), error)
 check("vergeten: uit local-files.json", local_files.forget(film_key) and not local_files.known(film_key))
 
+# --- kan niet schrijven (stap 6d) ---
+import errno  # noqa: E402
+
+check("reden: alleen-lezen", local_files.reason_of(OSError(errno.EROFS, "x")) == "readonly")
+check("reden: geen rechten", local_files.reason_of(OSError(errno.EACCES, "x")) == "denied"
+      and local_files.reason_of(OSError(errno.EPERM, "x")) == "denied")
+check("reden: anders de tekst van het systeem", local_files.reason_of(OSError(errno.ENOSPC, "Geen ruimte")) == "Geen ruimte")
+check("schrijftest: een gewone map kan, zonder iets achter te laten", local_files.can_write(media_dir) is None
+      and not [p for p in media_dir.iterdir() if p.name.startswith(".lt-schrijftest")])
+card = tmp / "Volumes" / "KAART_01" / "DCIM" / "100"
+check("bereik: een volume onder /Volumes",
+      local_files.scope_of(Path("/Volumes/KAART_01/DCIM/100/clip.mxf")) == "/Volumes/KAART_01")
+check("bereik: op de opstartschijf de map zelf, niet de hele schijf", local_files.scope_of(media_dir / "clip.mxf") == str(media_dir))
+settings.put("files.watched", {str(tmp / "opslag"): {"subfolders": True}})
+check("bereik: een gevolgde map gaat voor", local_files.scope_of(media_dir / "clip.mxf") == str(tmp / "opslag"))
+settings.put("files.watched", {})
+other_place = tmp / "elders"
+settings.put("files.elsewhere", {str(tmp / "opslag"): str(local_files.place_root(tmp / "opslag", other_place))})
+check("andere plek: met de naam van het bereik en dezelfde mapjes", local_files.directory_for(media_dir / "clip.mxf")
+      == other_place / "opslag" / "opnames", local_files.directory_for(media_dir / "clip.mxf"))
+check("andere plek: de map erboven gekozen geeft een eigen map ernaast, niet het bereik zelf",
+      local_files.place_root(tmp / "opslag", tmp) == tmp / "opslag transcripten")
+check("andere plek: een map in het bereik gekozen ook",
+      local_files.place_root(tmp / "opslag", tmp / "opslag" / "x") == tmp / "opslag" / "x" / "opslag transcripten")
+settings.put("files.elsewhere", {})
+real_can_write = local_files.can_write
+local_files.can_write = lambda directory: "readonly"
+error = raises(lambda: connectors.call("local", "open", key=key))
+check("vooraf: open weigert met place, niet als fout", error is not None and getattr(error, "place", False)
+      and "alleen-lezen" in str(error), error)
+check("vooraf: kijken mag wel (Refine)", connectors.call("local", "open", key=key, push=False)["media"])
+local_files.can_write = real_can_write
+
+# Tijdens het werk: schrijven mislukt; het transcript blijft op deze Mac, zodat een andere plek het alleen nog wegschrijft.
+for name in ("clip.transcript.json", "clip.mxf.transcript.json"):
+    (media_dir / name).unlink(missing_ok=True)
+items.path(base.TRANSCRIPTS_DIR, item, ".json").unlink()
+local_files.remember(big)
+real_write_one = local_files._write_one
+
+
+def refuse(target, data):
+    raise OSError(errno.EROFS, "Read-only file system")
+
+
+local_files._write_one = refuse
+info = connectors.call("local", "open", key=key)
+error = raises(lambda: connectors.call("local", "write", info=info, doc=model.to_dict(doc), engine_info={"name": "mlx-whisper"}))
+check("tijdens het werk: schrijven mislukt met place", error is not None and getattr(error, "place", False), error)
+args = argparse.Namespace(item=item, asset_id="", push=True, replace=True, model="m", mount=None, track=None, no_speakers=True)
+prepared = {"asset": {"title": "clip.mxf"}, "version_id": "", "own": [], "info": info, "media_path": str(big), "tracks": [],
+            "peaks": {}, "samples": None, "microphones": None, "model_path": "m"}
+saved = []
+real_save = pipeline.save_transcript
+pipeline.save_transcript = lambda d, i: saved.append(i) or real_save(d, i)
+try:
+    pipeline.connectors.call(items.source(item), "write", info=info, doc=model.to_dict(doc), engine_info={"name": "x"})
+except base.Problem as problem:
+    if getattr(problem, "place", False):   # zoals de pijplijn het doet
+        pipeline.save_transcript(model.from_dict(model.to_dict(doc)), item)
+pipeline.save_transcript = real_save
+local_files._write_one = real_write_one
+check("tijdens het werk: het transcript staat op deze Mac", items.path(base.TRANSCRIPTS_DIR, item, ".json").is_file() and saved == [item])
+check("tijdens het werk: met een plek wordt het alleen weggeschreven", connectors.call("local", "open", key=key)["write_existing"])
+check("de pijplijn vangt place af bij schrijven", "getattr(problem, \"place\", False)" in Path("app/pipeline.py").read_text())
+
 # --- toevoegen via de ontvanger ---
 import serve  # noqa: E402
 

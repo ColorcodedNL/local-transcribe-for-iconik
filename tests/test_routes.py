@@ -64,6 +64,8 @@ EXPECTED = {
     "/log/clear": (P, True, True, "window"), "/jobs/remove": (P, True, True, "window"), "/local/add": (P, True, True, "window"),
     "/local/choose": (P, True, True, "window"), "/local/reveal": (P, True, True, "window"), "/folders/choose": (P, True, True, "window"),
     "/folders/watch": (P, True, True, "window"), "/files/folder": (P, True, True, "window"),
+    "/local/place/choose": (P, True, True, "window"), "/local/place/cancel": (P, True, True, "window"),
+    "/local/place/forget": (P, True, True, "window"),
     "/integrations/remove": (P, True, True, "window"), "/integrations/add": (P, True, True, "window"), "/clear": (P, True, True, "window"),
     "/logout": (P, True, True, "window"),
     "/login": (W, True, False, "window"), "/oauth/callback": (W, False, False, "link"),
