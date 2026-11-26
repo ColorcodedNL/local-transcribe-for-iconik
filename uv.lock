@@ -1066,7 +1066,7 @@ wheels = [
 
 [[package]]
 name = "iconik-transcribe"
-version = "0.6.2"
+version = "0.7.0"
 source = { virtual = "." }
 dependencies = [
     { name = "keyring" },

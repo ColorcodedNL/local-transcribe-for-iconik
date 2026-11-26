@@ -187,8 +187,10 @@ const TEXT = {
     local: "Lokaal", follow: "Volgen", following: "Gevolgd", followTip: "Map volgen: nieuwe bestanden in deze map komen er vanzelf bij, als deze Mac ruimte heeft.",
     followingTip: "Wordt gevolgd. Klik om te stoppen; wat er al in de lijst staat, blijft staan.", fold: "Inklappen", unfold: "Uitklappen",
     groupCount: (n, c) => `${n} ${n === 1 ? "bestand" : "bestanden"}` + (c.length ? ": " + c.join(", ") : ""),
-    groupParts: {nieuw: n => `${n} nieuw`, klaar: n => `${n} klaar`, bezig: n => `${n} bezig`, wachtend: n => `${n} ${n === 1 ? "wacht" : "wachten"}`, fout: n => `${n} fout`, overgeslagen: n => `${n} overgeslagen`, gone: n => `${n} weggehaald`},
-    groupNone: "nog niets", groupWatched: "gevolgd: nieuwe bestanden komen er vanzelf bij", showAll: n => `en nog ${n}:`, showAllLink: "toon alles", showLess: "toon minder",
+    groupParts: {nieuw: n => `${n} nieuw`, klaar: n => `${n} klaar`, bezig: n => `${n} bezig`, wachtend: n => `${n} ${n === 1 ? "wacht" : "wachten"}`, gepauzeerd: n => `${n} gepauzeerd`, fout: n => `${n} fout`, overgeslagen: n => `${n} overgeslagen`, gone: n => `${n} weggehaald`},
+    groupNone: "nog niets", groupWatched: "Gevolgd: nieuwe bestanden komen er vanzelf bij", groupPaused: "Gepauzeerd: er komt niets bij en er start niets tot Hervat",
+    pause: "Pauzeer", resume: "Hervat", pauseTip: "Even niets uit deze map: er komt niets bij en wat wacht, start niet. Wat al bezig is, loopt af.", resumeTip: "Gepauzeerd. Klik om verder te gaan: wat wacht, start weer en nieuwe bestanden komen er weer bij.",
+    watchPaused: (n, p) => p === n ? `${n} ${n === 1 ? "map" : "mappen"}, gepauzeerd` : `, ${p} gepauzeerd`, showAll: n => `en nog ${n}:`, showAllLink: "toon alles", showLess: "toon minder",
     choosePlace: "Kies een andere plek…", cancelPlace: "Annuleer", placeParts: n => `${n} ${n === 1 ? "wacht" : "wachten"} op een plek`,
     subs: s => s.error ? "ondertitels niet gemaakt" : s.kept ? "ondertitels uit Refine blijven staan"
       : s.failed && s.failed.length ? "ondertitels niet geschreven" : s.exists && s.exists.length ? `${s.exists.join(", ")} van iemand anders blijft staan`
@@ -239,7 +241,7 @@ const TEXT = {
     spokenHelp: "Herkennen kijkt naar de luidste stukken van de opname. Zet de taal alleen vast als al je materiaal in één taal is. Herkennen werkt ook voor andere talen die Whisper ondersteunt (niet getest). We hebben Nederlands en Engels getest.", langAuto: "Volg macOS",
     stages: ["Audio lezen", "Transcriberen", "Sprekers", "Naar Iconik"], stagesLocal: ["Audio lezen", "Transcriberen", "Sprekers", "Opslaan"],
     download: "Whisper-model downloaden (eenmalig, ca. 3 GB)",
-    status: {wachtend: "wacht sinds", bezig: "bezig", klaar: "klaar", overgeslagen: "overgeslagen", fout: "fout", afgebroken: "afgebroken", teruggezet: "teruggezet in de rij", plek: "wacht op een plek"},
+    status: {wachtend: "wacht sinds", bezig: "bezig", klaar: "klaar", overgeslagen: "overgeslagen", fout: "fout", afgebroken: "afgebroken", teruggezet: "teruggezet in de rij", plek: "wacht op een plek", gepauzeerd: "gepauzeerd"},
     audioLength: "Audio duurt", result: (l, s) => `${l} ${l === 1 ? "regel" : "regels"}, ${s} ${s === 1 ? "spreker" : "sprekers"}`,
     doneIn: (t, x) => `klaar in ${t} (${x} keer realtime)`, hide: "Verberg sporen", tracks: n => `${n} ${n === 1 ? "spoor" : "sporen"}`,
     ignored: "genegeerd", done: "Afgerond", of: "van", audioDone: "Audio getranscribeerd", skipped: "Overgeslagen of fout",
@@ -269,8 +271,10 @@ const TEXT = {
     local: "Local", follow: "Watch folder", following: "Watch folder", followTip: "Watch folder: new files in this folder are added by themselves, when this Mac has room.",
     followingTip: "Watched. Click to stop; what is already in the list stays.", fold: "Collapse", unfold: "Expand",
     groupCount: (n, c) => `${n} ${n === 1 ? "file" : "files"}` + (c.length ? ": " + c.join(", ") : ""),
-    groupParts: {nieuw: n => `${n} new`, klaar: n => `${n} done`, bezig: n => `${n} running`, wachtend: n => `${n} waiting`, fout: n => `${n} failed`, overgeslagen: n => `${n} skipped`, gone: n => `${n} moved away`},
-    groupNone: "nothing yet", groupWatched: "watched: new files are added by themselves", showAll: n => `and ${n} more:`, showAllLink: "show all", showLess: "show fewer",
+    groupParts: {nieuw: n => `${n} new`, klaar: n => `${n} done`, bezig: n => `${n} running`, wachtend: n => `${n} waiting`, gepauzeerd: n => `${n} paused`, fout: n => `${n} failed`, overgeslagen: n => `${n} skipped`, gone: n => `${n} moved away`},
+    groupNone: "nothing yet", groupWatched: "Watched: new files are added by themselves", groupPaused: "Paused: nothing is added and nothing starts until Resume",
+    pause: "Pause", resume: "Resume", pauseTip: "Nothing from this folder for now: nothing is added and what is waiting does not start. What is already running finishes.", resumeTip: "Paused. Click to continue: what is waiting starts again and new files are added again.",
+    watchPaused: (n, p) => p === n ? `${n} ${n === 1 ? "folder" : "folders"}, paused` : `, ${p} paused`, showAll: n => `and ${n} more:`, showAllLink: "show all", showLess: "show fewer",
     choosePlace: "Choose another place…", cancelPlace: "Cancel", placeParts: n => `${n} waiting for a place`,
     subs: s => s.error ? "subtitles not made" : s.kept ? "subtitles from Refine left alone"
       : s.failed && s.failed.length ? "subtitles not written" : s.exists && s.exists.length ? `${s.exists.join(", ")} from someone else left alone`
@@ -321,7 +325,7 @@ const TEXT = {
     spokenHelp: "Detection looks at the loudest parts of the recording. Only fix the language if all your footage is in one language. Detection also works for other languages Whisper supports (untested). We tested Dutch and English.", langAuto: "Follow macOS",
     stages: ["Read audio", "Transcribe", "Speakers", "Send to Iconik"], stagesLocal: ["Read audio", "Transcribe", "Speakers", "Save"],
     download: "Downloading Whisper model (once, about 3 GB)",
-    status: {wachtend: "waiting since", bezig: "running", klaar: "done", overgeslagen: "skipped", fout: "failed", afgebroken: "interrupted", teruggezet: "back in the queue", plek: "waiting for a place"},
+    status: {wachtend: "waiting since", bezig: "running", klaar: "done", overgeslagen: "skipped", fout: "failed", afgebroken: "interrupted", teruggezet: "back in the queue", plek: "waiting for a place", gepauzeerd: "paused"},
     audioLength: "Audio length", result: (l, s) => `${l} ${l === 1 ? "line" : "lines"}, ${s} ${s === 1 ? "speaker" : "speakers"}`,
     doneIn: (t, x) => `done in ${t} (${x}x realtime)`, hide: "Hide tracks", tracks: n => `${n} ${n === 1 ? "track" : "tracks"}`,
     ignored: "ignored", done: "Finished", of: "of", audioDone: "Audio transcribed", skipped: "Skipped or failed",
@@ -466,6 +470,8 @@ $("list").onclick = e => {
   if (e.target.id === "connect") { act("/window/settings?tab=integrations"); return; }
   const fold = e.target.closest("[data-fold]");
   if (fold) { const p = fold.dataset.fold; if (folded[p]) delete folded[p]; else folded[p] = true; store("jobs.folded", folded); tick(); return; }
+  const pause = e.target.closest("[data-pause]");
+  if (pause) { act("/folders/pause?path=" + encodeURIComponent(pause.dataset.pause) + "&on=" + (pause.dataset.on === "1" ? "0" : "1")).then(tick); return; }
   const watch = e.target.closest("[data-watch]");
   if (watch) { act("/folders/watch?path=" + encodeURIComponent(watch.dataset.watch) + "&on=" + (watch.dataset.on === "1" ? "0" : "1")).then(tick); return; }
   const place = e.target.closest("[data-place]");
@@ -518,6 +524,8 @@ let selected = null;   // het nummer van de geselecteerde regel
 let mixed = false;     // lokale en Iconik-opdrachten door elkaar: dan een label per regel
 const SHOWN = 5;       // zoveel bestanden van een groep, tot iemand op "toon alles" klikt
 const FOLDER = '<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>';
+const PAUSE = '<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M9 6v12M15 6v12"/></svg>';
+const PLAY = '<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M8 5.5v13l10-6.5z"/></svg>';
 const EYE = '<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
 const stored = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key)) || fallback; } catch (e) { return fallback; } };
 const store = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {} };
@@ -531,17 +539,20 @@ function groupHead(folder, members) {
   const counts = {};
   members.forEach(j => { const k = j.gone ? "gone" : j.status; counts[k] = (counts[k] || 0) + 1; });
   counts.nieuw = (folder.new || []).length;   // wat de app nog controleert, staat er ook onder
-  const parts = ["nieuw", "plek", "bezig", "wachtend", "klaar", "fout", "overgeslagen", "gone"].filter(k => counts[k])
+  const parts = ["nieuw", "plek", "bezig", "wachtend", "gepauzeerd", "klaar", "fout", "overgeslagen", "gone"].filter(k => counts[k])
     .map(k => k === "plek" ? T.placeParts(counts[k]) : T.groupParts[k](counts[k]));
   const total = members.length + counts.nieuw;
   let line = total ? T.groupCount(total, parts) : T.groupNone;
-  if (folder.watched) line += ". " + T.groupWatched;
+  const held = !!folder.paused || !!counts.gepauzeerd;   // ook een groep die niet meer gevolgd wordt maar nog gepauzeerde regels heeft
+  if (held) line += ". " + T.groupPaused;
+  else if (folder.watched) line += ". " + T.groupWatched;
   const isFolded = !!folded[folder.path];
   const stuck = members.find(j => j.status === "plek");
   const place = stuck ? `<div class="place"><span class="why">${esc(placeError[stuck.n] || stuck.message)}</span>${placeButtons(stuck.n)}</div>` : "";
   return `<button class="fold" data-fold="${esc(folder.path)}" aria-expanded="${!isFolded}" aria-label="${isFolded ? T.unfold : T.fold}">${isFolded ? "▸" : "▾"}</button>${FOLDER}`
     + `<div class="gname"><b title="${esc(folder.name)}">${esc(folder.name)}</b><span>${esc(line)}</span>${place}</div>`
     + (mixed ? `<span class="tag">${T.local}</span>` : "")
+    + (folder.watched || held ? `<button class="eye${held ? " on" : ""}" data-pause="${esc(folder.path)}" data-on="${held ? 1 : 0}" aria-pressed="${held}" title="${esc(held ? T.resumeTip : T.pauseTip)}">${held ? PLAY : PAUSE}${esc(held ? T.resume : T.pause)}</button>` : "")
     + `<button class="eye${folder.watched ? " on" : ""}" data-watch="${esc(folder.path)}" data-on="${folder.watched ? 1 : 0}" aria-pressed="${!!folder.watched}" title="${esc(folder.watched ? T.followingTip : T.followTip)}">${EYE}${esc(folder.watched ? T.following : T.follow)}</button>`;
 }
 const removable = job => !["wachtend", "bezig"].includes(job.status);
@@ -572,7 +583,7 @@ function row(job, isOpen) {
 
 function summary(all) {
   const jobs = all.filter(j => !["afgebroken", "teruggezet"].includes(j.status));   // telt niet mee in de cijfers
-  const done = jobs.filter(j => !["wachtend", "bezig", "plek"].includes(j.status));
+  const done = jobs.filter(j => !["wachtend", "bezig", "plek", "gepauzeerd"].includes(j.status));
   const good = jobs.filter(j => j.status === "klaar" && j.elapsed && j.duration);
   const audio = good.reduce((a, j) => a + j.duration, 0), spent = good.reduce((a, j) => a + j.elapsed, 0);
   const share = jobs.length ? done.length / jobs.length : 0;
@@ -647,10 +658,13 @@ function status(s) {
   }
   const wf = s.watch || {};
   if (wf.count) {
-    cells.push([T.stripWatch, ...((wf.offline || []).length ? ["off", T.watchOff(wf.offline.join(", "))]
+    const paused = wf.paused ? T.watchPaused(wf.count, wf.paused) : "";
+    if (wf.paused && wf.paused === wf.count) cells.push([T.stripWatch, "wait", paused]);
+    else cells.push([T.stripWatch, ...((wf.offline || []).length ? ["off", T.watchOff(wf.offline.join(", "))]
       : !wf.waiting && wf.settling ? ["wait", T.watchSettling(wf.settling, wf.settling_names || [])]
       : !wf.waiting ? ["on", T.watchIdle(wf.count)]
       : wf.ready === false ? ["wait", T.watchWait(wf.waiting, autoReason(wf))] : ["on", T.watchNew(wf.waiting)])]);
+    if (wf.paused && wf.paused !== wf.count) cells[cells.length - 1][2] += paused;
   }
   const html = cells.map(([label, dot, text]) => `<div><dt>${esc(label)}</dt><dd><i class="dot ${dot}"></i>${esc(text)}</dd></div>`).join("");
   $("strip").hidden = !html;
@@ -695,7 +709,7 @@ async function tick() {
   });
   // Binnen een groep: wat loopt, dan wat wacht, dan wat klaar is (nieuwste eerst), en onderaan wat weggehaald is. Zo
   // staat nieuw werk bovenaan en verdwijnt het nooit achter "toon alles". De lijst komt nieuwste eerst binnen.
-  const rank = j => j.gone ? 3 : j.status === "bezig" ? 0 : ["wachtend", "plek"].includes(j.status) ? 1 : 2;
+  const rank = j => j.gone ? 3 : j.status === "bezig" ? 0 : ["wachtend", "plek", "gepauzeerd"].includes(j.status) ? 1 : 2;
   Object.values(members).forEach(list => list.sort((a, b) => rank(a) - rank(b)));
   const blocks = [];
   (s.folders || []).filter(f => !members[f.path]).forEach(f => blocks.push({group: f, jobs: []}));

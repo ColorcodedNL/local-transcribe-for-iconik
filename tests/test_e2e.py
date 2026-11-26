@@ -470,8 +470,17 @@ with sync_playwright() as p:
         check("map: in- en uitklappen", True)
         head.get_by_role("button", name="Volgen").click()
         head.get_by_role("button", name="Gevolgd").wait_for(timeout=5000)
-        check("Volgen: de map wordt gevolgd, met submappen", serve.watched() == {str(media): {"subfolders": True}})
+        check("Volgen: de map wordt gevolgd, met submappen", serve.watched() == {str(media): {"subfolders": True, "paused": False}})
         page.locator("#strip").get_by_text("Gevolgde mappen").wait_for(timeout=5000)
+        head.get_by_role("button", name="Pauzeer").click()
+        head.get_by_role("button", name="Hervat").wait_for(timeout=5000)
+        check("Pauzeer: de wachtende staan gepauzeerd, de kop en de strook zeggen het",
+              "7 gepauzeerd" in head.inner_text() and "Gepauzeerd:" in head.inner_text()
+              and "1 map, gepauzeerd" in page.locator("#strip").inner_text(), head.inner_text())
+        check("Pauzeer: de regels zeggen gepauzeerd", page.locator(".job.child .state.gepauzeerd").count() == 7)
+        head.get_by_role("button", name="Hervat").click()
+        head.get_by_role("button", name="Pauzeer").wait_for(timeout=5000)
+        check("Hervat: ze wachten weer", "7 wachten" in head.inner_text() and not serve.watched()[str(media)]["paused"], head.inner_text())
         serve.watch_state["settling_by_folder"] = {str(media): ["vers.mov"]}
         first = page.locator("#list > div").nth(page.locator("#list > div").evaluate_all(
             "els => els.findIndex(e => e.classList.contains('grp')) + 1"))
@@ -630,10 +639,10 @@ with sync_playwright() as p:
         check("Bestanden: + volgt een gekozen map", set(serve.watched()) == {str(media), str(chosen)})
         files.get_by_label("Ook submappen: Interviews").click()
         for _ in range(50):   # het schuifje springt meteen om; wachten tot de app het bewaard heeft
-            if serve.watched().get(str(chosen)) == {"subfolders": False}:
+            if serve.watched().get(str(chosen)) == {"subfolders": False, "paused": False}:
                 break
             page.wait_for_timeout(100)
-        check("Bestanden: ook submappen per map", serve.watched().get(str(chosen)) == {"subfolders": False}, serve.watched())
+        check("Bestanden: ook submappen per map", serve.watched().get(str(chosen)) == {"subfolders": False, "paused": False}, serve.watched())
         check("Bestanden: − pas als er een map gekozen is", files.get_by_role("button", name="Niet meer volgen").is_disabled())
         files.locator("[data-pick]", has_text="Interviews").locator(".lbl").click()
         files.get_by_role("button", name="Niet meer volgen").click()

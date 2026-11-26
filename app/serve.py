@@ -253,7 +253,7 @@ def start_prefetch():
     opdracht het later zelf.
     """
     with work.mutex:
-        upcoming = work.queue[0] if work.queue else None
+        upcoming = next((job for job in work.queue if job.status == "wachtend"), None)
     if upcoming is None or upcoming.prefetch is not None:
         return
     room, reason = prefetch_room()
@@ -652,12 +652,14 @@ def app_state():
     groups = {row["group"] for row in out if row["group"]} | set(following)
     seen_now = watch_state.get("settling_by_folder") or {}
     folders = [{"path": path, "name": Path(path).name or path, "watched": path in following,
+                "paused": path in following and following[path]["paused"],
                 "new": seen_now.get(path, []) if path in following else []} for path in sorted(groups)]
     # Alleen wat het opdrachtenvenster gebruikt; het venster Instellingen haalt zijn gegevens bij /settings-data.
     # De statusstrook toont (nog) de eerste Iconik; per Iconik komt met het venster van stap 5e-2.
     return {
         "jobs": out, "folders": folders, "place": setting.get("files.transcript_place"),
-        "watch": {"count": len(following), "waiting": watch_state["waiting"], "settling": watch_state["settling"],
+        "watch": {"count": len(following), "paused": sum(opts["paused"] for opts in following.values()),
+                  "waiting": watch_state["waiting"], "settling": watch_state["settling"],
                   "settling_names": watch_state["settling_names"],
                   "ready": watch_state["ready"],
                   "reason": watch_state["reason"], "values": watch_state["values"],
@@ -768,12 +770,18 @@ def add_job(asset_id, remote=0, auto=False, source=None):
 
 
 PLACE = "plek"   # status: kan hier niet schrijven, wacht tot iemand een andere plek kiest (stap 6d)
+PAUSED = job_list.PAUSED   # status: de gevolgde map van deze groep is gepauzeerd, start pas na Hervat
 
 
 def waiting_for_place(path):
     """Staat er voor dit bestand al een opdracht die op een plek wacht?"""
     with jobs_lock:
         return any(job.path == str(path) and job.status == PLACE for job in jobs)
+
+
+def held_by_pause(path):
+    with jobs_lock:
+        return any(job.path == str(path) and job.status == PAUSED for job in jobs)
 
 
 def add_local(paths, auto=False, group=""):
@@ -803,8 +811,8 @@ def add_local(paths, auto=False, group=""):
             print(f"Bestand niet toegevoegd ({type(error).__name__}).")
             skipped += 1
             continue
-        if waiting_for_place(path):
-            continue   # wacht al op een plek
+        if waiting_for_place(path) or held_by_pause(path):
+            continue   # wacht al op een plek, of staat gepauzeerd in de lijst
         try:
             folder = local_files.directory_for(path)
         except Problem:
@@ -821,6 +829,9 @@ def add_local(paths, auto=False, group=""):
             # Vooraf gezien: hier kan niet geschreven worden. Niets transcriberen tot iemand een plek kiest.
             job.set(status=PLACE, message=transcribe.L(f"Kan hier niet schrijven: {local_files.reason_text(problem)}.",
                                                        f"Cannot write here: {local_files.reason_text(problem)}."))
+            continue
+        if in_group and in_group in paused_folders():
+            job.set(status=PAUSED)   # een gepauzeerde map opnieuw gesleept: erbij, maar niet starten
             continue
         work.put(job)
     if added or skipped:
@@ -847,10 +858,14 @@ watch_state = {"round": 0, "waiting": 0, "settling": 0, "settling_names": [], "s
 
 
 def watched():
-    """De gevolgde mappen: {pad: {"subfolders": bool}}, alleen wat bruikbaar is."""
+    """De gevolgde mappen: {pad: {"subfolders": bool, "paused": bool}}, alleen wat bruikbaar is."""
     found = setting.get("files.watched")
-    return {path: {"subfolders": bool((opts or {}).get("subfolders", True))}
+    return {path: {"subfolders": bool((opts or {}).get("subfolders", True)), "paused": bool((opts or {}).get("paused"))}
             for path, opts in found.items() if isinstance(path, str) and Path(path).is_absolute()}
+
+
+def paused_folders():
+    return {path for path, opts in watched().items() if opts["paused"]}
 
 
 def set_watch(path, on=True, subfolders=None):
@@ -865,7 +880,7 @@ def set_watch(path, on=True, subfolders=None):
         if on:
             old = current.get(path) if isinstance(current.get(path), dict) else {}
             keep = old.get("subfolders", True) if subfolders is None else bool(subfolders)
-            current[path] = {"subfolders": keep}
+            current[path] = {"subfolders": keep, **({"paused": True} if old.get("paused") else {})}
         else:
             current.pop(path, None)
     setting.update("files.watched", change)
@@ -874,17 +889,45 @@ def set_watch(path, on=True, subfolders=None):
     return {"ok": True}
 
 
+def pause_watch(path, on=True):
+    """Pauze bij een gevolgde map: de app kijkt niet meer in de map en de wachtende opdrachten van die groep starten
+    niet (status gepauzeerd); wat al loopt, loopt af. De pauze blijft na een herstart staan tot Hervat. Hervat kan ook
+    bij een groep die niet meer gevolgd wordt maar nog gepauzeerde regels heeft. Geeft {"ok"} of {"ok": False}."""
+    path = str(path or "").rstrip("/")
+    following = path in watched()
+    if not path or (on and not following):
+        return {"ok": False, "error": "path"}
+    if following:
+        def change(current):
+            old = current.get(path) if isinstance(current.get(path), dict) else {}
+            current[path] = {**old, "paused": True} if on else {k: v for k, v in old.items() if k != "paused"}
+        setting.update("files.watched", change)
+    with jobs_lock:
+        held = [job for job in jobs if job.group == path and job.status == ("wachtend" if on else PAUSED)]
+        for job in held:
+            job.set(status=PAUSED if on else "wachtend")
+    if not on:
+        for job in held:
+            work.put(job)
+    touch_jobs()
+    save_jobs()
+    print(f"[{datetime.now():%H:%M:%S}] map " + ("gepauzeerd" if on else "hervat") + f", {len(held)} opdracht(en)")
+    watch_wake.set()
+    return {"ok": True}
+
+
 def watch_view():
     """De gevolgde mappen voor het venster: naam, pad, submappen en of hij nu bereikbaar is."""
     offline = set(watch_state.get("offline") or [])
-    return [{"path": path, "name": Path(path).name or path, "subfolders": opts["subfolders"], "offline": path in offline}
+    return [{"path": path, "name": Path(path).name or path, "subfolders": opts["subfolders"], "offline": path in offline,
+             "paused": opts["paused"]}
             for path, opts in sorted(watched().items(), key=lambda kv: Path(kv[0]).name.lower())]
 
 
 def _active_paths():
     """Bestanden waar een opdracht voor wacht, loopt of op een plek wacht: een gevolgde map voegt ze niet opnieuw toe."""
     with jobs_lock:
-        return {job.path for job in jobs if job.path and (job.active or job.status == PLACE)}
+        return {job.path for job in jobs if job.path and (job.active or job.status in (PLACE, PAUSED))}
 
 
 def watch_round(now=time.time):
@@ -894,6 +937,8 @@ def watch_round(now=time.time):
     candidates, offline, active, settling, names, by_folder = [], [], _active_paths(), 0, [], {}
     audio = setting.get("files.audio")
     for folder, opts in folders.items():
+        if opts["paused"]:
+            continue   # gepauzeerd: niet kijken, ook niet of hij bereikbaar is
         if not timed(system.mount_reachable, folder, default=False):
             offline.append(folder)
             continue
@@ -1995,6 +2040,12 @@ def _folders_watch(h, r):
                                   subfolders=None if sub_value == "" else sub_value == "1"))
 
 
+@route("/folders/pause", protected=True)
+def _folders_pause(h, r):
+    # ?path=&on=1|0: Pauzeer en Hervat bij een groep.
+    return h.reply_json(pause_watch(r.first("path"), r.first("on") != "0"))
+
+
 @route("/local/place/choose", protected=True)
 def _local_place_choose(h, r):
     try:
@@ -2642,6 +2693,10 @@ def worker():
             if settings.get("idle_exit") and not worker_enabled() and time.time() - max(activity["poll"], activity["done"]) > IDLE_EXIT:
                 print(f"Geen opdrachten en geen venster sinds {IDLE_EXIT} s, de ontvanger stopt.", flush=True)
                 os._exit(0)
+            continue
+        if job.status != "wachtend":   # gepauzeerd (of al gedaan via een tweede plek in de rij): overslaan
+            with jobs_lock:
+                job.prefetch = None
             continue
         job.set(status="bezig", started=datetime.now())
         touch_jobs()

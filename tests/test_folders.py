@@ -31,6 +31,7 @@ transcribe.WAVES_DIR = tmp / "support" / "waves"
 transcribe.SIDECARS_FILE = tmp / "support" / "sidecars.json"
 transcribe.LOCAL_INDEX = tmp / "support" / "local-files.json"
 
+import jobs as job_list  # noqa: E402
 import local_files  # noqa: E402
 import serve  # noqa: E402
 import settings  # noqa: E402
@@ -85,7 +86,7 @@ state = serve.app_state()
 by_title = {j["title"]: j for j in state["jobs"]}
 check("venster: lokaal, met de submap op de tweede regel", by_title["sfeer.mov"]["local"] and by_title["sfeer.mov"]["where"] == "camera B"
       and by_title["interview.mxf"]["where"] == "", by_title["sfeer.mov"])
-check("venster: de map als groep, nog niet gevolgd", state["folders"] == [{"path": str(shoot), "name": "Opnames dag 2", "watched": False, "new": []}],
+check("venster: de map als groep, nog niet gevolgd", state["folders"] == [{"path": str(shoot), "name": "Opnames dag 2", "watched": False, "paused": False, "new": []}],
       state["folders"])
 check("venster: alleen namen, geen paden in de regels", all(str(tmp) not in j["where"] for j in state["jobs"]))
 drain()
@@ -106,13 +107,13 @@ drain()
 # --- volgen ---
 check("volgen: de hele schijf niet", serve.set_watch("/")["ok"] is False and serve.set_watch("")["ok"] is False)
 check("volgen: een map die er niet is niet", serve.set_watch(str(tmp / "weg"))["ok"] is False)
-check("volgen: de map van de groep", serve.set_watch(str(shoot))["ok"] and serve.watched() == {str(shoot): {"subfolders": True}})
+check("volgen: de map van de groep", serve.set_watch(str(shoot))["ok"] and serve.watched() == {str(shoot): {"subfolders": True, "paused": False}})
 check("volgen: het venster ziet de groep als gevolgd", serve.app_state()["folders"][0]["watched"] if serve.app_state()["folders"][0]["path"] == str(shoot)
       else [f for f in serve.app_state()["folders"] if f["path"] == str(shoot)][0]["watched"])
 serve.set_watch(str(shoot), True, subfolders=False)
-check("volgen: submappen uit, blijft gevolgd", serve.watched()[str(shoot)] == {"subfolders": False})
+check("volgen: submappen uit, blijft gevolgd", serve.watched()[str(shoot)] == {"subfolders": False, "paused": False})
 serve.set_watch(str(shoot), True)
-check("volgen: nog eens aan houdt de keuze voor submappen", serve.watched()[str(shoot)] == {"subfolders": False})
+check("volgen: nog eens aan houdt de keuze voor submappen", serve.watched()[str(shoot)] == {"subfolders": False, "paused": False})
 serve.set_watch(str(shoot), True, subfolders=True)
 
 # --- een ronde langs de gevolgde mappen ---
@@ -176,6 +177,40 @@ os.utime(growing, (old_time + 30, old_time + 30))
 serve.watch_round(now)
 clock[0] += 70
 check("ronde: wel weer als het veranderd is", serve.watch_round(now) == str(growing))
+drain()
+
+# --- pauze bij een gevolgde map ---
+drain()
+first, second = make(shoot / "pauze1.mov"), make(shoot / "pauze2.mov")
+serve.add_local([str(first), str(second)], group=str(shoot))
+held = [j for j in serve.jobs if j.path in (str(first), str(second))]
+check("pauze: alleen bij een gevolgde map", serve.pause_watch(str(other))["ok"] is False)
+check("pauze: aan, bewaard bij de map", serve.pause_watch(str(shoot))["ok"] and serve.watched()[str(shoot)]["paused"])
+check("pauze: de wachtende van de groep staan gepauzeerd", len(held) == 2 and all(j.status == serve.PAUSED for j in held),
+      [j.status for j in held])
+state = serve.app_state()
+check("pauze: het venster ziet de groep gepauzeerd en de strook telt hem",
+      [f for f in state["folders"] if f["path"] == str(shoot)][0]["paused"] and state["watch"]["paused"] == 1)
+third = make(shoot / "pauze3.mov")
+clock[0] += 100
+check("pauze: de map wordt niet bekeken", serve.watch_round(now) is None and serve.watch_state["settling"] == 0
+      and serve.watch_state["waiting"] == 0, serve.watch_state)
+check("pauze: nog eens slepen geeft geen tweede regel", serve.add_local([str(first)], group=str(shoot))["added"] == 0)
+serve.add_local([str(third)], group=str(shoot))
+late = [j for j in serve.jobs if j.path == str(third)][0]
+check("pauze: wat er nu in de groep bij komt, start ook niet", late.status == serve.PAUSED, late.status)
+serve.set_watch(str(shoot), True, subfolders=True)
+check("pauze: Ook submappen veranderen houdt de pauze", serve.watched()[str(shoot)]["paused"])
+serve.save_jobs()
+fresh = job_list.JobList()
+fresh.load(serve.jobs_path())
+kept = [j for j in fresh if j.path in (str(first), str(second), str(third))]
+check("pauze: na een herstart nog gepauzeerd", len(kept) == 3 and all(j.status == serve.PAUSED for j in kept), [j.status for j in kept])
+fresh.clear_finished()
+check("pauze: Wis afgeronde laat ze staan", len([j for j in fresh if j.status == serve.PAUSED]) == 3)
+check("hervat: de pauze is weg", serve.pause_watch(str(shoot), on=False)["ok"] and not serve.watched()[str(shoot)]["paused"])
+check("hervat: de opdrachten wachten weer en staan in de rij", all(j.status == "wachtend" for j in held + [late])
+      and {j.n for j in held + [late]} <= {j.n for j in list(serve.work.queue)})
 drain()
 
 serve.set_watch(str(shoot), on=False)

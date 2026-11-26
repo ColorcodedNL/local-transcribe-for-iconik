@@ -67,11 +67,10 @@ class Setting:
 SECTIONS = {
     "automatic": (("Werk dat de app vanzelf oppakt", "Work the app picks up by itself"),
                   ("De app begint alleen aan werk als deze Mac ruimte heeft: genoeg vrij geheugen en een processor en "
-                   "grafische kaart die niet te druk zijn. Dit geldt voor automatisch transcriberen in Iconik, en later "
-                   "ook voor een map die de app in de gaten houdt.",
+                   "grafische kaart die niet te druk zijn. Dit geldt voor gevolgde mappen en voor automatisch "
+                   "transcriberen in Iconik.",
                    "The app only starts work when this Mac has room: enough free memory and a processor and graphics "
-                   "card that are not too busy. This applies to auto transcribe in Iconik, and later also to a folder "
-                   "the app watches.")),
+                   "card that are not too busy. This applies to watch folders and to auto transcribe in Iconik.")),
 }
 
 S = Setting

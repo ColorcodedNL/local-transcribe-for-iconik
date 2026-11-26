@@ -132,7 +132,7 @@ const TEXT = {
     result: "Resultaat", transcriptFolder: "Map voor transcripten", chooseFolder: "Kies map…", noFolder: "Nog geen map gekozen.",
     watched: "Gevolgde mappen", watchedSub: "Nieuwe bestanden in deze mappen pakt de app zelf op, alleen als deze Mac ruimte heeft (zie Transcriptie).",
     noWatched: "Nog geen gevolgde map. Kies er een met +, of klik op Volgen bij een map in de opdrachtenlijst.",
-    subfolders: "Ook submappen", unreachable: "niet bereikbaar", addFolder: "Map volgen", removeFolder: "Niet meer volgen",
+    subfolders: "Ook submappen", unreachable: "niet bereikbaar", paused: "gepauzeerd", addFolder: "Map volgen", removeFolder: "Niet meer volgen",
     elsewhere: "Andere plekken", elsewhereSub: "Waar de app niet kon schrijven (een vergrendelde kaart, een map zonder rechten), komen de transcripten in de map die je koos. Vergeet je een plek, dan vraagt de app het de volgende keer weer; wat er al staat, blijft staan.",
     forget: "Vergeet",
     languages: {auto: "Herken per opdracht", nl: "Nederlands", en: "English", de: "Deutsch", fr: "Français", es: "Español", it: "Italiano", sv: "Svenska"},
@@ -200,7 +200,7 @@ const TEXT = {
     result: "Result", transcriptFolder: "Folder for transcripts", chooseFolder: "Choose folder…", noFolder: "No folder chosen yet.",
     watched: "Watch folders", watchedSub: "The app picks up new files in these folders by itself, only when this Mac has room (see Transcription).",
     noWatched: "No watch folder yet. Choose one with +, or click Watch folder on a folder in the job list.",
-    subfolders: "Subfolders too", unreachable: "not reachable", addFolder: "Watch folder", removeFolder: "Stop watching",
+    subfolders: "Subfolders too", unreachable: "not reachable", paused: "paused", addFolder: "Watch folder", removeFolder: "Stop watching",
     elsewhere: "Other places", elsewhereSub: "Where the app could not write (a locked card, a folder without permission), the transcripts go to the folder you chose. Forget a place and the app asks again next time; what is already there stays.",
     forget: "Forget",
     languages: {auto: "Detect per job", nl: "Nederlands", en: "English", de: "Deutsch", fr: "Français", es: "Español", it: "Italiano", sv: "Svenska"},
@@ -240,7 +240,7 @@ const TEXT = {
     autoAudioHelp: "For example separate sound recordings of a shoot. Music is only recognised and skipped after transcribing.",
     autoReady: "Ready: picks up an asset as soon as nothing is requested.", autoWait: "Waiting", autoAwake: "This Mac stays awake.",
     autoWhy: {power: "on battery", memory: v => `not enough memory free (${v} GB)`, pressure: "memory pressure high", measuring: "still measuring how busy the Mac is", cpu: v => `CPU ${v}% busy`, gpu: v => `GPU ${v}% busy`, storage: "no storage (ISG) linked", checking: "checking whether the storage (ISG) is reachable", offline: "storage (ISG) not reachable"},
-    labels: "Labels in Iconik", fieldsHelp: "What people see in Iconik at Transcription and the choices Requested, Busy, Done and Error. Applies to everyone in this Iconik environment and needs admin rights.",
+    labels: "Labels in Iconik", fieldsHelp: "What people see in Iconik at Transcription and the choices Requested, In progress, Done and Failed. Applies to everyone in this Iconik environment and needs admin rights.",
     fieldsDone: "Updated in Iconik.",
     noIntegrations: "No integrations yet.", addHint: "Choose + to add Iconik.", add: "Add integration", remove: "Remove integration",
     doubleRemoved: n => `The environment you just logged in to is already linked here as ${n}. The new integration has therefore been removed.`,
@@ -353,7 +353,7 @@ function drawFiles() {
                     `<button class="btn" id="chooseTranscriptFolder">${esc(T.chooseFolder)}</button>`));
   result.push(settingRow(spec("files.audio")));
   const rows = x.watched.map(f => `<div class="row" data-pick="${esc(f.path)}" aria-selected="${f.path === ui.folder}" style="${f.path === ui.folder ? "background:color-mix(in srgb, var(--accent) 12%, transparent)" : ""}">`
-    + `<div class="lbl">${esc(f.name)}${f.offline ? ` <span class="state">(${esc(T.unreachable)})</span>` : ""}<div class="help"><code>${esc(f.path)}</code></div></div>`
+    + `<div class="lbl">${esc(f.name)}${f.offline ? ` <span class="state">(${esc(T.unreachable)})</span>` : ""}${f.paused ? ` <span class="state">(${esc(T.paused)})</span>` : ""}<div class="help"><code>${esc(f.path)}</code></div></div>`
     + `<div class="ctl"><span class="state">${esc(T.subfolders)}</span><input type="checkbox" class="switch" role="switch" data-sub="${esc(f.path)}" ${f.subfolders ? "checked" : ""} aria-label="${esc(T.subfolders)}: ${esc(f.name)}"></div></div>`);
   const list = (rows.length ? rows.join("") : `<div class="row"><span class="state">${esc(T.noWatched)}</span></div>`)
     + `<div class="pm"><button class="btn" id="addFolder" aria-label="${esc(T.addFolder)}">+</button>`

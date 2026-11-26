@@ -10,7 +10,8 @@ enige Iconik.
 
 De lijst blijft bewaard tot de gebruiker hem zelf opruimt. Wat bij een herstart nog liep of wachtte, komt terug als
 "afgebroken": de opdracht wordt niet hervat. Opdrachten uit de rij in Iconik komen vanzelf terug, want die staan
-daar nog.
+daar nog. Een gepauzeerde opdracht (de gevolgde map van zijn groep staat op pauze) blijft gepauzeerd tot
+Hervat.
 """
 import json
 import os
@@ -21,6 +22,7 @@ import base   # base.L bij het aanroepen, zodat een test die transcribe.L vervan
 import items
 
 ACTIVE = ("wachtend", "bezig")
+PAUSED = "gepauzeerd"   # de gevolgde map van de groep is gepauzeerd: blijft bij Wis afgeronde, start na Hervat
 MAX_KEPT = 500
 VERSION = 2
 # asset_id gaat mee voor een oudere versie van de app die dezelfde supportmap leest (0.6 slaat een regel zonder
@@ -146,7 +148,7 @@ class JobList:
 
     def clear_finished(self):
         with lock:
-            keep = [j for j in self._items if j.active]
+            keep = [j for j in self._items if j.active or j.status == PAUSED]
             self.cleared += len(self._items) - len(keep)
             self._items[:] = keep
 

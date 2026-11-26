@@ -5,7 +5,7 @@ What is inside the app bundle of Local Transcribe for Iconik, and the known vuln
 - App version: 0.6.2 (shell as in `app/app_shell.py`), macOS 13.0 or later
 - Built from: the tag `v0.6.2`
 - Last updated: 2026-11-16
-- Last vulnerability check: 2026-11-14
+- Last vulnerability check: 2026-11-26
 
 A machine-readable version (CycloneDX 1.6) is attached to every release from 0.4.0 on as `sbom-<version>.cdx.json`, made by `scripts/build_sbom.py`. Scan it with for example `grype sbom:sbom-0.4.0.cdx.json`.
 
@@ -172,6 +172,10 @@ Vulnerabilities in distributed training, CUDA, server use of torch, lightning or
 | 2026-11-14 | pip-audit: 13 advisories for filelock 4.0.12 (CVE-2026-112907 and others), CVE-2026-126360 for opentelemetry-api 1.45.1, GHSA-xmj3-9gf7-h52w for setuptools 84.0.0 | Python packages | Fixed in 0.5.1 | Upgraded to filelock 4.2.10, opentelemetry-api and -sdk 1.45.2, setuptools 84.2.1. pip-audit clean after the upgrade |
 | 2026-11-14 | FFmpeg 9.0.3 | FFmpeg 9.0.2 | Not released yet | Newest tag is still n9.0.2; CVE-2026-107678 and -107677 stay open |
 | 2026-11-14 | Code updates trusted after download; local receiver readable by other local processes | App | Fixed in 0.5.1 | Signed zip verified at every start and run from memory (shell 5), session on the receiver |
+| 2026-11-26 | pip-audit, all packages in `uv.lock` | Python packages | Not affected | No known vulnerabilities |
+| 2026-11-26 | OpenSSL advisories of 10 and 17 Nov 2026 (CVE-2026-88822, -88823, -95691, -95692, -35190, -124709, -107493 and others), all Low | OpenSSL 3.5.9 | Low, fix not released yet | QUIC, AES-GCM-SIV, CMS and the TLS 1.3 Suite B flag are not used by CPython's TLS client; the PEM reader only reads the bundled CA list. Fix in 3.5.10, scheduled for 1 Dec 2026; take it with the next CPython build |
+| 2026-11-26 | Python 3.12 | CPython 3.12.16 | Not affected | 3.12.16 is still the newest 3.12 release |
+| 2026-11-26 | FFmpeg 9.0.3 | FFmpeg 9.0.2 | Not released yet | Newest tag is still n9.0.2; CVE-2026-107678 and -107677 stay open. The planned FFmpeg rebuild replaces waiting for 9.0.3 |
 | 2026-10-23 | Supply chain | Whisper model | Fixed in 0.4.1 | Pinned to revision `49e6aa2` (`MODEL_REVISIONS` in `app/whisper_mlx.py`). Every release checks for a newer revision and ships it after testing |
 
 ## Updating this file

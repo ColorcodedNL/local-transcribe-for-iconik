@@ -2,38 +2,156 @@
 <html lang="nl">
 <head>
 <meta charset="utf-8">
-<title>Handleiding: Local Transcribe for Iconik instellen</title>
+<title>Handleiding: Local Transcribe</title>
 <link rel="stylesheet" href="guide.css">
 </head>
 <body>
 
-<h1>Handleiding: Local Transcribe for Iconik instellen</h1>
+<h1>Handleiding: Local Transcribe</h1>
 
-<h2>Wat doet de app</h2>
-<p>Local Transcribe for Iconik maakt transcripties van assets in Iconik, volledig op je eigen Mac. De spraakherkenning is Whisper large-v3 (via MLX), en een aparte spreker-herkenning labelt wie er praat. De transcriptie wordt met woordtijden en sprekers terug in Iconik gezet.</p>
-<p>Je start een opdracht met de knop <b>Local Transcribe</b> bij een asset of collectie in Iconik. De opdracht draait op de computer waarop je klikt, dus de bronbestanden moeten daar bereikbaar zijn (bijvoorbeeld het gemounte archief). Het venster van de app laat per opdracht de voortgang zien.</p>
-<p>Bij de eerste opdracht downloadt de app eenmalig het Whisper-model (ongeveer 3 GB). Daarna werkt alles lokaal.</p>
-<p>De app maakt alleen verbinding met Iconik zelf, eenmalig met Hugging Face voor het model, en met GitHub om te kijken of er een nieuwe versie is en om die te downloaden als je een update installeert. Er gaan geen gebruiksgegevens naar buiten.</p>
-<p>Is er een nieuwe versie, dan verschijnt bovenin het venster een melding. Bij de meeste updates klik je op <b>Installeren</b>: de app downloadt de update, controleert de handtekening, wacht tot er geen opdracht meer loopt en start zichzelf opnieuw op. Bij een grotere update verwijst de melding naar de downloadpagina. Installeer dan de nieuwe dmg op dezelfde manier als de eerste keer.</p>
-<p>Bij een collectie of een selectie van meerdere assets leest de app de audio van het volgende asset al in, terwijl het huidige nog wordt getranscribeerd. Bij grote bestanden op een netwerkarchief scheelt dat per asset de tijd van het lezen.</p>
-<p class="note">Een klik vervangt de transcriptie die door deze app is gemaakt, inclusief handmatige correcties daarin. Transcripties uit andere bronnen worden niet overschreven. Vindt een run geen verstaanbare spraak, dan blijft de eerdere transcriptie staan.</p>
-<p>Deze handleiding laat zien hoe een Iconik-beheerder Local Transcribe for Iconik voor het eerst koppelt aan een Iconik-omgeving. Het gaat om vijf stappen, waarvan de laatste bij de eerste opdracht gebeurt. Stap 1 en 4 hoeven maar één keer te gebeuren, voor alle gebruikers samen. Collega's slaan die over, zie het kopje <b>Collega's aansluiten</b>.</p>
+<h2>Wat de app doet</h2>
+<p>Local Transcribe transcribeert video en audio helemaal op je eigen Mac. De spraakherkenning is Whisper large-v3 (via MLX) en een apart model voor sprekerherkenning geeft aan wie er praat. Elk transcript heeft woordtijden en sprekers.</p>
+<p>Je kunt de app op twee manieren gebruiken, los of samen:</p>
+<ul>
+<li><b>Zelfstandig.</b> Sleep bestanden of een map op het venster. Het transcript komt naast de media als <code>clip.transcript.json</code>. Een gevolgde map pakt nieuwe bestanden zelf op.</li>
+<li><b>Met Iconik.</b> Start een opdracht met de knop <b>Local Transcribe</b> bij een asset of collectie in Iconik. Het transcript gaat terug naar Iconik. Dat vraagt een eenmalige inrichting, zie deel 2 van deze handleiding.</li>
+</ul>
+<p>Bij de eerste opdracht haalt de app eenmalig het Whisper-model op (ongeveer 3 GB). Daarna gebeurt alles lokaal. De app maakt alleen verbinding met Hugging Face (eenmalig, voor het model), met GitHub (om te kijken of er een nieuwere versie is) en met Iconik als je dat gebruikt. Er gaan geen gebruiksgegevens naar buiten.</p>
+<p>Is er een nieuwe versie, dan verschijnt er een melding bovenin het venster. Bij de meeste updates klik je op <b>Installeer</b>: de app haalt de update op, controleert de handtekening, wacht tot er geen opdracht loopt en start zichzelf opnieuw. Bij een grotere update verwijst de melding naar de downloadpagina. Installeer de nieuwe dmg dan op dezelfde manier als de eerste keer.</p>
+<p class="note">Een nieuwe opdracht vervangt het transcript dat deze app eerder maakte. Transcripten uit andere bronnen, bestanden die de app niet zelf schreef en correcties uit Refine worden nooit overschreven. Vindt een run geen verstaanbare spraak, dan blijft het eerdere transcript staan.</p>
 
-<h2>Voor je begint</h2>
+<h2>Voordat je begint</h2>
 <ul>
 <li>Een Mac met Apple Silicon en macOS 13 of nieuwer.</li>
-<li>Genoeg geheugen. Een volledige opdracht gebruikt op zijn piek tot ongeveer 9 GB. 16 GB is genoeg voor je eigen opdrachten. Voor een Mac die ook opdrachten op afstand doet of automatisch transcribeert is 32 GB of meer beter: automatische opdrachten starten pas met 12 GB vrij.</li>
-<li>Een Iconik-account. Voor stap 1 en 4 heb je beheerrechten nodig.</li>
-<li>Toegang tot het archief op die Mac, bijvoorbeeld als gemounte schijf of netwerkmap.</li>
-<li>Internet, voor Iconik zelf en voor de eenmalige modeldownload bij de eerste opdracht.</li>
+<li>Genoeg geheugen. Een volledige opdracht gebruikt op zijn piek ongeveer 9 GB. 16 GB is genoeg voor je eigen opdrachten. Voor een Mac met gevolgde mappen, opdrachten op afstand of automatisch transcriberen is 32 GB of meer beter: die opdrachten starten pas met 12 GB vrij.</li>
+<li>Internet voor het eenmalig ophalen van het model bij de eerste opdracht.</li>
+<li>Voor Iconik: een Iconik-account, een beheerder voor de eenmalige inrichting en het archief gekoppeld op de Mac.</li>
 </ul>
 
-<h2>Stap 1: applicatie aanmaken in Iconik</h2>
+<h2>Installeren</h2>
+<p>Open het installatiebestand (dmg). Naast de app staan een snelkoppeling naar Programma's en de handleidingen (Nederlands en Engels). Sleep <b>Local Transcribe</b> naar <b>Programma's</b>.</p>
+<figure class="half"><img src="images/dmg-contents.jpg" alt=""></figure>
+<p><b>Eerste keer openen.</b> Open de app vanuit Programma's. macOS meldt dat Apple niet kon controleren of de app vrij is van malware, omdat de app nog niet ondertekend is. Klik op <b>Gereed</b>, niet op <b>Verplaats naar prullenmand</b>.</p>
+<figure class="small"><img src="images/gatekeeper-blocked.jpg" alt=""></figure>
+<p>Ga naar <b>Systeeminstellingen</b>, <b>Privacy en beveiliging</b> en scrol naar <b>Beveiliging</b>. Klik naast de melding dat Local Transcribe is geblokkeerd op <b>Open toch</b>.</p>
+<figure class="half"><img src="images/privacy-open-anyway.jpg" alt=""></figure>
+<p>Er volgt nog een vraag. Kies <b>Open toch</b> en bevestig met je wachtwoord of Touch ID als daarom gevraagd wordt. Dit hoeft maar één keer per Mac.</p>
+<figure class="small"><img src="images/gatekeeper-open-anyway.jpg" alt=""></figure>
+<p><b>Had je Local Transcribe for Iconik</b> (de naam tot 0.7)? De oude app blijft in Programma's naast de nieuwe staan. Bij de eerste start vraagt de nieuwe app of de oude naar de prullenmand mag. Je instellingen, je Iconik-inlog, transcripten en correcties blijven: die staan los van de app. macOS kan één keer om het wachtwoord van je sleutelhanger vragen: kies <b>Sta altijd toe</b>. Met <b>Sta toe</b> vraagt hij het twee keer.</p>
+
+<h2 class="new">Je eerste transcriptie</h2>
+<p>Het lege venster laat zien waar je bestanden neerzet. Sleep een of meer video- of audiobestanden op het venster, of klik op <b>Kies bestanden…</b>. Tijdens het slepen laat een blauw vlak zien dat de app ze aanneemt.</p>
+<figure><img src="images/app-empty.jpg" alt=""></figure>
+<p>De eerste keer haalt de app het Whisper-model op (ongeveer 3 GB). Het venster laat dat zien met een melding. Dit kan van een paar minuten tot langer duren: het model komt van Hugging Face en zonder account gaat het downloaden daar trager. De voortgangsbalk kan lang op 0% blijven staan terwijl het downloaden wel loopt. Laat de app gewoon draaien. Zodra het model binnen is, begint de transcriptie vanzelf.</p>
+<figure><img src="images/model-download.jpg" alt=""></figure>
+<p>Bij elke afgeronde opdracht zie je het aantal regels, het aantal sprekers, de herkende taal en hoe snel het ging. Onder de titel staan de audiosporen van het bestand. De app kiest zelf de sporen met spraak. Een spoor met hetzelfde signaal als een ander spoor laat hij weg en dat staat erbij.</p>
+<figure><img src="images/app-result.jpg" alt=""></figure>
+<p>Stop je de app met Cmd+Q terwijl er een opdracht loopt, dan vraagt hij wat je wilt. <b>Na deze opdracht</b> maakt de lopende opdracht af, pakt niets nieuws meer op en sluit dan zelf af. <b>Toch afsluiten</b> breekt de opdracht af; die kun je later opnieuw starten.</p>
+
+<h2>Lokale bestanden</h2>
+<h3>Waar het transcript komt</h3>
+<p><code>clip.mov</code> krijgt <code>clip.transcript.json</code> ernaast. Onder <b>Instellingen › Bestanden</b> (het tandwiel rechtsboven, of Cmd+,) kun je in plaats daarvan <b>In één map…</b> kiezen: alle transcripten gaan dan naar een map die je kiest, met dezelfde mappenstructuur als de bron, zodat twee bestanden die <code>clip.mov</code> heten niet botsen. Staan <code>clip.mov</code> en <code>clip.wav</code> naast elkaar, dan krijgt de tweede <code>clip.wav.transcript.json</code>.</p>
+<figure><img src="images/settings-files.jpg" alt=""></figure>
+<p>De app herkent een bestand aan een vingerafdruk van de inhoud, niet aan de naam of de map. Een kopie, een verplaatst of hernoemd bestand krijgt het transcript dat de Mac al heeft, zonder opnieuw te transcriberen. Een <code>clip.transcript.json</code> die de app niet zelf schreef, of die bij een ander bestand hoort, blijft staan en de opdracht wordt overgeslagen.</p>
+<p>Het formaat van het bestand staat beschreven in <code>docs/format</code> op de projectpagina, zodat andere programma's het kunnen lezen.</p>
+
+<h3>Een map</h3>
+<p>Sleep je een map op het venster, dan verschijnt die als groep in de lijst, met alle video en audio erin en in de submappen. Losse audiobestanden gaan ook mee; zet dat uit onder Instellingen › Bestanden, <b>Ook alleen audio</b>. De groep toont de eerste vijf bestanden; <b>toon alles</b> laat de rest zien en met het pijltje klap je de groep in.</p>
+<figure><img src="images/app-folder.jpg" alt=""></figure>
+
+<h3>Gevolgde mappen</h3>
+<p>Klik op <b>Volgen</b> bij een groep, of op <b>+</b> onder Instellingen › Bestanden, <b>Gevolgde mappen</b>. De app pakt nieuwe bestanden in die map dan zelf op:</p>
+<ul>
+<li>Een nieuw bestand staat meteen bovenaan zijn groep, met "controleert het bestand…". Als het 15 seconden niet meer verandert, wordt het getranscribeerd.</li>
+<li>Eén tegelijk, het nieuwste eerst en alleen als de Mac ruimte heeft: op netstroom, genoeg geheugen vrij en processor en GPU niet te druk (Instellingen › Transcriptie). De statusstrook zegt waar hij op wacht.</li>
+<li>Per gevolgde map kies je of submappen ook meetellen (Instellingen › Bestanden).</li>
+<li>Met <b>Pauzeer</b> bij de groep staat de map even stil: er komt niets bij en wat wacht, start niet. Wat al bezig is, loopt af. Dat blijft zo tot <b>Hervat</b>, ook na het opnieuw openen van de app.</li>
+<li>Haal je een afgerond bestand uit de map, dan wordt het grijs met "niet meer in de map" en zakt het naar onderen in zijn groep. Zo werkt een gevolgde map als inbox: erin zetten, laten transcriberen, eruit halen.</li>
+<li>Een bestand dat mislukte, wordt pas opnieuw geprobeerd als het verandert.</li>
+</ul>
+
+<h3>Als de app niet kan schrijven</h3>
+<p>Op een schijf die alleen-lezen is, een kaart die op slot staat of een map zonder schrijfrechten zegt de app dat voordat hij begint. De groep (of het bestand) noemt de reden, met <b>Kies een andere plek…</b> en <b>Annuleer</b>.</p>
+<p>Kies een map. De transcripten komen daar, in een map met de naam van de kaart of de gevolgde map en dezelfde submappen. De keuze wordt onthouden voor die gevolgde map of schijf; onder Instellingen › Bestanden, <b>Andere plekken</b> staan ze en met <b>Vergeet</b> vraagt de app het de volgende keer opnieuw. Mislukt het schrijven tijdens een opdracht, dan blijft het transcript op de Mac en wordt het weggeschreven zodra je een plek kiest, zonder opnieuw te transcriberen.</p>
+
+<h3>Weghalen</h3>
+<p>Kies een afgeronde opdracht en druk op ⌫, of klik op ✕, om hem uit de lijst te halen. Met de rechtermuisknop zijn er twee keuzes: <b>Verwijder uit lijst</b> en <b>Verwijder ook van deze Mac…</b>, dat weghaalt wat de app op deze Mac over het bestand bewaart (de kopie van het transcript, golfvormen, concepten en originelen van Refine). Het venster biedt ook aan het log te wissen, waar bestandsnamen in staan.</p>
+<p>Bij een lokaal bestand heeft het venster nog een keuze, standaard uit: <b>Ook het transcript naast de media</b>. Die zet <code>clip.transcript.json</code> en de ondertitelbestanden in de prullenmand, alleen als de app ze zelf schreef en niemand ze daarna veranderde. Het mediabestand blijft altijd staan.</p>
+<figure class="half"><img src="images/remove-beside.jpg" alt=""></figure>
+<p>Een netwerkschijf heeft vaak geen prullenmand. Het bestand blijft dan staan en de app meldt dat, met <b>Toch wissen…</b>. Dat wist het definitief, na een tweede bevestiging en alleen wat de app schreef en niemand veranderde. Alles in Iconik blijft staan, ook als het bestand op de opslag van Iconik staat.</p>
+
+<h2 class="new">Refine: een transcript nakijken</h2>
+<p>Met Refine kijk je een transcript na naast het origineel. Links speelt de video, rechts staan de tekstblokken en onderin staat een tijdlijn met de tekstblokken, de sprekers en elk audiospoor als golfvorm. Open het met <b>Refine</b> bij een afgeronde opdracht.</p>
+<figure><img src="images/refine.jpg" alt=""></figure>
+<h3>Afspelen</h3>
+<p>Het origineel speelt rechtstreeks uit het bestand. Klik op een blok of op de tijdlijn om daarheen te springen. Spatie speelt en pauzeert, de pijltjes springen een seconde (vijf met Shift), Option met een pijltje springt een blok en J, K en L werken zoals in een montageprogramma. Met het koptelefoonknopje bij een spoor hoor je alleen dat spoor; standaard hoor je de mix van de sporen die de app gebruikte.</p>
+<h3>Tekst aanpassen</h3>
+<ul>
+<li>Dubbelklik op een blok (of druk op Enter) om te typen. Woorden die gelijk blijven, houden hun tijd. Een veranderd woord krijgt de tijd van het woord dat het vervangt en telt als nagekeken.</li>
+<li><b>Enter</b> splitst het blok bij de cursor, <b>Backspace</b> aan het begin voegt het samen met het vorige blok, <b>Delete</b> aan het eind met het volgende. <b>Cmd+Enter</b> of ergens anders klikken bewaart de wijziging, <b>Esc</b> breekt af.</li>
+<li>Op de tijdlijn: <b>S</b> splitst het blok onder de afspeelkop, <b>M</b> voegt samen met het volgende blok, <b>N</b> zet een blok op een lege plek. Sleep de randen van het gekozen blok om de tijd aan te passen.</li>
+<li>Het invoerveld controleert de spelling in de taal van het transcript terwijl je typt en de Schrijfhulp van macOS werkt erin.</li>
+</ul>
+<h3>Sprekers</h3>
+<ul>
+<li>Klik op een naam in de sprekerbalk om hem aan te passen, of voeg een spreker toe met <b>+ Spreker</b>.</li>
+<li>Selecteer woorden in een blok en klik met de rechtermuisknop om ze aan een andere of nieuwe spreker te geven. Het blok wordt op de woordgrenzen gesplitst.</li>
+<li>Klik met de rechtermuisknop op een blok zonder selectie, of op een blok op de tijdlijn, om het hele blok aan een andere spreker te geven.</li>
+</ul>
+<h3>Bewaren</h3>
+<p>Elke wijziging wordt meteen als concept op deze Mac bewaard. Je kunt Refine verlaten en later verdergaan; ongedaan maken en opnieuw met Cmd+Z en Shift+Cmd+Z. In de opdrachtenlijst staat dan <b>Concept</b>.</p>
+<p><b>Opslaan</b> schrijft de correctie naast de media, in plaats van het transcript. Het origineel blijft op deze Mac en met <b>Origineel terugzetten</b> haal je het terug. In de opdrachtenlijst staat dan <b>Gecorrigeerd</b>. Onder Instellingen › Transcriptie, bij Refine, zie je hoeveel originelen er bewaard zijn en kun je ze weghalen; daarna kan er geen origineel meer terug.</p>
+<p>Een nieuwe transcriptie slaat een gecorrigeerd bestand over en zegt waarom. Wil je het toch opnieuw laten transcriberen, zet dan eerst in Refine het origineel terug.</p>
+
+<h2 class="new">Ondertitels</h2>
+<p>Een transcriptblok is zo lang als iemand praat. Een ondertitel moet leesbaar zijn: twee korte regels, lang genoeg in beeld. De app maakt ondertitels uit het transcript als tweede laag en bewaart ze als bestand. Het transcript zelf verandert niet. Ondertitels worden alleen gemaakt als je erom vraagt: in Refine, of met de instelling aan het eind van dit hoofdstuk.</p>
+<h3>Maken in Refine</h3>
+<p>Klik op <b>+ Ondertitels</b> naast de tab Transcript. Het venster dat opent heeft drie delen:</p>
+<ul>
+<li><b>Regels.</b> Kies een voorkeuze of vul eigen waarden in: tekens per regel, regels, kortste en langste duur, de ruimte tussen ondertitels en de leessnelheid. Er is geen vaste standaard. <b>Online en streaming</b> (42 tekens) is wat streamingdiensten gebruiken; <b>Televisie, teletekst</b> (37 tekens) is de gewoonte bij de omroep.</li>
+<li><b>Inpassen.</b> <b>Uitloop in de stilte</b> laat een ondertitel die te snel gaat na het laatste woord in beeld staan, nooit over de volgende heen. <b>Korte zinnen van dezelfde spreker samen</b> zet "Ja, zeker." bij de zin erna, alleen als er geen pauze tussen zit.</li>
+<li><b>Bewaren.</b> Kies .srt, .vtt of allebei en waar het bestand komt: naast de media (het bestand krijgt de naam van het mediabestand) of een andere plek die je kiest.</li>
+</ul>
+<p>De regel onderin telt wat je krijgt: hoeveel ondertitels, hoeveel er snel zijn en hoeveel onleesbaar en hoe dat zonder uitloop zou zijn. De tekst wordt nooit ingekort, dus snelle spraak blijft een waarschuwing. Klik op <b>Maken en bewaren</b>.</p>
+<p>Staat er al een .srt of .vtt naast de media, dan biedt het venster aan die in plaats daarvan in te laden (<b>Inladen</b>). Je kunt ook elk ander bestand inladen. De ondertitels komen binnen zoals ze in het bestand staan; sprekers en woordtijden komen uit het transcript waar de tekst overeenkomt.</p>
+<h3>Eraan werken</h3>
+<p>Na het maken staat de tab <b>Ondertitels</b> open en hebben de ondertitels hun eigen baan op de tijdlijn, boven het transcript. Alles uit Refine werkt op de tab waarin je zit: typen, splitsen, samenvoegen, de randen slepen, ongedaan maken en opnieuw. Onder de video zie je de ondertitel zoals hij in het bestand komt.</p>
+<ul>
+<li><b>Grijs</b> is goed. <b>Oranje</b> is sneller dan de leessnelheid, te kort of te lang. <b>Rood</b> is onleesbaar, past niet binnen de regels of overlapt de volgende. <b>Volgende</b> (of W) springt naar de volgende waarschuwing; kort de tekst in of geef de ondertitel meer tijd.</li>
+<li><b>Instellingen</b> toont dezelfde regels. Een andere regel verandert de waarschuwingen en de regelafbreking. <b>Inpassen</b> past samenvoegen en uitloop opnieuw toe en laat met rust wat je met de hand veranderde.</li>
+<li><b>Bewaar</b> schrijft het bestand opnieuw op dezelfde plek. Wijzigingen blijven intussen op deze Mac bewaard.</li>
+<li>De puntjes naast de tab: <b>Opnieuw maken uit het transcript</b> (wat je met de hand veranderde gaat verloren), <b>Op een andere plek bewaren</b> en <b>Ondertitels verwijderen</b>. Verwijderen haalt ze uit de app; een bestand dat al geschreven is, blijft staan.</li>
+</ul>
+<p>Verander je daarna het transcript, dan blijven de ondertitels zoals ze zijn en zeggen ze dat het transcript veranderd is. Maak ze opnieuw als je de wijzigingen erin wilt.</p>
+<p>De app overschrijft geen ondertitelbestand dat hij niet zelf schreef, of dat iemand daarna veranderde. Laad dat bestand in, of bewaar op een andere plek. In de opdrachtenlijst staat bij een afgeronde opdracht met ondertitels <b>Ondertitels</b>; klik erop om ze te openen.</p>
+<h3>Bij elke transcriptie</h3>
+<p>Zet onder Instellingen › Bestanden, <b>Ondertitels</b>, de schakelaar <b>Maak ondertitels bij elke transcriptie</b> aan (standaard uit, voor lokale bestanden). Kies daarna:</p>
+<ul>
+<li><b>Formaat</b>: .srt, .vtt of allebei. Namen van sprekers alleen in .vtt.</li>
+<li><b>Regels</b>: Online en streaming, of Televisie, teletekst. Eigen regels maak je in Refine.</li>
+<li><b>Plaats</b>: <b>Bij het transcript</b> (waar het transcript ook komt, ook een andere plek die je koos), <b>Naast de media</b>, of <b>In één map…</b> met dezelfde mappenstructuur.</li>
+</ul>
+<p>De ondertitels worden direct na het transcript gemaakt. Het zijn dezelfde ondertitels die Refine laat zien, dus je kunt ze daar nakijken en verbeteren. Heb je ze in Refine veranderd, dan laat een nieuwe transcriptie ze met rust. De opdrachtenlijst zegt hoeveel er een waarschuwing hebben, bijvoorbeeld "ondertitels, 3 met een waarschuwing".</p>
+
+<h2 class="new">Instellingen</h2>
+<p>Open Instellingen met het tandwiel rechtsboven in het venster, met Cmd+, of via het icoon in de menubalk. Wijzigingen gelden meteen.</p>
+<ul>
+<li><b>Algemeen</b>: de taal van de app, <b>Opstarten bij inloggen</b> en de modellen.</li>
+<li><b>Transcriptie</b>: de gesproken taal (standaard <b>Herken per opdracht</b>; met herkennen aan verwacht de app de talen die je aanvinkt en een fragment dat als een andere taal wordt herkend met minder dan tien woorden, vaak muziek of geruis, wordt overgeslagen), de grenzen voor gevolgde mappen en automatisch transcriberen (wanneer de Mac ruimte heeft) en bij Refine de originelen op deze Mac.</li>
+<li><b>Bestanden</b>: waar transcripten komen, ook alleen audio, ondertitels bij elke transcriptie, gevolgde mappen en andere plekken.</li>
+<li><b>Integraties</b>: Iconik, zie deel 2.</li>
+</ul>
+
+<h1 class="new">Deel 2: Iconik</h1>
+<p>Alles in dit deel heb je alleen nodig als je Iconik gebruikt. Met Iconik schrijft de app zijn transcripten terug als echte Iconik-transcripties, met sprekers en woordtijden en start je opdrachten met knoppen in Iconik. Het bestand wordt gelezen van de opslag van Iconik (ISG) die op je Mac gekoppeld is; er wordt niets uit Iconik gedownload.</p>
+<p>Stap 1 en 4 gebeuren één keer, door een Iconik-beheerder, voor alle gebruikers tegelijk. Collega's slaan die over, zie <b>Collega's aansluiten</b>.</p>
+
+<h2>Stap 1: de applicatie aanmaken in Iconik</h2>
 <p>Dit doet een Iconik-beheerder. Je maakt één applicatie aan waarmee de app mag inloggen.</p>
 <ol>
 <li>Ga in Iconik naar <b>Admin</b> en open <b>Application tokens</b>. Klik rechtsboven op <b>New application</b>.
 <figure><img src="images/iconik-app-tokens.jpg" alt=""></figure></li>
-<li>Kies <b>Browser or device app</b> en klik op <b>Next</b>. Deze keuze kan achteraf niet meer worden gewijzigd.
+<li>Kies <b>Browser or device app</b> en klik op <b>Next</b>. Deze keuze kun je achteraf niet meer veranderen.
 <figure class="half"><img src="images/iconik-app-type.jpg" alt=""></figure></li>
 <li>Vul de gegevens in en klik op <b>Create</b>:
 <table>
@@ -44,196 +162,127 @@
 <tr><td>Scopes</td><td>assets:read, assets:write, collections:read, user_impersonation</td></tr>
 </table>
 <figure class="half"><img src="images/iconik-app-details.jpg" alt=""></figure></li>
-<li>Kopieer het <b>Client ID</b>. Dit is wat je in stap 2 nodig hebt. Er is geen client secret.
+<li>Kopieer de <b>Client ID</b>. Die heb je nodig in stap 2. Er is geen client secret.
 <figure class="half"><img src="images/iconik-app-created.jpg" alt=""></figure></li>
 </ol>
 
-<h2>Stap 2: de app installeren en het Client ID invullen</h2>
-<p><b>Installeren.</b> Open het installatiebestand (dmg). Naast de app staan een snelkoppeling naar Programma's en de handleidingen (Nederlands en Engels). Sleep <b>Local Transcribe for Iconik</b> naar <b>Applications</b>.</p>
-<figure class="half"><img src="images/dmg-contents.jpg" alt=""></figure>
-<p><b>Eerste start.</b> Open de app vanuit Programma's. macOS meldt dat Apple niet kon verifiëren dat de app geen malware bevat, omdat de app nog niet is ondertekend. Klik op <b>Gereed</b>, niet op <b>Verplaats naar prullenmand</b>.</p>
-<figure class="small"><img src="images/gatekeeper-blocked.jpg" alt=""></figure>
-<p>Ga naar <b>Systeeminstellingen</b>, <b>Privacy en beveiliging</b> en scroll naar <b>Beveiliging</b>. Klik bij de melding dat Local Transcribe for Iconik is geblokkeerd op <b>Open toch</b>.</p>
-<figure class="half"><img src="images/privacy-open-anyway.jpg" alt=""></figure>
-<p>Er komt nog een melding. Kies <b>Open toch</b> en bevestig zo nodig met je wachtwoord of Touch ID. Dit hoeft maar één keer per Mac.</p>
-<figure class="small"><img src="images/gatekeeper-open-anyway.jpg" alt=""></figure>
-<p><b>Client ID invullen.</b> Daarna:</p>
+<h2>Stap 2: Iconik toevoegen in de app</h2>
 <ol>
-<li>Open de app. Verschijnt de waarschuwing, doe dan eerst de stappen hierboven en kies <b>Open toch</b>.</li>
-<li>Het venster opent op <b>Voorkeuren</b>. De status linksonder staat op <b>Niet verbonden</b>.</li>
-<li>Plak het Client ID uit stap 1 in het veld en klik op <b>Opslaan en inloggen</b>.</li>
+<li>Open <b>Instellingen › Integraties</b>. Is er nog niets gekoppeld, dan staat er <b>Nog geen integraties</b>. Klik op <b>+</b> en daarna op <b>Voeg toe</b>. De naam mag leeg blijven: dan heet hij gewoon Iconik.</li>
+<li>Plak de Client ID uit stap 1 in <b>Client-ID</b>.</li>
+<li>Klik op <b>Log in bij Iconik</b>.</li>
 </ol>
-<figure><img src="images/app-client-id.jpg" alt=""></figure>
+<figure><img src="images/settings-integrations.jpg" alt=""></figure>
 
 <h2>Stap 3: inloggen bij Iconik</h2>
-<p>Het venster toont eerst de inlogpagina van Iconik. Vul je e-mailadres in en log in zoals je dat gewend bent.</p>
+<p>Het venster toont de inlogpagina van Iconik. Vul je e-mailadres in en log in zoals je gewend bent.</p>
 <figure class="half"><img src="images/iconik-sign-in.jpg" alt=""></figure>
-<p>Daarna vraagt Iconik of Local Transcribe toegang mag krijgen. Controleer dat het Local Transcribe is dat erom vraagt en klik op <b>Allow access</b>. Daarna staat linksonder <b>Ingelogd bij Iconik</b>.</p>
+<p>Iconik vraagt daarna of Local Transcribe toegang mag hebben. Kijk of het Local Transcribe is die het vraagt en klik op <b>Allow access</b>. In Instellingen staat daarna <b>Ingelogd als</b> met je naam.</p>
 <figure class="half"><img src="images/iconik-allow-access.jpg" alt=""></figure>
-<p>De app bewaart je inlog in de sleutelhanger van macOS. Na het installeren van een nieuwe versie vraagt macOS bij het starten om het wachtwoord van je sleutelhanger: kies <b>Sta altijd toe</b>. Met <b>Sta toe</b> komt de vraag twee keer.</p>
+<p>De app bewaart je inlog in de sleutelhanger van macOS. Na het installeren van een nieuwe versie vraagt macOS bij het starten om het wachtwoord van je sleutelhanger: kies <b>Sta altijd toe</b>.</p>
 
 <h2>Stap 4: de knoppen in Iconik zetten</h2>
-<p>Na het inloggen controleert de app of de knoppen <b>Local Transcribe</b> en <b>Refine transcript</b> al in deze Iconik-omgeving staan. Zo niet, dan verschijnt bovenaan <b>Opdrachten</b> een gele melding. Klik op <b>Zet de knoppen in Iconik</b>. Dit hoeft maar één keer, voor alle gebruikers tegelijk, en vraagt rechten om knoppen aan te maken.</p>
+<p>Na het inloggen kijkt de app of de knoppen <b>Local Transcribe</b> en <b>Refine transcript</b> al in deze Iconik-omgeving staan. Zo niet, dan zegt Instellingen › Integraties dat bij <b>Knoppen in Iconik</b> en verschijnt er een gele melding in het opdrachtenvenster. Klik op <b>Zet de knoppen in Iconik</b>. Dat hoeft maar één keer, voor alle gebruikers tegelijk en vraagt het recht om Custom Actions aan te maken.</p>
 <figure><img src="images/app-button-missing.jpg" alt=""></figure>
-<p>Daarna kies je in Iconik een asset of collectie en klik je op <b>Local Transcribe</b>. De transcriptie draait op de computer waarop je klikt, en de voortgang staat in het venster onder <b>Opdrachten</b>.</p>
-<p>Een asset zonder transcriptie ziet er in Iconik zo uit. De knop <b>Transcribe</b> in dit paneel is die van Iconik zelf, niet van deze app.</p>
+<p>Kies daarna een asset of collectie in Iconik. Een asset zonder transcript ziet er zo uit; de knop <b>Transcribe</b> in dit paneel is van Iconik zelf, niet van deze app.</p>
 <figure><img src="images/iconik-asset-panel.jpg" alt=""></figure>
-<p>Open het menu met de drie puntjes rechtsboven en kies <b>Local Transcribe</b>.</p>
+<p>Open het menu met de drie puntjes rechtsboven en kies <b>Local Transcribe</b>. De opdracht draait op de computer waar je klikt; de voortgang zie je in de opdrachtenlijst van de app.</p>
 <figure class="half"><img src="images/iconik-asset-menu.jpg" alt=""></figure>
-<p>De app controleert elke minuut opnieuw of de knop er nog is. Wordt de knop in Iconik verwijderd, dan verschijnt de melding vanzelf weer.</p>
+<p>De app kijkt elke minuut opnieuw of de knoppen er nog staan. Worden ze uit Iconik gehaald, dan komt de melding vanzelf terug.</p>
 
 <h2>Stap 5: de opslag koppelen (bij de eerste opdracht)</h2>
-<p>Iconik weet per asset op welke storage (ISG) het bestand staat en in welke map. De app moet weten waar die storage op deze Mac is gemount. Dat stel je niet vooraf in: het gebeurt bij de eerste opdracht van een storage, en daarna wordt het onthouden.</p>
+<p>Iconik weet per asset op welke opslag (ISG) het bestand staat en in welke map. De app moet weten waar die opslag op deze Mac gekoppeld is. Dat stel je niet vooraf in: het gebeurt bij de eerste opdracht van een opslag en wordt daarna onthouden.</p>
 <ol>
-<li>Zorg dat het archief op de Mac is gemount, zoals je dat normaal ook doet.</li>
-<li>Start een opdracht vanuit Iconik. Staat de storage op dezelfde plek als in de storage-instellingen van Iconik (het mount point daar), dan vindt de app het bestand zelf en hoef je niets te kiezen.</li>
-<li>Klopt dat pad niet, dan opent er een venster met de vraag welk mount point bij de storage hoort. Kies de map waarin de eerste map van het asset staat. Het venster noemt die mapnaam en toont het pad dat Iconik zelf opgeeft. Een map erboven of eronder kiezen werkt ook. De app geeft je drie pogingen.</li>
-<li>De keuze wordt per storage onthouden. Onder <b>Voorkeuren</b>, bij <b>ISG Mount Points</b>, zie je de lijst en kun je een pad later wijzigen.</li>
+<li>Zorg dat het archief op de Mac gekoppeld is, zoals je dat normaal doet.</li>
+<li>Start een opdracht vanuit Iconik. Staat de opslag op dezelfde plek als in de opslaginstellingen van Iconik (het mount point daar), dan vindt de app het bestand zelf en hoef je niets te kiezen.</li>
+<li>Klopt dat pad niet, dan vraagt een venster welke map bij de opslag hoort. Kies de map waar de eerste map van het asset in staat. Het venster noemt die map en laat het pad zien dat Iconik doorgeeft. Een map een niveau hoger of lager werkt ook. Je hebt drie pogingen.</li>
+<li>De keuze wordt per opslag onthouden. Instellingen › Integraties, <b>Opslag (ISG) op deze Mac</b>, toont de lijst; daar kun je later een andere map kiezen.</li>
 </ol>
-<p>Zo ziet de vraag naar het mount point eruit. Boven in het venster staat voor welke storage het is, welke map er in moet staan, en welk pad Iconik zelf opgeeft.</p>
 <figure class="half"><img src="images/mount-question.jpg" alt=""></figure>
-<p>Browse naar de map waarin het archief staat en klik op <b>Kies</b>.</p>
-<figure class="half"><img src="images/mount-choose.jpg" alt=""></figure>
-<p>Is het archief niet gemount, dan stopt de opdracht met de melding dat de map niet bereikbaar is. Mount het archief en start de opdracht opnieuw. Heeft een asset meer dan één mediabestand, dan gebruikt de app het eerste.</p>
+<p>Is het archief niet gekoppeld, dan stopt de opdracht met de melding dat de map niet bereikbaar is. Koppel het archief en start de opdracht opnieuw. Heeft een asset meer dan één mediabestand, dan gebruikt de app het eerste.</p>
 
-<h2>De eerste keer: het model downloaden</h2>
-<p>Bij de eerste opdracht downloadt de app het Whisper-model, ongeveer 3 GB. Dit gebeurt maar één keer. In het venster staat dan de melding dat het Whisper-model wordt gedownload.</p>
-<figure><img src="images/model-download.jpg" alt=""></figure>
-<p>Dit kan lang duren, van enkele minuten tot langer. Het model komt van Hugging Face, en zonder account gaan downloads daar trager. De voortgangsbalk kan lang op 0% blijven staan terwijl de download gewoon doorloopt. Laat de app draaien en sluit hem niet af. Zodra het model binnen is, start de transcriptie vanzelf.</p>
-
-<h2>Het resultaat</h2>
-<p>In de app staat de opdracht onder <b>Opdrachten</b>. Per opdracht zie je het aantal regels, het aantal sprekers, de herkende taal en hoe snel het ging. Onder de titel staan de audiosporen van het bestand. De app kiest zelf de sporen met spraak. Een spoor dat hetzelfde signaal is als een ander spoor wordt genegeerd, en dat zie je erbij staan. Met <b>Verberg sporen</b> klap je die weergave dicht.</p>
-<figure><img src="images/app-result.jpg" alt=""></figure>
-<p>In Iconik staat de transcriptie daarna bij het asset onder <b>Transcriptions</b>, met de sprekers (Spreker 1, Spreker 2) en de taal.</p>
+<h2>Het resultaat in Iconik</h2>
+<p>Het transcript verschijnt bij het asset onder <b>Transcriptions</b>, met de sprekers en de taal. Regels uit Iconik krijgen in de opdrachtenlijst het label <b>Iconik</b> als er ook lokale bestanden in de lijst staan.</p>
 <figure><img src="images/iconik-transcript.jpg" alt=""></figure>
-<p>Sluit je de app met Cmd+Q terwijl er een opdracht loopt, dan vraagt hij wat je wilt. <b>Na deze opdracht</b> maakt de lopende opdracht af, pakt niets nieuws meer op en sluit dan zelf af. <b>Toch afsluiten</b> breekt de opdracht af; je kunt hem later opnieuw starten vanuit Iconik.</p>
 
 <h2>Collega's aansluiten</h2>
-<p>Een collega hoeft stap 1 en 4 niet te doen, want die gelden voor de hele Iconik-omgeving. Voor een collega is het:</p>
+<p>Een collega heeft stap 1 en 4 niet nodig, want die gelden voor de hele Iconik-omgeving. Voor een collega is het:</p>
 <ol>
-<li>De app installeren (stap 2, eerste punt).</li>
-<li>Het Client ID invullen dat de beheerder uit stap 1 heeft doorgegeven.</li>
+<li>De app installeren.</li>
+<li>Iconik toevoegen onder Instellingen › Integraties en de Client ID invullen die de beheerder in stap 1 kreeg.</li>
 <li>Inloggen met het eigen Iconik-account (stap 3).</li>
 <li>Bij de eerste opdracht het archief koppelen (stap 5).</li>
 </ol>
-<p>Het Client ID is geen geheim in de zin van een wachtwoord (er is geen client secret), maar deel het wel alleen met mensen binnen je eigen omgeving. Iedereen werkt met een eigen login en transcribeert op de eigen Mac.</p>
+<p>De Client ID is geen geheim zoals een wachtwoord (er is geen client secret), maar deel hem alleen binnen je eigen organisatie. Iedereen logt in met een eigen account en transcribeert op de eigen Mac.</p>
+<p><b>Meerdere Iconik-omgevingen.</b> Met <b>+</b> onder Integraties voeg je er nog een toe, elk met een eigen Client ID, inlog, naam en opslag. Een tweede koppeling naar een omgeving die al gekoppeld is, wordt geweigerd. Meerdere omgevingen zijn nog niet getest met echte, aparte omgevingen.</p>
 
-<h2>Voorkeuren</h2>
+<h2>Refine met Iconik</h2>
 <ul>
-<li><b>Gesproken taal</b>: standaard staat dit op <b>Herken per asset</b>. Zet de taal alleen vast als al je materiaal in één taal is. Met herkennen aan verwacht de app Nederlands of Engels: een clip die als een andere taal wordt herkend en minder dan tien woorden heeft (vaak muziek of geruis) wordt overgeslagen.</li>
-<li><b>Opdrachten op afstand toestaan</b>, <b>Automatisch transcriberen</b> en <b>Ook audiobestanden</b>: zie de hoofdstukken hieronder.</li>
-<li><b>Opstarten bij inloggen</b>: de app start in de menubalk als je inlogt op de Mac.</li>
-<li><b>Naam van deze Mac in Iconik</b>: de naam in de details van een asset, zichtbaar voor iedereen die het asset ziet. Leeg betekent de computernaam.</li>
-<li><b>ISG Mount Points</b>: de gekoppelde opslag, zie stap 5.</li>
-<li><b>Modellen</b>: Whisper large-v3 voor spraak, pyannote community-1 voor sprekers. Het sprekermodel zit in de app. Het Whisper-model komt bij de eerste opdracht binnen.</li>
+<li>In Iconik opent <b>Refine transcript</b> in het menu van een asset het in Refine. De app zet die knop samen met Local Transcribe in Iconik (stap 4).</li>
+<li><b>Opslaan in Iconik</b> vervangt het transcript in Iconik door de correctie en de app vraagt Iconik het asset opnieuw te indexeren. Iconik laat alleen het nieuwste transcript zien maar doorzoekt ze allemaal; het origineel ernaast laten staan zou verbeterde woorden vindbaar houden. Daarom blijft het origineel op deze Mac en met <b>Origineel terugzetten</b> haal je het terug. Verbeterde woorden tellen als nagekeken: Iconik toont ze zonder rode onderstreping.</li>
+<li>Is de opslag (ISG) niet gekoppeld, dan opent Refine toch: je kunt de tekst en de sprekers aanpassen en in Iconik bewaren, maar er is geen beeld of geluid en de golfvormen verschijnen alleen als een eerdere opdracht op deze Mac ze bewaarde.</li>
+<li>Ondertitels gaan niet als transcript naar Iconik. Een ondertitelbestand naast de media met dezelfde naam als het mediabestand koppelt Iconik aan het asset. <b>Maak ondertitels bij elke transcriptie</b> geldt in deze versie alleen voor lokale bestanden.</li>
 </ul>
+<figure class="small"><img src="images/iconik-refine-menu.png" alt=""></figure>
 
 <h2 class="new">Opdrachten op afstand en hele collecties</h2>
-<p>Optioneel. Staat <b>Opdrachten op afstand toestaan</b> aan onder Voorkeuren, dan pakt een Mac verzoeken op die in Iconik gedaan zijn, vanaf elke locatie, en verwerkt ze op de achtergrond. De knop <b>Local Transcribe</b> werkt gewoon zoals eerder. Met opdrachten op afstand aan blijft de app in de menubalk en verbergt het sluiten van het venster hem alleen. Het archief moet op die Mac gemount zijn.</p>
+<p>Optioneel. Met <b>Opdrachten op afstand toestaan</b> aan onder Instellingen › Integraties pakt een Mac aanvragen op die in Iconik gedaan zijn, vanaf elke plek en verwerkt ze op de achtergrond. De knop <b>Local Transcribe</b> blijft gewoon werken. Met opdrachten op afstand aan leeft de app in de menubalk en verbergt het sluiten van het venster hem alleen. Het archief moet op die Mac gekoppeld zijn.</p>
 
 <h3>Eén asset aanvragen</h3>
-<p>Zet in de metadata van de asset <b>Transcriptie</b> op <b>Aangevraagd</b>. De twee velden (<b>Transcriptie</b> en <b>Transcriptie details</b>) zitten in de metadataweergave <b>Local Transcribe</b>. Voeg ze toe aan een weergave die je team al gebruikt als je ze daar wilt hebben.</p>
+<p>Zet in de metadata van het asset <b>Transcriptie</b> op <b>Aangevraagd</b>. De twee velden (<b>Transcriptie</b> en <b>Transcriptie, details</b>) horen bij de metadataweergave <b>Local Transcribe</b>. Zet ze in een weergave die je team al gebruikt als je ze daar wilt hebben.</p>
 
 <h3>Een hele collectie aanvragen</h3>
-<p>Open de collectie, selecteer de assets (of selecteer de collectie zelf), klik met de rechtermuisknop en kies <b>Update Metadata</b>. Vink <b>Transcriptie</b> aan, kies <b>Aangevraagd</b> en klik op <b>Update</b>. Alleen aangevinkte velden worden aangepast. Elke asset in de selectie krijgt het verzoek.</p>
+<p>Open de collectie, selecteer de assets (of selecteer de collectie zelf), klik met de rechtermuisknop en kies <b>Update Metadata</b>. Vink <b>Transcriptie</b> aan, kies <b>Aangevraagd</b> en klik op <b>Update</b>. Alleen aangevinkte velden veranderen. Elk asset in de selectie krijgt de aanvraag.</p>
 <div class="pair">
-<figure><img src="images/iconik-context-menu.png" alt=""><figcaption>Het contextmenu. Local Transcribe in dit menu start een opdracht op de Mac waar je op werkt. Update Metadata zet de assets in de wachtrij voor elke Mac met opdrachten op afstand aan.</figcaption></figure>
-<figure><img src="images/iconik-update-metadata.png" alt=""><figcaption>Transcriptie op Aangevraagd gezet voor alle items. Het scherm toont een Engelstalige Iconik-omgeving.</figcaption></figure>
+<figure><img src="images/iconik-context-menu.png" alt=""><figcaption>Het contextmenu. Local Transcribe in dit menu start een opdracht op de Mac waar je werkt. Update Metadata zet de assets in de rij voor elke Mac met opdrachten op afstand aan.</figcaption></figure>
+<figure><img src="images/iconik-update-metadata.png" alt=""><figcaption>Transcriptie op Aangevraagd voor alle items.</figcaption></figure>
 </div>
 
 <h3>Wat de status betekent</h3>
 <table>
 <tr><th>Transcriptie</th><th>Betekenis</th></tr>
-<tr><td>Aangevraagd</td><td>Wacht tot een Mac hem oppakt</td></tr>
-<tr><td>Bezig</td><td>Een Mac werkt eraan. Het detailveld toont welke Mac, sinds wanneer en het laatste teken van leven</td></tr>
-<tr><td>Klaar</td><td>Het transcript staat op de asset onder Transcriptions. Een asset zonder audio of zonder spraak staat ook op Klaar, met "Skipped:" en de reden in het detailveld</td></tr>
-<tr><td>Fout</td><td>De reden staat in het detailveld. Zet hem opnieuw op Aangevraagd om het nog eens te proberen</td></tr>
+<tr><td>Aangevraagd</td><td>Wacht tot een Mac het oppakt</td></tr>
+<tr><td>Bezig</td><td>Een Mac werkt eraan. Het detailveld zegt welke Mac, sinds wanneer en het laatste teken van leven</td></tr>
+<tr><td>Klaar</td><td>Het transcript staat bij het asset onder Transcriptions. Een asset zonder audio of zonder spraak is ook Klaar, met "Overgeslagen:" en de reden in het detailveld</td></tr>
+<tr><td>Fout</td><td>De reden staat in het detailveld. Zet het weer op Aangevraagd om het opnieuw te proberen</td></tr>
 </table>
 
 <h3>Meerdere Macs</h3>
-<p>Macs delen de wachtrij zonder dubbel werk. Een Mac die werkt ververst elke minuut een laatste teken. Blijft dat vier minuten weg, bijvoorbeeld omdat hij in slaap viel of het archief kwijt is, dan neemt een andere Mac de asset over. Een opdracht die vijftien minuten geen voortgang laat zien, geeft de app zelf terug aan de wachtrij, waarna de app herstart. Na drie pogingen gaat een asset op Fout met de reden.</p>
-<p>Een Mac met een eigen probleem (archief niet gemount, niet ingelogd) pauzeert tien minuten. Voorkeuren en de menubalk zeggen waarom. Met <b>Nu hervatten</b> hef je de pauze meteen op.</p>
-<p>De labels in Iconik (Aangevraagd, Bezig, Klaar, Fout) hangen af van de taal van de Iconik-omgeving. De waarden eronder zijn altijd Engels. Een admin kiest de taal onder Voorkeuren, <b>Taal van de velden in Iconik</b>. Dat geldt voor iedereen in die omgeving.</p>
+<p>Macs delen de rij zonder dubbel werk. Een Mac die bezig is, ververst elke minuut een laatste teken. Blijft het vier minuten stil, bijvoorbeeld omdat hij in slaap viel of het archief kwijtraakte, dan neemt een andere Mac het asset over. Een opdracht die vijftien minuten niet opschiet, geeft de app zelf terug, waarna hij opnieuw start. Na drie pogingen gaat een asset naar Fout, met de reden.</p>
+<p>Een Mac met een eigen probleem (archief niet gekoppeld, niet ingelogd) pauzeert tien minuten. Instellingen en de menubalk zeggen waarom. <b>Nu hervatten</b> heft de pauze meteen op.</p>
+<p>Het detailveld noemt de Mac die het werk deed, voor iedereen die het asset ziet. Standaard is dat de computernaam en daar staat vaak de naam van een persoon in; met <b>Naam</b> onder Opdrachten op afstand stel je een andere in.</p>
+<p>De labels die je in Iconik ziet (Aangevraagd, Bezig, Klaar, Fout) hangen af van de taal van de Iconik-omgeving. De waarden erachter zijn altijd Engels. Een beheerder kiest de taal onder Instellingen › Integraties, <b>Labels in Iconik</b>. Dat geldt voor iedereen in die omgeving.</p>
 <p>Getest met twee Macs op één Iconik-account. Meer Macs en aparte Iconik-accounts zijn nog niet getest.</p>
 
 <h2>Automatisch transcriberen</h2>
-<p>Optioneel, en alleen met <b>Opdrachten op afstand toestaan</b> aan. Zet je daaronder <b>Automatisch transcriberen</b> aan, dan werkt de Mac alles af op zijn gekoppelde opslag (ISG) dat nog geen transcript en geen transcriptiestatus heeft. Niemand hoeft iets aan te vragen.</p>
+<p>Optioneel en alleen met <b>Opdrachten op afstand toestaan</b> aan. Zet <b>Transcribeer zelf wat nog geen transcript heeft</b> aan en de Mac werkt alles af op zijn gekoppelde opslag (ISG) dat nog geen transcript en geen transcriptiestatus heeft. Niemand hoeft iets aan te vragen.</p>
 <ul>
-<li><b>Wat hij pakt.</b> Video tot een uur, nieuwste eerst. Met <b>Ook audiobestanden</b> aan gaan audiobestanden ook mee. Dat staat standaard uit, omdat een archief vaak veel muziek en los opgenomen geluid bevat.</li>
-<li><b>Aanvragen gaan voor.</b> Een Mac kijkt altijd eerst naar Aangevraagd voordat hij automatisch werk zoekt. Komt er een aanvraag binnen terwijl alle Macs met een automatische opdracht bezig zijn, dan wacht die tot er een klaar is.</li>
-<li><b>Alleen als er ruimte is.</b> De Mac staat op netstroom, heeft minstens 12 GB geheugen vrij en gebruikt minder dan 40% CPU en GPU, gemeten over de laatste minuten. Dat werkt ook als iemand op de Mac werkt. Onder de schakelaar zegt de app of hij klaar staat of waar hij op wacht, bijvoorbeeld "op batterij" of "CPU 55% bezet".</li>
-<li><b>De Mac blijft wakker.</b> Zolang automatisch transcriberen aan staat en de Mac op netstroom is, gaat hij niet slapen. Het scherm wel.</li>
-<li><b>De opslag wordt bewaakt.</b> Elke 30 seconden kijkt de app of de opslag (ISG) nog gekoppeld is. Is hij weg, dan pakt hij er niets van op, verschijnt er een gele balk in het venster en krijgt het Dock-icoon een uitroepteken. Staat de app op de achtergrond of alleen in de menubalk, dan komt er ook een melding. Is de opslag terug, dan gaat de app vanzelf verder.</li>
-<li><b>Herkenbaar.</b> Een automatische opdracht heeft onder Opdrachten het label <b>Auto</b>, en <code>[auto]</code> in het veld Transcriptie details in Iconik.</li>
-<li><b>Nooit een berg Aangevraagd.</b> De Mac claimt één asset tegelijk, meteen op Bezig. Een automatische opdracht die mislukt gaat terug naar een lege status in plaats van Fout, en die Mac probeert hem niet zelf opnieuw.</li>
+<li><b>Wat hij pakt.</b> Video tot een uur, het nieuwste eerst. Met <b>Ook audio</b> aan gaan audiobestanden ook mee. Dat staat standaard uit, omdat een archief vaak veel muziek en los opgenomen geluid bevat.</li>
+<li><b>Aanvragen gaan voor.</b> Een Mac kijkt altijd eerst naar Aangevraagd voordat hij automatisch werk zoekt. Een aanvraag die binnenkomt terwijl elke Mac met een automatische opdracht bezig is, wacht tot er een klaar is.</li>
+<li><b>Alleen als er ruimte is.</b> Dezelfde regel als bij gevolgde mappen: op netstroom, minstens 12 GB geheugen vrij en minder dan 40% processor en GPU, gemeten over de laatste minuten (Instellingen › Transcriptie). Dat werkt ook terwijl iemand de Mac gebruikt. Instellingen en de statusstrook zeggen of hij klaarstaat of waarop hij wacht, bijvoorbeeld "op batterij" of "processor 55% bezet".</li>
+<li><b>De Mac blijft wakker.</b> Zolang automatisch transcriberen aan staat en de Mac op netstroom zit, gaat hij niet slapen. Het scherm wel.</li>
+<li><b>De opslag wordt bewaakt.</b> Elke 30 seconden kijkt de app of de opslag (ISG) nog gekoppeld is. Is hij weg, dan wordt er niets van opgepakt, verschijnt er een gele balk in het venster en krijgt het Dock-icoon een uitroepteken. Staat de app op de achtergrond of alleen in de menubalk, dan komt er ook een melding. Zodra de opslag terug is, gaat de app vanzelf verder.</li>
+<li><b>Herkenbaar.</b> Een automatische opdracht heeft het label <b>Auto</b> in de opdrachtenlijst en <code>[auto]</code> in het veld Transcriptie, details in Iconik.</li>
+<li><b>Nooit een stroom aanvragen.</b> De Mac claimt één asset tegelijk, meteen op Bezig. Een automatische opdracht die mislukt, gaat terug naar een lege status in plaats van Fout en die Mac probeert hem niet zelf opnieuw.</li>
 </ul>
-<p>De grenzen staan in <code>config.json</code> (<code>auto_min_free_gb</code>, <code>auto_max_cpu</code>, <code>auto_max_gpu</code>) voor wie ze wil aanpassen.</p>
 
-<h2 class="new">Refine: een transcript nakijken</h2>
-<p>Met Refine kijk je een transcript na naast het origineel. Links speelt de video, rechts staan de blokken tekst, en onderin staat een tijdlijn met de tekstblokken, de sprekers en elk audiospoor als golfvorm.</p>
-<h3>Openen</h3>
-<ul>
-<li>In de app: klik op <b>Refine</b> bij een afgeronde opdracht.</li>
-<li>In Iconik: kies <b>Refine transcript</b> in het menu van een asset. Die knop zet de app samen met Local Transcribe in Iconik (stap 4).</li>
-</ul>
-<figure class="small"><img src="images/iconik-refine-menu.png" alt=""></figure>
-<figure><img src="images/refine.jpg" alt=""></figure>
-<p>Is de opslag (ISG) niet gekoppeld, dan opent Refine toch: je kunt de tekst en de sprekers bewerken en opslaan in Iconik, maar er is geen beeld of geluid, en de golfvormen staan er alleen als een eerdere opdracht op deze Mac ze heeft bewaard.</p>
-<h3>Afspelen</h3>
-<p>Het origineel speelt rechtstreeks van de opslag. Klik op een blok of in de tijdlijn om ernaartoe te springen. Spatie speelt af en pauzeert, de pijltjes springen een seconde (met Shift vijf), Option met een pijltje springt een blok, en J, K en L werken zoals in een montageprogramma. Met het koptelefoontje bij een spoor hoor je alleen dat spoor; standaard hoor je de mix van de sporen die de app gebruikte.</p>
-<h3>Tekst bewerken</h3>
-<ul>
-<li>Dubbelklik op een blok (of druk op Enter) om te typen. Woorden die gelijk blijven houden hun timing. Een veranderd woord krijgt de tijd van het woord dat het vervangt en telt als nagekeken: Iconik toont het daarna zonder rode streep.</li>
-<li><b>Enter</b> splitst het blok op de cursor, <b>Backspace</b> aan het begin voegt het samen met het vorige blok, <b>Delete</b> aan het eind met het volgende. <b>Cmd+Enter</b> of ergens anders klikken bewaart, <b>Esc</b> annuleert.</li>
-<li>Op de tijdlijn: <b>S</b> splitst het blok onder de afspeelkop, <b>M</b> voegt samen met het volgende blok, <b>N</b> maakt een blok op een lege plek. Sleep de randen van het gekozen blok om de timing aan te passen.</li>
-</ul>
-<h3>Sprekers</h3>
-<ul>
-<li>Klik op een naam in de sprekerbalk om die te wijzigen, of voeg een spreker toe met <b>+ Spreker</b>.</li>
-<li>Selecteer woorden in een blok en klik met rechts om ze aan een andere of een nieuwe spreker te geven. Het blok wordt dan op de woordgrenzen gesplitst.</li>
-<li>Klik met rechts op een blok zonder selectie, of op een blok in de tijdlijn, om het hele blok aan een andere spreker te geven.</li>
-</ul>
-<h3>Opslaan</h3>
-<p>Elke wijziging wordt meteen als concept op deze Mac bewaard. Je kunt Refine verlaten en later verder gaan; ongedaan maken en opnieuw kan met Cmd+Z en Shift+Cmd+Z. Onder Opdrachten staat dan het label <b>Concept</b>.</p>
-<p>Met <b>Opslaan in Iconik</b> vervangt de correctie het transcript in Iconik, en laat de app Iconik het asset opnieuw indexeren. Iconik toont alleen het nieuwste transcript maar doorzoekt ze allemaal; een origineel ernaast zou weggecorrigeerde woorden vindbaar houden. Het origineel blijft daarom op deze Mac, en met <b>Origineel terugzetten</b> zet je het terug. Onder Opdrachten staat daarna <b>Gecorrigeerd</b>. Onder Voorkeuren, bij Refine, zie je hoeveel originelen er bewaard zijn en kun je ze weggooien; daarna kan geen origineel meer terug.</p>
-<p>Een nieuwe transcriptie slaat een gecorrigeerd asset over, met de reden erbij. Wil je toch opnieuw transcriberen, zet dan eerst in Refine het origineel terug.</p>
-
-<h2 class="new">Ondertitels</h2>
-<p>Een blok in het transcript is zo lang als iemand praat. Een ondertitel moet te lezen zijn: twee korte regels, lang genoeg in beeld. In Refine maak je ondertitels uit het transcript als tweede laag en bewaar je ze als bestand. Het transcript zelf verandert niet, en er worden geen ondertitels gemaakt zolang jij er niet om vraagt.</p>
-<h3>Maken</h3>
-<p>Klik op <b>+ Ondertitels</b> naast de tab Transcript. Het venster dat opent heeft drie delen:</p>
-<ul>
-<li><b>Regels.</b> Kies een voorkeuze of vul eigen waarden in: tekens per regel, regels, kortste en langste duur, de ruimte tussen ondertitels en de leessnelheid. Er is niet één standaard. <b>Online en streaming</b> (42 tekens) is wat streamingdiensten gebruiken; <b>Televisie, teletekst</b> (37 tekens) is de gewoonte bij omroepen.</li>
-<li><b>Inpassen.</b> Met <b>Uitloop in de stilte</b> blijft een ondertitel die te snel gaat staan na het laatste woord, nooit over de volgende heen. <b>Korte zinnen van dezelfde spreker samen</b> zet "Ja, zeker." bij de zin erna, alleen als er geen pauze tussen zit.</li>
-<li><b>Bewaren.</b> Kies .srt, .vtt of allebei, en waar het bestand komt: naast de media (het bestand krijgt de naam van het mediabestand) of een andere plek die je zelf kiest. Iconik koppelt een ondertitelbestand naast de media aan het asset als de naam overeenkomt.</li>
-</ul>
-<p>De regel onderaan telt wat je krijgt: hoeveel ondertitels, hoeveel er snel zijn en hoeveel niet te lezen, en wat dat zonder uitloop zou zijn. De tekst wordt nooit ingekort, dus snelle spraak blijft een waarschuwing. Klik op <b>Maken en bewaren</b>.</p>
-<p>Staat er al een .srt of .vtt naast de media, dan biedt het venster aan om die <b>in te laden</b>, en je kunt ook een ander bestand inladen. De ondertitels komen zoals ze in het bestand staan; sprekers en woordtiming komen uit het transcript waar de tekst overeenkomt.</p>
-<h3>Bewerken</h3>
-<p>Na het maken staat de tab <b>Ondertitels</b> open en hebben de ondertitels een eigen baan op de tijdlijn, boven het transcript. Alles uit Refine werkt op de tab waar je in staat: typen, splitsen, samenvoegen, randen verslepen, ongedaan maken en opnieuw. Onder de video zie je de ondertitel zoals hij in het bestand komt.</p>
-<ul>
-<li><b>Grijs</b> is goed. <b>Oranje</b> is sneller dan de leessnelheid, te kort of te lang. <b>Rood</b> is niet te lezen, past niet binnen de regels of loopt over de volgende heen. Met <b>Volgende</b> (of W) spring je naar de volgende waarschuwing; kort de tekst in of geef de ondertitel meer tijd.</li>
-<li><b>Instellingen</b> toont dezelfde regels. Een andere regel verandert de waarschuwingen en de regelbreuken. <b>Inpassen</b> past samenvoegen en uitloop opnieuw toe en laat staan wat je met de hand hebt aangepast.</li>
-<li><b>Bewaren</b> schrijft het bestand opnieuw op dezelfde plek. Tot die tijd staan je wijzigingen op deze Mac.</li>
-<li>De puntjes naast de tab: <b>Opnieuw maken uit het transcript</b> (wat je met de hand veranderde gaat verloren), <b>Op een andere plek bewaren</b> en <b>Ondertitels verwijderen</b>. Verwijderen haalt ze uit de app; een bestand dat al geschreven is blijft staan.</li>
-</ul>
-<p>Verander je daarna het transcript, dan blijven de ondertitels zoals ze zijn en melden ze dat het transcript is veranderd. Maak ze opnieuw als je de wijzigingen erin wilt.</p>
-<p>De app overschrijft geen ondertitelbestand dat hij niet zelf schreef of dat iemand daarna heeft gewijzigd. Laad dat bestand in, of bewaar op een andere plek. Onder Opdrachten staat bij een afgeronde opdracht met ondertitels het label <b>Ondertitels</b>; klik erop om ze te openen.</p>
-
-<h2 class="new">Als het niet werkt</h2>
+<h2 class="new">Als iets niet werkt</h2>
 <table>
-<tr><th>Wat je ziet</th><th>Wat er speelt</th><th>Wat je doet</th></tr>
-<tr><td>Venster op Voorkeuren, status Niet verbonden</td><td>Er is nog geen Client ID ingevuld</td><td>Stap 2</td></tr>
-<tr><td>Status Niet ingelogd</td><td>Je bent uitgelogd</td><td>Klik op <b>Log in bij Iconik</b>. Is het Client ID fout, klap dan <b>Andere Client ID gebruiken</b> open en vul het juiste in</td></tr>
-<tr><td>Iconik meldt dat de app niet is geconfigureerd als OAuth2-client</td><td>Het Client ID klopt niet of is niet volledig</td><td>Controleer het ID uit stap 1 en vul het opnieuw in</td></tr>
-<tr><td>Gele melding dat de knop ontbreekt</td><td>De knop staat nog niet in Iconik, of is verwijderd</td><td>Klik op <b>Zet de knoppen in Iconik</b>. Lukt dat niet, vraag dan een beheerder om één keer in te loggen in deze app en de knop toe te voegen</td></tr>
-<tr><td>De map is niet bereikbaar, is het archief gemount?</td><td>Het archief staat niet op de Mac</td><td>Mount het archief en start de opdracht opnieuw</td></tr>
-<tr><td>Bestand niet gevonden</td><td>Het gekozen mount point past niet bij het asset</td><td>Wijzig het pad onder <b>ISG Mount Points</b></td></tr>
-<tr><td>Een asset blijft op Aangevraagd staan</td><td>Er draait geen Mac met <b>Opdrachten op afstand toestaan</b> aan, alle Macs zijn bezig, of de Macs die aan staan zijn gepauzeerd</td><td>Controleer dat er een Mac met opdrachten op afstand aan draait, ingelogd en met het archief gemount. Een aanvraag wacht op lopende opdrachten, ook automatische</td></tr>
-<tr><td>Een Mac meldt dat hij gepauzeerd is</td><td>Hij liep tegen een eigen probleem aan, bijvoorbeeld een archief dat niet gemount was</td><td>Los de oorzaak op die in Voorkeuren of de menubalk staat en klik op <b>Nu hervatten</b>. Anders stopt de pauze na tien minuten vanzelf</td></tr>
-<tr><td>Gele balk of melding: opslag (ISG) niet bereikbaar</td><td>De opslag is niet gekoppeld aan deze Mac, bijvoorbeeld na een herstart of omdat het archief uit staat</td><td>Koppel de opslag opnieuw, bijvoorbeeld in de Finder. De app gaat daarna vanzelf verder. Een netwerkschijf koppelt bij elke login als je hem toevoegt onder Systeeminstellingen &gt; Algemeen &gt; Inlogonderdelen</td></tr>
-<tr><td>Overgeslagen: geen audio of video op dit asset</td><td>Op het asset staan alleen plaatjes, fonts, documenten of een projectbestand</td><td>Niets. Het asset krijgt de status Klaar met deze opmerking, zodat het niet opnieuw wordt opgepakt</td></tr>
-<tr><td>Automatisch transcriberen staat op Wacht</td><td>De Mac heeft nu geen ruimte: op batterij, te weinig geheugen vrij, CPU of GPU te druk, of geen opslag gekoppeld</td><td>Niets, hij begint vanzelf zodra er ruimte is. Vlak na het aanzetten meet hij eerst ongeveer een minuut</td></tr>
+<tr><th>Wat je ziet</th><th>Wat er aan de hand is</th><th>Wat je doet</th></tr>
+<tr><td>Een groep of bestand zegt dat de app hier niet kan schrijven</td><td>De schijf is alleen-lezen, de kaart staat op slot, of je hebt geen rechten op de map</td><td>Klik op <b>Kies een andere plek…</b>, of zet de rechten goed en voeg de bestanden opnieuw toe</td></tr>
+<tr><td>Overgeslagen: naast dit bestand staat al clip.transcript.json, niet van deze app</td><td>Een <code>clip.transcript.json</code> van een ander programma, of van een ander bestand</td><td>Niets, of zet dat bestand ergens anders neer en voeg de media opnieuw toe</td></tr>
+<tr><td>Een gevolgde map pakt niets op</td><td>De Mac heeft nu geen ruimte, het bestand verandert nog, of de map is niet bereikbaar</td><td>De statusstrook zegt waarop hij wacht. Bestanden worden 15 seconden nadat ze niet meer veranderen opgepakt</td></tr>
+<tr><td>Iconik: nog niet verbonden</td><td>Nog geen Client ID ingevuld</td><td>Deel 2, stap 2</td></tr>
+<tr><td>Iconik: niet ingelogd</td><td>Je bent uitgelogd</td><td>Klik op <b>Log in bij Iconik</b> onder Instellingen › Integraties. Werkt dat niet, kijk dan de Client ID na</td></tr>
+<tr><td>Iconik zegt dat de app niet als OAuth2-client is ingesteld</td><td>De Client ID klopt niet of is niet compleet</td><td>Kijk de ID uit stap 1 na en vul hem opnieuw in</td></tr>
+<tr><td>Gele melding dat de knoppen ontbreken</td><td>De knoppen staan nog niet in Iconik, of zijn weggehaald</td><td>Klik op <b>Zet de knoppen in Iconik</b>. Wordt dat geweigerd, vraag dan een Iconik-beheerder één keer in te loggen in deze app en ze toe te voegen</td></tr>
+<tr><td>De map is niet bereikbaar, is de opslag gekoppeld?</td><td>Het archief staat niet op deze Mac</td><td>Koppel het archief en start de opdracht opnieuw</td></tr>
+<tr><td>Bestand niet gevonden</td><td>De gekozen map past niet bij het asset</td><td>Kies een andere map onder Instellingen › Integraties, <b>Opslag (ISG) op deze Mac</b></td></tr>
+<tr><td>Een asset blijft op Aangevraagd staan</td><td>Er draait geen Mac met <b>Opdrachten op afstand toestaan</b> aan, elke Mac is bezig, of de Macs die aan staan zijn gepauzeerd</td><td>Kijk of er een Mac met opdrachten op afstand aan draait en ingelogd is, met het archief gekoppeld. Een aanvraag wacht op lopende opdrachten, ook automatische</td></tr>
+<tr><td>Een Mac zegt dat hij gepauzeerd is</td><td>Hij liep tegen een eigen probleem aan, bijvoorbeeld een archief dat niet gekoppeld was</td><td>Los de oorzaak op die Instellingen of de menubalk noemt en klik op <b>Nu hervatten</b>. Anders eindigt de pauze vanzelf na tien minuten</td></tr>
+<tr><td>Gele balk of melding: opslag (ISG) niet bereikbaar</td><td>De opslag is niet gekoppeld op deze Mac, bijvoorbeeld na een herstart of omdat het archief uit staat</td><td>Koppel de opslag opnieuw, bijvoorbeeld in de Finder. De app gaat vanzelf verder. Wil je een netwerkschijf bij elke login koppelen, zet hem dan onder Systeeminstellingen &gt; Algemeen &gt; Inloggen</td></tr>
+<tr><td>Overgeslagen: geen audio of video bij dit asset</td><td>Het asset bevat alleen beelden, lettertypen, documenten of een projectbestand</td><td>Niets. Het asset krijgt de status Klaar met deze melding, zodat het niet opnieuw wordt opgepakt</td></tr>
+<tr><td>Automatisch transcriberen of een gevolgde map zegt Wacht</td><td>De Mac heeft nu geen ruimte: op batterij, te weinig geheugen vrij, processor of GPU te druk</td><td>Niets, hij begint vanzelf zodra er ruimte is. Vlak na het aanzetten meet hij eerst ongeveer een minuut</td></tr>
 </table>
 
 </body>

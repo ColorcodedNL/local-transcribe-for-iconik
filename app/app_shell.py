@@ -12,6 +12,9 @@ PUBLIC_KEY controleert de handtekening van updates. De privésleutel staat in Pr
 Vanaf shell 5 wordt een code-update bij elke start opnieuw gecontroleerd (load_code) en daarna uit het
 geheugen geladen (use_code), niet uit de map. De uitgepakte bestanden in Application Support doen dan
 niet meer mee: wie ze aanpast of er iets bij zet, verandert niets aan wat de app draait.
+
+Shell 6 (0.7.0) verandert aan deze laag niets: hij gaat omhoog omdat de nieuwe naam van de bundel alleen met een dmg
+komt, en een code-update de app anders onder de oude naam zou laten draaien (gekozen 26 november).
 """
 import base64
 import hashlib
@@ -24,7 +27,7 @@ import sys
 import zipfile
 from pathlib import Path
 
-SHELL_VERSION = 5
+SHELL_VERSION = 6   # 0.7.0: de nieuwe naam (Local Transcribe.app) komt alleen met de dmg, dus iedereen naar de dmg
 PUBLIC_KEY = "g4XE02D2oSS+XiFvXbzqQdRpF0Mboixkr8iKnKRIczM="  # Ed25519, base64
 
 APP_NAME = "Local Transcribe for Iconik"

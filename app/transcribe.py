@@ -32,7 +32,7 @@ import whisper_mlx
 import engine
 import pipeline
 
-APP_VERSION = "0.6.2"  # ook het versienummer van de app-bundel (build_bundle.sh leest het hier)
+APP_VERSION = "0.7.0"  # ook het versienummer van de app-bundel (build_bundle.sh leest het hier)
 RELEASES_REPO = "ColorcodedNL/local-transcribe-for-iconik"  # hier kijkt de app of er een nieuwere versie is
 
 # In deze volgorde: een deel importeert alleen uit delen die eerder staan, dus het eerste deel met een naam
